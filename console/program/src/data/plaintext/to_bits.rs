@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,7 +22,7 @@ impl<N: Network> ToBits for Plaintext<N> {
             Self::Literal(literal, bits_le) => {
                 // Compute the bits.
                 let bits = bits_le.get_or_init(|| {
-                    let mut bits_le = vec![false, false]; // Variant bits.
+                    let mut bits_le = PlaintextType::<N>::LITERAL_PREFIX_BITS.to_vec(); // Variant bits.
                     literal.variant().write_bits_le(&mut bits_le);
                     literal.size_in_bits().write_bits_le(&mut bits_le);
                     literal.write_bits_le(&mut bits_le);
@@ -34,7 +34,7 @@ impl<N: Network> ToBits for Plaintext<N> {
             Self::Struct(struct_, bits_le) => {
                 // Compute the bits.
                 let bits = bits_le.get_or_init(|| {
-                    let mut bits_le = vec![false, true]; // Variant bits.
+                    let mut bits_le = PlaintextType::<N>::STRUCT_PREFIX_BITS.to_vec(); // Variant bits.
 
                     // Write the length of the struct.
                     u8::try_from(struct_.len())
@@ -62,7 +62,7 @@ impl<N: Network> ToBits for Plaintext<N> {
             Self::Array(array, bits_le) => {
                 // Compute the bits.
                 let bits = bits_le.get_or_init(|| {
-                    let mut bits_le = vec![true, false]; // Variant bits.
+                    let mut bits_le = PlaintextType::<N>::ARRAY_PREFIX_BITS.to_vec(); // Variant bits.
 
                     // Write the length of the array.
                     u32::try_from(array.len())
@@ -95,7 +95,7 @@ impl<N: Network> ToBits for Plaintext<N> {
             Self::Literal(literal, bits_be) => {
                 // Compute the bits.
                 let bits = bits_be.get_or_init(|| {
-                    let mut bits_be = vec![false, false]; // Variant bits.
+                    let mut bits_be = PlaintextType::<N>::LITERAL_PREFIX_BITS.to_vec(); // Variant bits.
                     literal.variant().write_bits_be(&mut bits_be);
                     literal.size_in_bits().write_bits_be(&mut bits_be);
                     literal.write_bits_be(&mut bits_be);
@@ -107,7 +107,7 @@ impl<N: Network> ToBits for Plaintext<N> {
             Self::Struct(struct_, bits_be) => {
                 // Compute the bits.
                 let bits = bits_be.get_or_init(|| {
-                    let mut bits_be = vec![false, true]; // Variant bits.
+                    let mut bits_be = PlaintextType::<N>::STRUCT_PREFIX_BITS.to_vec(); // Variant bits.
 
                     // Write the length of the struct.
                     u8::try_from(struct_.len())
@@ -136,7 +136,7 @@ impl<N: Network> ToBits for Plaintext<N> {
             Self::Array(array, bits_be) => {
                 // Compute the bits.
                 let bits = bits_be.get_or_init(|| {
-                    let mut bits_be = vec![true, false]; // Variant bits.
+                    let mut bits_be = PlaintextType::<N>::ARRAY_PREFIX_BITS.to_vec(); // Variant bits.
 
                     // Write the length of the array.
                     u32::try_from(array.len())

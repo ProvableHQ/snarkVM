@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +22,7 @@ use helpers::PublicOrPrivate;
 mod bytes;
 mod parse;
 mod serialize;
+mod size_in_bits;
 
 use crate::Identifier;
 use snarkvm_console_network::prelude::*;
@@ -53,6 +54,26 @@ impl<N: Network> RecordType<N> {
     /// Returns the entries of the record type.
     pub const fn entries(&self) -> &IndexMap<Identifier<N>, EntryType<N>> {
         &self.entries
+    }
+
+    /// Returns `true` if the record contains a string type.
+    pub fn contains_string_type(&self) -> bool {
+        self.entries.values().any(|entry_type| entry_type.plaintext_type().contains_string_type())
+    }
+
+    /// Returns `true` if the record contains an identifier type.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        for entry_type in self.entries.values() {
+            if entry_type.plaintext_type().contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Returns `true` if the record contains an array type with a size that exceeds the given maximum.
+    pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
+        self.entries.values().any(|entry_type| entry_type.plaintext_type().exceeds_max_array_size(max_array_size))
     }
 }
 

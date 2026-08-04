@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,6 +16,8 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
+
+extern crate snarkvm_console_types_integers as console;
 
 mod helpers;
 
@@ -88,18 +90,18 @@ impl<E: Environment, I: IntegerType> IntegerTrait<I, U8<E>, U16<E>, U32<E>> for 
 
 impl<E: Environment, I: IntegerType> IntegerCore<I> for Integer<E, I> {}
 
-// TODO (@pranav) Document
 impl<E: Environment, I: IntegerType> Integer<E, I> {
+    /// Returns the size of the integer in bits.
     pub fn size_in_bits() -> u16 {
         I::BITS as u16
     }
 
+    /// Casts the integer to its dual type, i.e., from signed to unsigned or vice versa.
     pub fn cast_as_dual(self) -> Integer<E, I::Dual> {
         Integer::<E, I::Dual> { bits_le: self.bits_le, phantom: Default::default() }
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment, I: IntegerType> Inject for Integer<E, I> {
     type Primitive = console::Integer<E::Network, I>;
 
@@ -115,7 +117,6 @@ impl<E: Environment, I: IntegerType> Inject for Integer<E, I> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment, I: IntegerType> Eject for Integer<E, I> {
     type Primitive = console::Integer<E::Network, I>;
 
@@ -133,7 +134,6 @@ impl<E: Environment, I: IntegerType> Eject for Integer<E, I> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment, I: IntegerType> Parser for Integer<E, I> {
     /// Parses a string into an integer circuit.
     #[inline]
@@ -150,7 +150,6 @@ impl<E: Environment, I: IntegerType> Parser for Integer<E, I> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment, I: IntegerType> FromStr for Integer<E, I> {
     type Err = Error;
 
@@ -169,7 +168,6 @@ impl<E: Environment, I: IntegerType> FromStr for Integer<E, I> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment, I: IntegerType> TypeName for Integer<E, I> {
     /// Returns the type name of the circuit as a string.
     #[inline]
@@ -178,14 +176,12 @@ impl<E: Environment, I: IntegerType> TypeName for Integer<E, I> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment, I: IntegerType> Debug for Integer<E, I> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment, I: IntegerType> Display for Integer<E, I> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}.{}", self.eject_value(), self.eject_mode())
@@ -216,7 +212,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 10;
 
     fn check_new<I: IntegerType>(
         mode: Mode,

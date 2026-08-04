@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,8 +32,11 @@ impl<A: Aleo, Private: Visibility<A>> Equal<Self> for Record<A, Private> {
             equal = equal & name_a.is_equal(name_b) & entry_a.is_equal(entry_b);
         }
 
-        // Check the `owner`, `data`, and `nonce`.
-        self.owner.is_equal(&other.owner) & equal & self.nonce.is_equal(&other.nonce)
+        // Check the `owner`, `data`, `nonce`, and `version`.
+        self.owner.is_equal(&other.owner)
+            & equal
+            & self.nonce.is_equal(&other.nonce)
+            & self.version.is_equal(&other.version)
     }
 
     /// Returns `true` if `self` and `other` are *not* equal.
@@ -50,8 +53,11 @@ impl<A: Aleo, Private: Visibility<A>> Equal<Self> for Record<A, Private> {
             not_equal = not_equal | name_a.is_not_equal(name_b) | entry_a.is_not_equal(entry_b);
         }
 
-        // Check the `owner`, `data`, and `nonce`.
-        self.owner.is_not_equal(&other.owner) | not_equal | self.nonce.is_not_equal(&other.nonce)
+        // Check the `owner`, `data`, `nonce`, and `version`.
+        self.owner.is_not_equal(&other.owner)
+            | not_equal
+            | self.nonce.is_not_equal(&other.nonce)
+            | self.version.is_not_equal(&other.version)
     }
 }
 
@@ -75,7 +81,8 @@ mod tests {
         f: 123456789field.private,
         g: 0group.private
     },
-    _nonce: 0group.public
+    _nonce: 0group.public,
+    _version: 0u8.public
 }",
         )
         .unwrap();
@@ -97,7 +104,8 @@ mod tests {
         f: 123456789field.private,
         g: 0group.private
     },
-    _nonce: 0group.public
+    _nonce: 0group.public,
+    _version: 0u8.public
 }",
         )
         .unwrap();
@@ -160,33 +168,33 @@ mod tests {
     fn test_is_equal_constant() -> Result<()> {
         // Note: This is correct. At this (high) level of a program, we override the default mode in the `Record` case,
         // based on the user-defined visibility in the record type. Thus, we have nonzero private and constraint values.
-        check_is_equal(Mode::Constant, 17, 0, 23, 33)
+        check_is_equal(Mode::Constant, 18, 0, 25, 36)
     }
 
     #[test]
     fn test_is_equal_public() -> Result<()> {
-        check_is_equal(Mode::Public, 17, 0, 23, 33)
+        check_is_equal(Mode::Public, 18, 0, 25, 36)
     }
 
     #[test]
     fn test_is_equal_private() -> Result<()> {
-        check_is_equal(Mode::Private, 17, 0, 23, 33)
+        check_is_equal(Mode::Private, 18, 0, 25, 36)
     }
 
     #[test]
     fn test_is_not_equal_constant() -> Result<()> {
         // Note: This is correct. At this (high) level of a program, we override the default mode in the `Record` case,
         // based on the user-defined visibility in the record type. Thus, we have nonzero private and constraint values.
-        check_is_not_equal(Mode::Constant, 7, 0, 27, 27)
+        check_is_not_equal(Mode::Constant, 7, 0, 29, 29)
     }
 
     #[test]
     fn test_is_not_equal_public() -> Result<()> {
-        check_is_not_equal(Mode::Public, 7, 0, 27, 27)
+        check_is_not_equal(Mode::Public, 7, 0, 29, 29)
     }
 
     #[test]
     fn test_is_not_equal_private() -> Result<()> {
-        check_is_not_equal(Mode::Private, 7, 0, 27, 27)
+        check_is_not_equal(Mode::Private, 7, 0, 29, 29)
     }
 }

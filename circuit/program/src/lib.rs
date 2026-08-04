@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +19,11 @@
 
 #[cfg(test)]
 use snarkvm_circuit_network::AleoV0 as Circuit;
+
+#[cfg(test)]
+extern crate snarkvm_console as console_root;
+
+extern crate snarkvm_console_program as console;
 
 mod data;
 pub use data::*;

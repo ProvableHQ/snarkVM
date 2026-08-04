@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,21 +15,32 @@
 
 use super::*;
 
+use anyhow::Context;
+
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns a candidate for the next block in the ledger, using a committed subdag and its transmissions.
+    /// This candidate can then be passed to [`Ledger::advance_to_next_block`] to be added to the ledger.
+    ///
+    /// The function will prevent concurrent update to the ledger, and may block if an update is currently in progress.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
     pub fn prepare_advance_to_next_quorum_block<R: Rng + CryptoRng>(
         &self,
         subdag: Subdag<N>,
         transmissions: IndexMap<TransmissionID<N>, Transmission<N>>,
         rng: &mut R,
-    ) -> Result<Block<N>> {
+    ) -> Result<Block<N>, CheckBlockError<N>> {
         // Retrieve the latest block as the previous block (for the next block).
-        let previous_block = self.latest_block();
+        // Hold this lock while preparing the template, so that the latest block does not change mid-speculation.
+        let previous_block = self.current_block.read();
 
         // Decouple the transmissions into ratifications, solutions, and transactions.
         let (ratifications, solutions, transactions) = decouple_transmissions(transmissions.into_iter())?;
         // Currently, we do not support ratifications from the memory pool.
-        ensure!(ratifications.is_empty(), "Ratifications are currently unsupported from the memory pool");
+        if !ratifications.is_empty() {
+            return Err(anyhow!("Ratifications are currently unsupported from the memory pool").into());
+        }
         // Construct the block template.
         let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) =
             self.construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)?;
@@ -45,9 +56,17 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             transactions,
             aborted_transaction_ids,
         )
+        .map_err(|e| CheckBlockError::Other(e))
     }
 
     /// Returns a candidate for the next block in the ledger.
+    /// This candidate can then be passed to [`Ledger::advance_to_next_block`] to be added to the ledger.
+    ///
+    /// Note, that beacon blocks are only used for testing purposes.
+    /// Production code will most likely used `[Ledger::prepare_advance_to_next_quorum_block`] instead.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
     pub fn prepare_advance_to_next_beacon_block<R: Rng + CryptoRng>(
         &self,
         private_key: &PrivateKey<N>,
@@ -55,12 +74,15 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         candidate_solutions: Vec<Solution<N>>,
         candidate_transactions: Vec<Transaction<N>>,
         rng: &mut R,
-    ) -> Result<Block<N>> {
+    ) -> Result<Block<N>, CheckBlockError<N>> {
         // Currently, we do not support ratifications from the memory pool.
-        ensure!(candidate_ratifications.is_empty(), "Ratifications are currently unsupported from the memory pool");
+        if !candidate_ratifications.is_empty() {
+            return Err(anyhow!("Ratifications are currently unsupported from the memory pool").into());
+        }
 
         // Retrieve the latest block as the previous block (for the next block).
-        let previous_block = self.latest_block();
+        // Hold this lock while preparing the template, so that the latest block does not change mid-speculation.
+        let previous_block = self.current_block.read();
 
         // Construct the block template.
         let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) = self
@@ -85,14 +107,28 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             aborted_transaction_ids,
             rng,
         )
+        .map_err(|e| CheckBlockError::Other(e))
     }
 
     /// Adds the given block as the next block in the ledger.
+    ///
+    /// This function expects a valid block, that either was created by a trusted source, or successfully passed
+    /// the blocks checks (e.g. [`Ledger::check_next_block`]).
+    ///
+    /// # Concurrency
+    /// It is guaranteed that at most one call this function is executing at any time and that no reads to the Ledger
+    /// (e.g, by [`Self::prepare_next_beacon_block`] or [`Self::check_next_block`]) execute while the ledger is advancing.
+    /// However, it is still possible that a *previously* valid block is rejected by a call to this function,
+    /// if the ledger advanced between calling `prepare_next_*_block` and passing it to this function.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
     pub fn advance_to_next_block(&self, block: &Block<N>) -> Result<()> {
-        // Acquire the write lock on the current block.
+        // Acquire a write lock to current_block to prevent current updates or reads to the block or state root.
         let mut current_block = self.current_block.write();
+
         // Check again for any possible race conditions.
-        if current_block.is_genesis() {
+        if current_block.is_genesis()? {
             // current block is initialized as the genesis block, but the ledger will
             // also advance to it on startup.
             ensure!(
@@ -100,13 +136,14 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 "The given block is not the direct successor of the latest block"
             );
         } else {
+            ensure!(block.height() != 0, "Non-genesis blocks cannot have height 0");
             ensure!(
                 current_block.height() + 1 == block.height(),
                 "The given block is not the direct successor of the latest block"
             );
         }
         // Update the VM.
-        self.vm.add_next_block(block)?;
+        self.vm.add_next_block(block).with_context(|| "Failed to add block to VM")?;
         // Update the current block.
         *current_block = block.clone();
         // Drop the write lock on the current block.
@@ -130,7 +167,10 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                     error!("Failed to update the current epoch hash at block {}", block.height());
                 }
             }
-            // Clear the epoch provers cache.
+            // Clear the epoch provers cache. This is done because once the ledger enters a new epoch,
+            // all solutions from the previous epoch are no longer relevant.
+            // Note: solutions that land on exactly the epoch boundary are still considered part of the previous epoch,
+            // because they were created prior to the advancement to the new epoch (using the previous epoch's puzzle).
             self.epoch_provers_cache.write().clear();
         } else {
             // If the block is not part of a new epoch, add the new provers to the epoch prover cache.
@@ -207,6 +247,15 @@ where
 
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Constructs a block template for the next block in the ledger.
+    ///
+    /// # Concurrency
+    /// This function assumes that `previous_block` is identical to [`Self::current_block`]. To ensure this,
+    /// you should hold a read (or write) lock to the latter while calling this function.
+    /// Otherwise, it would be possible that the state root is inconsistent with the previous block, and for the
+    /// returned block template to be invalid.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
     #[allow(clippy::type_complexity)]
     fn construct_block_template<R: Rng + CryptoRng>(
         &self,
@@ -216,17 +265,23 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         candidate_solutions: Vec<Solution<N>>,
         candidate_transactions: Vec<Transaction<N>>,
         rng: &mut R,
-    ) -> Result<(Header<N>, Ratifications<N>, Solutions<N>, Vec<SolutionID<N>>, Transactions<N>, Vec<N::TransactionID>)>
-    {
+    ) -> Result<
+        (Header<N>, Ratifications<N>, Solutions<N>, Vec<SolutionID<N>>, Transactions<N>, Vec<N::TransactionID>),
+        CheckBlockError<N>,
+    > {
         // Construct the solutions.
         let (solutions, aborted_solutions, solutions_root, combined_proof_target) = match candidate_solutions.is_empty()
         {
             true => (None, vec![], Field::<N>::zero(), 0u128),
             false => {
-                // Retrieve the latest epoch hash.
-                let latest_epoch_hash = self.latest_epoch_hash()?;
+                // Retrieve the latest epoch hash directly from the previous block.
+                // (so we avoid read-locking current_block again)
+                let latest_epoch_hash = match self.current_epoch_hash.read().as_ref() {
+                    Some(epoch_hash) => *epoch_hash,
+                    None => self.get_epoch_hash(previous_block.height())?,
+                };
                 // Retrieve the latest proof target.
-                let latest_proof_target = self.latest_proof_target();
+                let latest_proof_target = previous_block.proof_target();
                 // Separate the candidate solutions into valid and aborted solutions.
                 let mut accepted_solutions: IndexMap<Address<N>, u64> = IndexMap::new();
                 let (valid_candidate_solutions, aborted_candidate_solutions) =
@@ -234,7 +289,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                         let prover_address = solution.address();
                         let num_accepted_solutions = accepted_solutions.get(&prover_address).copied().unwrap_or(0);
                         // Check if the prover has reached their solution limit.
-                        if self.is_solution_limit_reached(&prover_address, num_accepted_solutions) {
+                        if self.is_solution_limit_reached_at_timestamp(
+                            &prover_address,
+                            num_accepted_solutions,
+                            previous_block.timestamp(),
+                        ) {
                             return false;
                         }
                         // Check if the solution is valid and update the number of accepted solutions.
@@ -286,7 +345,16 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         // Compute the next round number.
         let next_round = match subdag {
-            Some(subdag) => subdag.anchor_round(),
+            Some(subdag) => {
+                if previous_block.round() >= subdag.anchor_round() {
+                    return Err(CheckBlockError::InvalidRound {
+                        new: subdag.anchor_round(),
+                        previous: previous_block.round(),
+                    });
+                }
+
+                subdag.anchor_round()
+            }
             None => previous_block.round().saturating_add(1),
         };
         // Compute the next height.
@@ -317,6 +385,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             next_last_coinbase_target,
             next_last_coinbase_timestamp,
         ) = to_next_targets::<N>(
+            N::CONSENSUS_VERSION(next_height)?,
             latest_cumulative_proof_target,
             combined_proof_target,
             latest_coinbase_target,
@@ -332,21 +401,33 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             next_timestamp,
             N::GENESIS_TIMESTAMP,
             N::STARTING_SUPPLY,
-            N::ANCHOR_TIME,
+            N::REWARD_ANCHOR_TIME,
             N::ANCHOR_HEIGHT,
             N::BLOCK_TIME,
             combined_proof_target,
-            u64::try_from(latest_cumulative_proof_target)?,
+            u64::try_from(latest_cumulative_proof_target)
+                .map_err(|e| anyhow!("Failed to convert cumulative proof target to u64 - {e}"))?,
             latest_coinbase_target,
         )?;
 
+        // Determine if the block timestamp should be included.
+        let next_block_timestamp =
+            (next_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default()).then_some(next_timestamp);
+        let (block_spend_limit, block_synthesis_limit) = if let Some(subdag) = subdag {
+            (subdag.spend_limit(next_height), subdag.synthesis_limit(next_height))
+        } else {
+            (None, None)
+        };
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
             next_round,
             next_height,
+            next_block_timestamp,
             next_cumulative_weight,
             next_cumulative_proof_target,
             previous_block.hash(),
+            block_spend_limit,
+            block_synthesis_limit,
         )?;
         // Speculate over the ratifications, solutions, and transactions.
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = self.vm.speculate(

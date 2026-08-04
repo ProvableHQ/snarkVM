@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,7 +34,7 @@ impl<N: Network> FromBytes for Ratifications<N> {
         // Read the ratifications.
         let ratifications = (0..num_ratify).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
         // Return the ratifications.
-        Self::try_from(ratifications).map_err(error)
+        Self::try_from(ratifications).map_err(into_io_error)
     }
 }
 

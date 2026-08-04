@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,10 +38,6 @@ pub mod sonic_pc;
 /// Errors pertaining to query sets.
 pub mod error;
 pub use error::*;
-
-/// A random number generator that bypasses some limitations of the Rust borrow
-/// checker.
-pub mod optional_rng;
 
 #[cfg(test)]
 pub mod test_templates;

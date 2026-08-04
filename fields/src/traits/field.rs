@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -119,11 +119,8 @@ pub trait Field:
     /// Squares `self` in place.
     fn square_in_place(&mut self) -> &mut Self;
 
-    fn sum_of_products<'a>(
-        a: impl Iterator<Item = &'a Self> + Clone,
-        b: impl Iterator<Item = &'a Self> + Clone,
-    ) -> Self {
-        a.zip(b).map(|(a, b)| *a * b).sum::<Self>()
+    fn sum_of_products<'a>(a: &'a [Self], b: &'a [Self]) -> Self {
+        a.iter().zip(b).map(|(a, b)| *a * b).sum::<Self>()
     }
 
     /// Computes the multiplicative inverse of `self` if `self` is nonzero.
@@ -141,26 +138,22 @@ pub trait Field:
     /// least significant limb first.
     #[must_use]
     fn pow<S: AsRef<[u64]>>(&self, exp: S) -> Self {
-        let mut res = Self::one();
+        let mut bits = BitIteratorBE::new_without_leading_zeros(exp);
 
-        let mut found_one = false;
+        if bits.next().is_none() {
+            Self::one()
+        } else {
+            let mut res = *self;
 
-        for i in BitIteratorBE::new(exp) {
-            if !found_one {
-                if i {
-                    found_one = true;
-                } else {
-                    continue;
+            for bit in bits {
+                res.square_in_place();
+
+                if bit {
+                    res *= self;
                 }
             }
-
-            res.square_in_place();
-
-            if i {
-                res *= self;
-            }
+            res
         }
-        res
     }
 
     /// Returns a field element if the set of bytes forms a valid field element,

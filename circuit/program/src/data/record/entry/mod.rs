@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,10 +17,11 @@ mod equal;
 mod find;
 mod num_randomizers;
 mod to_bits;
+mod to_fields;
 
 use crate::{Access, Ciphertext, Plaintext, Visibility};
 use snarkvm_circuit_network::Aleo;
-use snarkvm_circuit_types::{Boolean, environment::prelude::*};
+use snarkvm_circuit_types::{Boolean, Field, environment::prelude::*};
 
 /// An entry stored in program data.
 #[derive(Clone)]
@@ -33,7 +34,6 @@ pub enum Entry<A: Aleo, Private: Visibility<A>> {
     Private(Private),
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Inject for Entry<A, Plaintext<A>> {
     type Primitive = console::Entry<A::Network, console::Plaintext<A::Network>>;
 
@@ -47,7 +47,6 @@ impl<A: Aleo> Inject for Entry<A, Plaintext<A>> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Inject for Entry<A, Ciphertext<A>> {
     type Primitive = console::Entry<A::Network, console::Ciphertext<A::Network>>;
 
@@ -61,7 +60,6 @@ impl<A: Aleo> Inject for Entry<A, Ciphertext<A>> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Eject for Entry<A, Plaintext<A>> {
     type Primitive = console::Entry<A::Network, console::Plaintext<A::Network>>;
 
@@ -84,7 +82,6 @@ impl<A: Aleo> Eject for Entry<A, Plaintext<A>> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Eject for Entry<A, Ciphertext<A>> {
     type Primitive = console::Entry<A::Network, console::Ciphertext<A::Network>>;
 

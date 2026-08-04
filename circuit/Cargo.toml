@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-circuit"
-version = "3.8.0"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Circuits for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -21,35 +21,30 @@ categories = [
 ]
 include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 save_r1cs_hashes = [ "snarkvm-circuit-environment/save_r1cs_hashes" ]
+dev-print = ["snarkvm-circuit-environment/dev-print"]
+test = [ "snarkvm-circuit-environment/test" ]
 
 [dependencies.snarkvm-circuit-account]
-path = "./account"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm-circuit-algorithms]
-path = "./algorithms"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm-circuit-collections]
-path = "./collections"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm-circuit-environment]
-path = "./environment"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm-circuit-network]
-path = "./network"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm-circuit-program]
-path = "./program"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm-circuit-types]
-path = "./types"
-version = "=3.8.0"
+workspace = true

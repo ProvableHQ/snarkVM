@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +29,14 @@ impl<N: Network> FromBytes for Execution<N> {
         // Ensure the number of transitions is nonzero.
         if num_transitions == 0 {
             return Err(error("Execution (from 'read_le') has no transitions"));
+        }
+        // Ensure the number of transitions is within bounds.
+        if num_transitions as usize > Transaction::<N>::MAX_TRANSITIONS {
+            return Err(error(format!(
+                "Execution (from 'read_le') has too many transitions ({} > {})",
+                num_transitions,
+                Transaction::<N>::MAX_TRANSITIONS
+            )));
         }
         // Read the transitions.
         let transitions =
@@ -82,7 +90,7 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Construct a new execution.
-        let expected = crate::transaction::execution::test_helpers::sample_execution(rng);
+        let expected = crate::transaction::execution::test_helpers::sample_execution(rng, 0);
 
         // Check the byte representation.
         let expected_bytes = expected.to_bytes_le()?;

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -40,11 +40,12 @@ impl<N: Network> Serialize for InputID<N> {
                     input.serialize_field("id", &id)?;
                     input.end()
                 }
-                Self::Record(commitment, gamma, serial_number, tag) => {
+                Self::Record(commitment, gamma, record_view_key, serial_number, tag) => {
                     let mut input = serializer.serialize_struct("InputID", 5)?;
                     input.serialize_field("type", "record")?;
                     input.serialize_field("commitment", &commitment)?;
                     input.serialize_field("gamma", &gamma)?;
+                    input.serialize_field("record_view_key", &record_view_key)?;
                     input.serialize_field("serial_number", &serial_number)?;
                     input.serialize_field("tag", &tag)?;
                     input.end()
@@ -52,6 +53,12 @@ impl<N: Network> Serialize for InputID<N> {
                 Self::ExternalRecord(id) => {
                     let mut input = serializer.serialize_struct("InputID", 2)?;
                     input.serialize_field("type", "external_record")?;
+                    input.serialize_field("id", &id)?;
+                    input.end()
+                }
+                Self::DynamicRecord(id) => {
+                    let mut input = serializer.serialize_struct("InputID", 2)?;
+                    input.serialize_field("type", "record_dynamic")?;
                     input.serialize_field("id", &id)?;
                     input.end()
                 }
@@ -76,11 +83,15 @@ impl<'de, N: Network> Deserialize<'de> for InputID<N> {
                     Some("record") => InputID::Record(
                         DeserializeExt::take_from_value::<D>(&mut input, "commitment")?,
                         DeserializeExt::take_from_value::<D>(&mut input, "gamma")?,
+                        DeserializeExt::take_from_value::<D>(&mut input, "record_view_key")?,
                         DeserializeExt::take_from_value::<D>(&mut input, "serial_number")?,
                         DeserializeExt::take_from_value::<D>(&mut input, "tag")?,
                     ),
                     Some("external_record") => {
                         InputID::ExternalRecord(DeserializeExt::take_from_value::<D>(&mut input, "id")?)
+                    }
+                    Some("record_dynamic") => {
+                        InputID::DynamicRecord(DeserializeExt::take_from_value::<D>(&mut input, "id")?)
                     }
                     _ => return Err(de::Error::custom("Invalid input type")),
                 };
@@ -103,8 +114,9 @@ mod tests {
         "{\"type\":\"constant\",\"id\":\"5field\"}",
         "{\"type\":\"public\",\"id\":\"0field\"}",
         "{\"type\":\"private\",\"id\":\"123field\"}",
-        "{\"type\":\"record\",\"commitment\":\"123123field\",\"tag\":\"0field\",\"serial_number\":\"123456789field\",\"gamma\":\"0group\"}",
+        "{\"type\":\"record\",\"commitment\":\"123123field\",\"tag\":\"0field\",\"record_view_key\":\"0field\",\"serial_number\":\"123456789field\",\"gamma\":\"0group\"}",
         "{\"type\":\"external_record\",\"id\":\"123456789field\"}",
+        "{\"type\":\"record_dynamic\",\"id\":\"987654321field\"}",
     ];
 
     fn check_serde_json<

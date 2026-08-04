@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,8 +36,7 @@ impl<N: Network> Package<N> {
         // Prepare the locator (even if logging is disabled, to sanity check the locator is well-formed).
         let _locator = Locator::<N>::from_str(&format!("{program_id}/{function_name}"))?;
 
-        #[cfg(feature = "aleo-cli")]
-        println!("🚀 Running '{}'...\n", _locator.to_string().bold());
+        dev_println!("🚀 Running '{}'...\n", _locator.to_string());
 
         // Construct the process.
         let process = self.get_process()?;
@@ -54,7 +53,9 @@ impl<N: Network> Package<N> {
         // Initialize the call stack.
         let call_stack = CallStack::PackageRun(vec![request], *private_key, assignments.clone());
         // Synthesize the circuit.
-        let response = stack.execute_function::<A, R>(call_stack, None, None, rng)?;
+        let Some(response) = stack.execute_function::<A, R>(call_stack, None, None, rng)? else {
+            bail!("Response should be present in `PackageRun` mode.");
+        };
         // Retrieve the call metrics.
         let call_metrics = assignments.read().iter().map(|(_, metrics)| *metrics).collect::<Vec<_>>();
         // Return the response and call metrics.

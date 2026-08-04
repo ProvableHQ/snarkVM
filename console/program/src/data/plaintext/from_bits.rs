@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,16 +59,16 @@ impl<N: Network> Plaintext<N> {
         let variant = [variant[0], variant[1]];
 
         // Literal
-        if variant == [false, false] {
+        if variant == PlaintextType::<N>::LITERAL_PREFIX_BITS {
             let literal_variant = u8::from_bits_le(next_bits(8)?)?;
             let literal_size = u16::from_bits_le(next_bits(16)?)?;
             let literal = Literal::from_bits_le(literal_variant, next_bits(literal_size as usize)?)?;
 
             // Cache the plaintext bits, and return the literal.
-            Ok(Self::Literal(literal, OnceCell::with_value(bits_le.to_vec())))
+            Ok(Self::Literal(literal, bits_le.to_vec().into()))
         }
         // Struct
-        else if variant == [false, true] {
+        else if variant == PlaintextType::<N>::STRUCT_PREFIX_BITS {
             let num_members = u8::from_bits_le(next_bits(8)?)?;
             if num_members as usize > N::MAX_STRUCT_ENTRIES {
                 bail!("Struct exceeds maximum of entries.");
@@ -88,12 +88,12 @@ impl<N: Network> Plaintext<N> {
             }
 
             // Cache the plaintext bits, and return the struct.
-            Ok(Self::Struct(members, OnceCell::with_value(bits_le.to_vec())))
+            Ok(Self::Struct(members, bits_le.to_vec().into()))
         }
         // Array
-        else if variant == [true, false] {
+        else if variant == PlaintextType::<N>::ARRAY_PREFIX_BITS {
             let num_elements = u32::from_bits_le(next_bits(32)?)?;
-            if num_elements as usize > N::MAX_ARRAY_ELEMENTS {
+            if num_elements as usize > N::LATEST_MAX_ARRAY_ELEMENTS() {
                 bail!("Array exceeds maximum of elements.");
             }
 
@@ -106,7 +106,7 @@ impl<N: Network> Plaintext<N> {
             }
 
             // Cache the plaintext bits, and return the array.
-            Ok(Self::Array(elements, OnceCell::with_value(bits_le.to_vec())))
+            Ok(Self::Array(elements, bits_le.to_vec().into()))
         }
         // Unknown variant.
         else {
@@ -145,16 +145,16 @@ impl<N: Network> Plaintext<N> {
         let variant = [variant[0], variant[1]];
 
         // Literal
-        if variant == [false, false] {
+        if variant == PlaintextType::<N>::LITERAL_PREFIX_BITS {
             let literal_variant = u8::from_bits_be(next_bits(8)?)?;
             let literal_size = u16::from_bits_be(next_bits(16)?)?;
             let literal = Literal::from_bits_be(literal_variant, next_bits(literal_size as usize)?)?;
 
             // Cache the plaintext bits, and return the literal.
-            Ok(Self::Literal(literal, OnceCell::with_value(bits_be.to_vec())))
+            Ok(Self::Literal(literal, bits_be.to_vec().into()))
         }
         // Struct
-        else if variant == [false, true] {
+        else if variant == PlaintextType::<N>::STRUCT_PREFIX_BITS {
             let num_members = u8::from_bits_be(next_bits(8)?)?;
             if num_members as usize > N::MAX_STRUCT_ENTRIES {
                 bail!("Struct exceeds maximum of entries.");
@@ -171,12 +171,12 @@ impl<N: Network> Plaintext<N> {
             }
 
             // Cache the plaintext bits, and return the struct.
-            Ok(Self::Struct(members, OnceCell::with_value(bits_be.to_vec())))
+            Ok(Self::Struct(members, bits_be.to_vec().into()))
         }
         // Array
-        else if variant == [true, false] {
+        else if variant == PlaintextType::<N>::ARRAY_PREFIX_BITS {
             let num_elements = u32::from_bits_be(next_bits(32)?)?;
-            if num_elements as usize > N::MAX_ARRAY_ELEMENTS {
+            if num_elements as usize > N::LATEST_MAX_ARRAY_ELEMENTS() {
                 bail!("Array exceeds maximum of elements.");
             }
 
@@ -189,7 +189,7 @@ impl<N: Network> Plaintext<N> {
             }
 
             // Cache the plaintext bits, and return the array.
-            Ok(Self::Array(elements, OnceCell::with_value(bits_be.to_vec())))
+            Ok(Self::Array(elements, bits_be.to_vec().into()))
         }
         // Unknown variant.
         else {

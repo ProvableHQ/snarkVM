@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Mode, helpers::Constraint, *};
+use crate::{ConstraintUnsatisfied, Mode, helpers::Constraint, *};
 
 use core::{
     cell::{Cell, RefCell},
@@ -25,6 +25,7 @@ type Field = <console::TestnetV0 as console::Environment>::Field;
 thread_local! {
     static VARIABLE_LIMIT: Cell<Option<u64>> = const { Cell::new(None) };
     static CONSTRAINT_LIMIT: Cell<Option<u64>> = const { Cell::new(None) };
+    static NON_ZERO_LIMIT: Cell<Option<(u64, u64, u64)>> = const { Cell::new(None) };
     pub(super) static TESTNET_CIRCUIT: RefCell<R1CS<Field>> = RefCell::new(R1CS::new());
     static IN_WITNESS: Cell<bool> = const { Cell::new(false) };
     static ZERO: LinearCombination<Field> = LinearCombination::zero();
@@ -58,6 +59,8 @@ impl Environment for TestnetCircuit {
                 // Ensure that we do not surpass the variable limit for the circuit.
                 VARIABLE_LIMIT.with(|variable_limit| {
                     if let Some(limit) = variable_limit.get() {
+                        // Note: because we check > here, one could theoretically construct a
+                        // circuit with variable_limit + 1 variables.
                         if Self::num_variables() > limit {
                             Self::halt(format!("Surpassed the variable limit ({limit})"))
                         }
@@ -122,7 +125,7 @@ impl Environment for TestnetCircuit {
     }
 
     /// Adds one constraint enforcing that `(A * B) == C`.
-    fn enforce<Fn, A, B, C>(constraint: Fn)
+    fn enforce<Fn, A, B, C>(constraint: Fn) -> Result<(), ConstraintUnsatisfied>
     where
         Fn: FnOnce() -> (A, B, C),
         A: Into<LinearCombination<Self::BaseField>>,
@@ -136,6 +139,8 @@ impl Environment for TestnetCircuit {
                     // Ensure that we do not surpass the constraint limit for the circuit.
                     CONSTRAINT_LIMIT.with(|constraint_limit| {
                         if let Some(limit) = constraint_limit.get() {
+                            // Note: because we check > here, one could theoretically construct a
+                            // circuit with constraint_limit + 1 constraints.
                             if circuit.borrow().num_constraints() > limit {
                                 Self::halt(format!("Surpassed the constraint limit ({limit})"))
                             }
@@ -149,28 +154,40 @@ impl Environment for TestnetCircuit {
                     match a.is_constant() && b.is_constant() && c.is_constant() {
                         true => {
                             // Evaluate the constant constraint.
-                            assert_eq!(
-                                a.value() * b.value(),
-                                c.value(),
-                                "Constant constraint failed: ({a} * {b}) =?= {c}"
-                            );
-
-                            // match self.counter.scope().is_empty() {
-                            //     true => println!("Enforced constraint with constant terms: ({} * {}) =?= {}", a, b, c),
-                            //     false => println!(
-                            //         "Enforced constraint with constant terms ({}): ({} * {}) =?= {}",
-                            //         self.counter.scope(), a, b, c
-                            //     ),
-                            // }
+                            if a.value() * b.value() != c.value() {
+                                return Err(ConstraintUnsatisfied {
+                                    a: a.to_string(),
+                                    b: b.to_string(),
+                                    c: c.to_string(),
+                                });
+                            }
                         }
                         false => {
                             // Construct the constraint object.
                             let constraint = Constraint(circuit.borrow().scope(), a, b, c);
+
+                            // Ensure that we do not surpass the density limit for the circuit.
+                            NON_ZERO_LIMIT.with(|non_zero_limit| {
+                                if let Some((limit_a, limit_b, limit_c)) = non_zero_limit.get() {
+                                    let (curr_d_a, curr_d_b, curr_d_c) = circuit.borrow().num_nonzeros();
+                                    let (d_a, d_b, d_c) = constraint.num_nonzeros();
+                                    if curr_d_a.saturating_add(d_a) > limit_a
+                                        || curr_d_b.saturating_add(d_b) > limit_b
+                                        || curr_d_c.saturating_add(d_c) > limit_c
+                                    {
+                                        Self::halt(format!(
+                                            "Surpassed the circuit density limit (A: {limit_a}, B: {limit_b}, C: {limit_c}). Was ({curr_d_a}, {curr_d_b}, {curr_d_c}) before, tried to add ({d_a}, {d_b}, {d_c})"
+                                        ))
+                                    }
+                                }
+                            });
+
                             // Append the constraint.
                             circuit.borrow_mut().enforce(constraint)
                         }
                     }
-                });
+                    Ok(())
+                })
             } else {
                 Self::halt("Tried to add a new constraint in witness mode")
             }
@@ -262,6 +279,16 @@ impl Environment for TestnetCircuit {
         CONSTRAINT_LIMIT.with(|current_limit| current_limit.replace(limit));
     }
 
+    /// Returns the density limit for the circuit, if one exists.
+    fn get_non_zero_limit() -> Option<(u64, u64, u64)> {
+        NON_ZERO_LIMIT.with(|current_limit| current_limit.get())
+    }
+
+    /// Sets the density limit for the circuit.
+    fn set_non_zero_limit(limit: Option<(u64, u64, u64)>) {
+        NON_ZERO_LIMIT.with(|current_limit| current_limit.replace(limit));
+    }
+
     /// Halts the program from further synthesis, evaluation, and execution in the current environment.
     fn halt<S: Into<String>, T>(message: S) -> T {
         let error = message.into();
@@ -298,6 +325,8 @@ impl Environment for TestnetCircuit {
             Self::set_variable_limit(None);
             // Reset the constraint limit.
             Self::set_constraint_limit(None);
+            // Reset the density limit.
+            Self::set_non_zero_limit(None);
             // Eject the R1CS instance.
             let r1cs = circuit.replace(R1CS::<<Self as Environment>::BaseField>::new());
             // Ensure the circuit is now empty.
@@ -320,6 +349,8 @@ impl Environment for TestnetCircuit {
             Self::set_variable_limit(None);
             // Reset the constraint limit.
             Self::set_constraint_limit(None);
+            // Reset the density limit.
+            Self::set_non_zero_limit(None);
             // Eject the R1CS instance.
             let r1cs = circuit.replace(R1CS::<<Self as Environment>::BaseField>::new());
             assert_eq!(0, circuit.borrow().num_constants());
@@ -341,6 +372,8 @@ impl Environment for TestnetCircuit {
             Self::set_variable_limit(None);
             // Reset the constraint limit.
             Self::set_constraint_limit(None);
+            // Reset the density limit.
+            Self::set_non_zero_limit(None);
             // Reset the circuit.
             *circuit.borrow_mut() = R1CS::<<Self as Environment>::BaseField>::new();
             assert_eq!(0, circuit.borrow().num_constants());

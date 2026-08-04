@@ -36,3 +36,6 @@ finalize goodbye:
     input r1 as u32.public;
     add r0 r1 into r2;
     assert.neq r1 r2;
+    
+constructor:
+    assert.eq edition 0u16;

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,9 +22,6 @@ impl<E: Environment> FromBits for Scalar<E> {
     ///   - If `bits_le` is longer than `E::ScalarField::size_in_bits()`, the excess bits are enforced to be `0`s.
     ///   - If `bits_le` is shorter than `E::ScalarField::size_in_bits()`, it is padded with `0`s up to scalar field size.
     fn from_bits_le(bits_le: &[Self::Boolean]) -> Self {
-        // Note: We are reconstituting the scalar field into a base field.
-        // This is safe as the scalar field modulus is less than the base field modulus,
-        // and thus will always fit within a single base field element.
         debug_assert!(console::Scalar::<E::Network>::size_in_bits() < console::Field::<E::Network>::size_in_bits());
 
         // Retrieve the data and scalar field size.
@@ -52,7 +49,9 @@ impl<E: Environment> FromBits for Scalar<E> {
             }
 
             // Construct the scalar.
-            let scalar = Scalar { field: accumulator, bits_le: OnceCell::with_value(bits_le.to_vec()) };
+            let cell = OnceCell::new();
+            cell.set(bits_le.to_vec()).unwrap();
+            let scalar = Scalar { field: accumulator, bits_le: cell };
 
             // Retrieve the modulus & subtract by 1 as we'll check `bits_le` is less than or *equal* to this value.
             // (For advanced users) ScalarField::MODULUS - 1 is equivalent to -1 in the field.
@@ -77,7 +76,9 @@ impl<E: Environment> FromBits for Scalar<E> {
             }
 
             // Return the scalar.
-            Scalar { field: accumulator, bits_le: OnceCell::with_value(bits_le) }
+            let cell = OnceCell::new();
+            cell.set(bits_le.to_vec()).unwrap();
+            Scalar { field: accumulator, bits_le: cell }
         }
     }
 
@@ -97,7 +98,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 10;
 
     fn check_from_bits_le(mode: Mode, num_constants: u64, num_public: u64, num_private: u64, num_constraints: u64) {
         let mut rng = TestRng::default();

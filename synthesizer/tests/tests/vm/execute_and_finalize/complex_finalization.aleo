@@ -34,6 +34,9 @@ finalize c:
     get.or_use counts[r0] 0u64 into r1;
     add r1 1u64 into r2;
     set r2 into counts[r0];
+    
+constructor:
+    assert.eq edition 0u16;
 
 /////////////////////////////////////////////////
 
@@ -51,6 +54,9 @@ finalize d:
     get.or_use counts[r0] 0u64 into r1;
     add r1 1u64 into r2;
     set r2 into counts[r0];
+    
+constructor:
+    assert.eq edition 0u16;
 
 /////////////////////////////////////////////////
 
@@ -77,6 +83,9 @@ finalize b:
     get.or_use counts[r2] 0u64 into r3;
     add r3 1u64 into r4;
     set r4 into counts[r2];
+    
+constructor:
+    assert.eq edition 0u16;
 
 /////////////////////////////////////////////////
 
@@ -107,6 +116,9 @@ finalize e:
     get.or_use counts[r3] 0u64 into r4;
     add r4 1u64 into r5;
     set r5 into counts[r3];
+    
+constructor:
+    assert.eq edition 0u16;
 
 /////////////////////////////////////////////////
 
@@ -147,4 +159,7 @@ finalize a:
     get.or_use counts[r2] 0u64 into r3;
     add r3 1u64 into r4;
     set r4 into counts[r2];
+    
+constructor:
+    assert.eq edition 0u16;
 

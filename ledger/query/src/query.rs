@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,73 +14,113 @@
 // limitations under the License.
 
 use crate::QueryTrait;
-use console::{
+
+use snarkvm_console::{
     network::prelude::*,
     program::{ProgramID, StatePath},
     types::Field,
 };
-use ledger_store::{BlockStorage, BlockStore};
-use synthesizer_program::Program;
+use snarkvm_ledger_block::Transaction;
+use snarkvm_ledger_store::{BlockStorage, BlockStore};
+use snarkvm_synthesizer_program::Program;
 
+use anyhow::{Context, Result};
 // ureq re-exports the `http` crate.
 use ureq::http;
 
+mod static_;
+pub use static_::StaticQuery;
+
+mod rest;
+pub use rest::RestQuery;
+
+/// Make the REST error type available public as it can be used for any API endpoint.
+pub use rest::RestError;
+
+/// Allows inspecting the state of the blockstain using either local state or a remote endpoint.
 #[derive(Clone)]
 pub enum Query<N: Network, B: BlockStorage<N>> {
-    /// The block store from the VM.
+    /// Query state in a local block store.
     VM(BlockStore<N, B>),
-    /// The base URL of the node.
-    REST(String),
+    /// Query state using a node's REST API.
+    REST(RestQuery<N>),
+    // Return static state for testing and performance.
+    STATIC(StaticQuery<N>),
 }
 
+/// Initialize the `Query` object from a local `BlockStore`.
 impl<N: Network, B: BlockStorage<N>> From<BlockStore<N, B>> for Query<N, B> {
     fn from(block_store: BlockStore<N, B>) -> Self {
         Self::VM(block_store)
     }
 }
 
+/// Initialize the `Query` object from a local `BlockStore`.
 impl<N: Network, B: BlockStorage<N>> From<&BlockStore<N, B>> for Query<N, B> {
     fn from(block_store: &BlockStore<N, B>) -> Self {
         Self::VM(block_store.clone())
     }
 }
 
-impl<N: Network, B: BlockStorage<N>> From<String> for Query<N, B> {
-    fn from(url: String) -> Self {
-        Self::REST(url)
+/// Initialize the `Query` object from an endpoint URL. The URI should point to a snarkOS node's REST API.
+impl<N: Network, B: BlockStorage<N>> From<http::Uri> for Query<N, B> {
+    fn from(uri: http::Uri) -> Self {
+        Self::REST(RestQuery::from(uri))
     }
 }
 
-impl<N: Network, B: BlockStorage<N>> From<&String> for Query<N, B> {
-    fn from(url: &String) -> Self {
-        Self::REST(url.to_string())
+/// Initialize the `Query` object from an endpoint URL (passed as a string). The URI should point to a snarkOS node's REST API.
+impl<N: Network, B: BlockStorage<N>> TryFrom<String> for Query<N, B> {
+    type Error = anyhow::Error;
+
+    fn try_from(string_representation: String) -> Result<Self> {
+        Self::try_from(string_representation.as_str())
     }
 }
 
-impl<N: Network, B: BlockStorage<N>> From<&str> for Query<N, B> {
-    fn from(url: &str) -> Self {
-        Self::REST(url.to_string())
+/// Initialize the `Query` object from an endpoint URL (passed as a string). The URI should point to a snarkOS node's REST API.
+impl<N: Network, B: BlockStorage<N>> TryFrom<&String> for Query<N, B> {
+    type Error = anyhow::Error;
+
+    fn try_from(string_representation: &String) -> Result<Self> {
+        Self::try_from(string_representation.as_str())
     }
 }
 
-#[cfg_attr(feature = "async", async_trait(?Send))]
+/// Initialize the `Query` object from an endpoint URL (passed as a string). The URI should point to a snarkOS node's REST API.
+impl<N: Network, B: BlockStorage<N>> TryFrom<&str> for Query<N, B> {
+    type Error = anyhow::Error;
+
+    fn try_from(str_representation: &str) -> Result<Self> {
+        str_representation.parse::<Self>()
+    }
+}
+
+/// Initialize the `Query` object from an endpoint URL (passed as a string). The URI should point to a snarkOS node's REST API.
+impl<N: Network, B: BlockStorage<N>> FromStr for Query<N, B> {
+    type Err = anyhow::Error;
+
+    fn from_str(str_representation: &str) -> Result<Self> {
+        // A static query is represented as JSON and a valid URI does not start with `}`.
+        if str_representation.trim().starts_with('{') {
+            let static_query =
+                str_representation.parse::<StaticQuery<N>>().with_context(|| "Failed to parse static query")?;
+            Ok(Self::STATIC(static_query))
+        } else {
+            let rest_query = RestQuery::from_str(str_representation).with_context(|| "Failed to parse query")?;
+            Ok(Self::REST(rest_query))
+        }
+    }
+}
+
+#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
 impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
     /// Returns the current state root.
     fn current_state_root(&self) -> Result<N::StateRoot> {
         match self {
             Self::VM(block_store) => Ok(block_store.current_state_root()),
-            Self::REST(url) => match N::ID {
-                console::network::MainnetV0::ID => {
-                    Ok(Self::get_request(&format!("{url}/mainnet/stateRoot/latest"))?.body_mut().read_json()?)
-                }
-                console::network::TestnetV0::ID => {
-                    Ok(Self::get_request(&format!("{url}/testnet/stateRoot/latest"))?.body_mut().read_json()?)
-                }
-                console::network::CanaryV0::ID => {
-                    Ok(Self::get_request(&format!("{url}/canary/stateRoot/latest"))?.body_mut().read_json()?)
-                }
-                _ => bail!("Unsupported network ID in inclusion query"),
-            },
+            Self::REST(query) => query.current_state_root(),
+            Self::STATIC(query) => query.current_state_root(),
         }
     }
 
@@ -89,18 +129,8 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
     async fn current_state_root_async(&self) -> Result<N::StateRoot> {
         match self {
             Self::VM(block_store) => Ok(block_store.current_state_root()),
-            Self::REST(url) => match N::ID {
-                console::network::MainnetV0::ID => {
-                    Ok(Self::get_request_async(&format!("{url}/mainnet/stateRoot/latest")).await?.json().await?)
-                }
-                console::network::TestnetV0::ID => {
-                    Ok(Self::get_request_async(&format!("{url}/testnet/stateRoot/latest")).await?.json().await?)
-                }
-                console::network::CanaryV0::ID => {
-                    Ok(Self::get_request_async(&format!("{url}/canary/stateRoot/latest")).await?.json().await?)
-                }
-                _ => bail!("Unsupported network ID in inclusion query"),
-            },
+            Self::REST(query) => query.current_state_root_async().await,
+            Self::STATIC(query) => query.current_state_root_async().await,
         }
     }
 
@@ -108,18 +138,8 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
     fn get_state_path_for_commitment(&self, commitment: &Field<N>) -> Result<StatePath<N>> {
         match self {
             Self::VM(block_store) => block_store.get_state_path_for_commitment(commitment),
-            Self::REST(url) => match N::ID {
-                console::network::MainnetV0::ID => {
-                    Ok(Self::get_request(&format!("{url}/mainnet/statePath/{commitment}"))?.body_mut().read_json()?)
-                }
-                console::network::TestnetV0::ID => {
-                    Ok(Self::get_request(&format!("{url}/testnet/statePath/{commitment}"))?.body_mut().read_json()?)
-                }
-                console::network::CanaryV0::ID => {
-                    Ok(Self::get_request(&format!("{url}/canary/statePath/{commitment}"))?.body_mut().read_json()?)
-                }
-                _ => bail!("Unsupported network ID in inclusion query"),
-            },
+            Self::REST(query) => query.get_state_path_for_commitment(commitment),
+            Self::STATIC(query) => query.get_state_path_for_commitment(commitment),
         }
     }
 
@@ -128,18 +148,32 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
     async fn get_state_path_for_commitment_async(&self, commitment: &Field<N>) -> Result<StatePath<N>> {
         match self {
             Self::VM(block_store) => block_store.get_state_path_for_commitment(commitment),
-            Self::REST(url) => match N::ID {
-                console::network::MainnetV0::ID => {
-                    Ok(Self::get_request_async(&format!("{url}/mainnet/statePath/{commitment}")).await?.json().await?)
-                }
-                console::network::TestnetV0::ID => {
-                    Ok(Self::get_request_async(&format!("{url}/testnet/statePath/{commitment}")).await?.json().await?)
-                }
-                console::network::CanaryV0::ID => {
-                    Ok(Self::get_request_async(&format!("{url}/canary/statePath/{commitment}")).await?.json().await?)
-                }
-                _ => bail!("Unsupported network ID in inclusion query"),
-            },
+            Self::REST(query) => query.get_state_path_for_commitment_async(commitment).await,
+            Self::STATIC(query) => query.get_state_path_for_commitment_async(commitment).await,
+        }
+    }
+
+    /// Returns a list of state paths for the given list of `commitment`s.
+    fn get_state_paths_for_commitments(&self, commitments: &[Field<N>]) -> Result<Vec<StatePath<N>>> {
+        // Return an empty vector if there are no commitments.
+        if commitments.is_empty() {
+            return Ok(vec![]);
+        }
+
+        match self {
+            Self::VM(block_store) => block_store.get_state_paths_for_commitments(commitments),
+            Self::REST(query) => query.get_state_paths_for_commitments(commitments),
+            Self::STATIC(query) => query.get_state_paths_for_commitments(commitments),
+        }
+    }
+
+    /// Returns a list of state paths for the given list of `commitment`s.
+    #[cfg(feature = "async")]
+    async fn get_state_paths_for_commitments_async(&self, commitments: &[Field<N>]) -> Result<Vec<StatePath<N>>> {
+        match self {
+            Self::VM(block_store) => block_store.get_state_paths_for_commitments(commitments),
+            Self::REST(query) => query.get_state_paths_for_commitments_async(commitments).await,
+            Self::STATIC(query) => query.get_state_paths_for_commitments(commitments),
         }
     }
 
@@ -147,18 +181,8 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
     fn current_block_height(&self) -> Result<u32> {
         match self {
             Self::VM(block_store) => Ok(block_store.max_height().unwrap_or_default()),
-            Self::REST(url) => match N::ID {
-                console::network::MainnetV0::ID => {
-                    Ok(Self::get_request(&format!("{url}/mainnet/block/height/latest"))?.body_mut().read_json()?)
-                }
-                console::network::TestnetV0::ID => {
-                    Ok(Self::get_request(&format!("{url}/testnet/block/height/latest"))?.body_mut().read_json()?)
-                }
-                console::network::CanaryV0::ID => {
-                    Ok(Self::get_request(&format!("{url}/canary/block/height/latest"))?.body_mut().read_json()?)
-                }
-                _ => bail!("Unsupported network ID in inclusion query"),
-            },
+            Self::REST(query) => query.current_block_height(),
+            Self::STATIC(query) => query.current_block_height(),
         }
     }
 
@@ -167,41 +191,44 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
     async fn current_block_height_async(&self) -> Result<u32> {
         match self {
             Self::VM(block_store) => Ok(block_store.max_height().unwrap_or_default()),
-            Self::REST(url) => match N::ID {
-                console::network::MainnetV0::ID => {
-                    Ok(Self::get_request_async(&format!("{url}/mainnet/block/height/latest")).await?.json().await?)
-                }
-                console::network::TestnetV0::ID => {
-                    Ok(Self::get_request_async(&format!("{url}/testnet/block/height/latest")).await?.json().await?)
-                }
-                console::network::CanaryV0::ID => {
-                    Ok(Self::get_request_async(&format!("{url}/canary/block/height/latest")).await?.json().await?)
-                }
-                _ => bail!("Unsupported network ID in inclusion query"),
-            },
+            Self::REST(query) => query.current_block_height_async().await,
+            Self::STATIC(query) => query.current_block_height_async().await,
         }
     }
 }
 
 impl<N: Network, B: BlockStorage<N>> Query<N, B> {
+    /// Returns the transaction for the given transaction ID.
+    pub fn get_transaction(&self, transaction_id: &N::TransactionID) -> Result<Transaction<N>> {
+        match self {
+            Self::VM(block_store) => block_store
+                .get_transaction(transaction_id)?
+                .ok_or_else(|| anyhow!("Missing transaction '{transaction_id}' in block storage")),
+            Self::REST(query) => query.get_transaction(transaction_id),
+            Self::STATIC(_query) => bail!("get_transaction is not supported by StaticQuery"),
+        }
+    }
+
+    /// Returns the transaction for the given transaction ID.
+    #[cfg(feature = "async")]
+    pub async fn get_transaction_async(&self, transaction_id: &N::TransactionID) -> Result<Transaction<N>> {
+        match self {
+            Self::VM(block_store) => block_store
+                .get_transaction(transaction_id)?
+                .ok_or_else(|| anyhow!("Missing transaction '{transaction_id}' in block storage")),
+            Self::REST(query) => query.get_transaction_async(transaction_id).await,
+            Self::STATIC(_query) => bail!("get_transaction is not supported by StaticQuery"),
+        }
+    }
+
     /// Returns the program for the given program ID.
     pub fn get_program(&self, program_id: &ProgramID<N>) -> Result<Program<N>> {
         match self {
-            Self::VM(block_store) => {
-                block_store.get_program(program_id)?.ok_or_else(|| anyhow!("Program {program_id} not found in storage"))
-            }
-            Self::REST(url) => match N::ID {
-                console::network::MainnetV0::ID => {
-                    Ok(Self::get_request(&format!("{url}/mainnet/program/{program_id}"))?.body_mut().read_json()?)
-                }
-                console::network::TestnetV0::ID => {
-                    Ok(Self::get_request(&format!("{url}/testnet/program/{program_id}"))?.body_mut().read_json()?)
-                }
-                console::network::CanaryV0::ID => {
-                    Ok(Self::get_request(&format!("{url}/canary/program/{program_id}"))?.body_mut().read_json()?)
-                }
-                _ => bail!("Unsupported network ID in inclusion query"),
-            },
+            Self::VM(block_store) => block_store
+                .get_latest_program(program_id)?
+                .ok_or_else(|| anyhow!("Program {program_id} not found in storage")),
+            Self::REST(query) => query.get_program(program_id),
+            Self::STATIC(_query) => bail!("get_program is not supported by StaticQuery"),
         }
     }
 
@@ -209,34 +236,56 @@ impl<N: Network, B: BlockStorage<N>> Query<N, B> {
     #[cfg(feature = "async")]
     pub async fn get_program_async(&self, program_id: &ProgramID<N>) -> Result<Program<N>> {
         match self {
-            Self::VM(block_store) => {
-                block_store.get_program(program_id)?.ok_or_else(|| anyhow!("Program {program_id} not found in storage"))
-            }
-            Self::REST(url) => match N::ID {
-                console::network::MainnetV0::ID => {
-                    Ok(Self::get_request_async(&format!("{url}/mainnet/program/{program_id}")).await?.json().await?)
-                }
-                console::network::TestnetV0::ID => {
-                    Ok(Self::get_request_async(&format!("{url}/testnet/program/{program_id}")).await?.json().await?)
-                }
-                console::network::CanaryV0::ID => {
-                    Ok(Self::get_request_async(&format!("{url}/canary/program/{program_id}")).await?.json().await?)
-                }
-                _ => bail!("Unsupported network ID in inclusion query"),
-            },
+            Self::VM(block_store) => block_store
+                .get_latest_program(program_id)?
+                .with_context(|| format!("Program {program_id} not found in storage")),
+            Self::REST(query) => query.get_program_async(program_id).await,
+            Self::STATIC(_query) => bail!("get_program_async is not supported by StaticQuery"),
         }
     }
+}
 
-    /// Performs a GET request to the given URL.
-    fn get_request(url: &str) -> Result<http::Response<ureq::Body>> {
-        let response = ureq::get(url).call()?;
-        if response.status() == http::StatusCode::OK { Ok(response) } else { bail!("Failed to fetch from {url}") }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use snarkvm_console::network::TestnetV0;
+    use snarkvm_ledger_store::helpers::memory::BlockMemory;
+
+    type CurrentNetwork = TestnetV0;
+    type CurrentQuery = Query<CurrentNetwork, BlockMemory<CurrentNetwork>>;
+
+    #[test]
+    fn test_static_query_parse() {
+        let json = r#"{"state_root": "sr1dz06ur5spdgzkguh4pr42mvft6u3nwsg5drh9rdja9v8jpcz3czsls9geg", "height": 14}"#
+            .to_string();
+        let query = CurrentQuery::try_from(json).unwrap();
+
+        assert!(matches!(query, Query::STATIC(_)));
     }
 
-    /// Performs a GET request to the given URL.
-    #[cfg(feature = "async")]
-    async fn get_request_async(url: &str) -> Result<reqwest::Response> {
-        let response = reqwest::get(url).await?;
-        if response.status() == http::StatusCode::OK { Ok(response) } else { bail!("Failed to fetch from {url}") }
+    #[test]
+    fn test_static_query_parse_invalid() {
+        let json = r#"{"invalid_key": "sr1dz06ur5spdgzkguh4pr42mvft6u3nwsg5drh9rdja9v8jpcz3czsls9geg", "height": 14}"#
+            .to_string();
+        let result = json.parse::<CurrentQuery>();
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rest_url_parse_invalid_scheme() {
+        let str = "ftp://localhost:3030";
+        let result = CurrentQuery::try_from(str);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rest_url_parse_invalid_host() {
+        let str = "http://:3030";
+        let result = CurrentQuery::try_from(str);
+
+        assert!(result.is_err());
     }
 }

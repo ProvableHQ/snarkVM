@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +15,7 @@
 
 use super::*;
 
-impl<N: Network, Instruction: InstructionTrait<N>> Parser for ClosureCore<N, Instruction> {
+impl<N: Network> Parser for ClosureCore<N> {
     /// Parses a string into a closure.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
@@ -50,7 +50,7 @@ impl<N: Network, Instruction: InstructionTrait<N>> Parser for ClosureCore<N, Ins
     }
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>> FromStr for ClosureCore<N, Instruction> {
+impl<N: Network> FromStr for ClosureCore<N> {
     type Err = Error;
 
     /// Returns a closure from a string literal.
@@ -67,14 +67,14 @@ impl<N: Network, Instruction: InstructionTrait<N>> FromStr for ClosureCore<N, In
     }
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>> Debug for ClosureCore<N, Instruction> {
+impl<N: Network> Debug for ClosureCore<N> {
     /// Prints the closure as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>> Display for ClosureCore<N, Instruction> {
+impl<N: Network> Display for ClosureCore<N> {
     /// Prints the closure as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Write the closure to a string.

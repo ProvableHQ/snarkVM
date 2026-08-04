@@ -1,12 +1,12 @@
 [package]
 name = "snarkvm-console-algorithms"
-version = "3.8.0"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Console algorithms for a decentralized virtual machine"
 homepage = "https://aleo.org"
 repository = "https://github.com/ProvableHQ/snarkVM"
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [[bench]]
 name = "bhp"
@@ -14,8 +14,8 @@ path = "benches/bhp.rs"
 harness = false
 
 [[bench]]
-name = "poseidon"
-path = "benches/poseidon.rs"
+name = "ecdsa"
+path = "benches/ecdsa.rs"
 harness = false
 
 [[bench]]
@@ -23,27 +23,44 @@ name = "elligator2"
 path = "benches/elligator2.rs"
 harness = false
 
+[[bench]]
+name = "keccak"
+path = "benches/keccak.rs"
+harness = false
+
+[[bench]]
+name = "poseidon"
+path = "benches/poseidon.rs"
+harness = false
+
 [dependencies.snarkvm-console-types]
-path = "../types"
-version = "=3.8.0"
-default-features = false
+workspace = true
 features = [ "field", "group", "integers", "scalar" ]
 
 [dependencies.snarkvm-fields]
-path = "../../fields"
-version = "=3.8.0"
-default-features = false
+workspace = true
 
 [dependencies.snarkvm-utilities]
-path = "../../utilities"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.blake2s_simd]
 version = "1.0"
 
+[dependencies.hex]
+version = "0.4"
+
+[dependencies.rayon]
+workspace = true
+
+[dependencies.k256]
+workspace = true
+
+[dependencies.serde]
+workspace = true
+features = ["rc"]
+
 [dependencies.smallvec]
-version = "1.11"
-default-features = false
+workspace = true
 features = [ "const_generics", "const_new" ]
 
 [dependencies.tiny-keccak]
@@ -51,21 +68,24 @@ version = "2"
 features = [ "keccak", "sha3" ]
 
 [dev-dependencies.snarkvm-curves]
-path = "../../curves"
-default-features = false
+workspace = true
+
+[dev-dependencies.bincode]
+workspace = true
 
 [dev-dependencies.criterion]
-version = "0.5.1"
+workspace = true
 
 [dev-dependencies.expect-test]
-version = "1.4"
+workspace = true
 
 [dev-dependencies.hex]
-version = "0.4"
-
-[dev-dependencies.serde]
-version = "1.0"
+workspace = true
 
 [dev-dependencies.serde_json]
-version = "1.0"
+workspace = true
 features = [ "preserve_order" ]
+
+[features]
+dev-print = [ "snarkvm-utilities/dev-print" ]
+serial = [ ]

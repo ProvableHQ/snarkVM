@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-puzzle-epoch"
-version = "3.8.0"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Epoch puzzle for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -21,11 +21,11 @@ categories = [
 ]
 include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = [ "synthesis", "rayon" ]
-serial = [ "console/serial", "snarkvm-ledger-puzzle/serial" ]
+serial = [ "snarkvm-console/serial", "snarkvm-ledger-puzzle/serial" ]
 locktick = [
   "dep:locktick",
   "snarkvm-ledger-puzzle/locktick",
@@ -34,79 +34,74 @@ locktick = [
 merkle = [ ]
 synthesis = [
   "aleo-std",
-  "circuit",
+  "snarkvm-circuit",
   "lru",
   "parking_lot",
   "snarkvm-synthesizer-process",
   "snarkvm-synthesizer-program"
 ]
 timer = [ "aleo-std/timer" ]
-wasm = [ "console/wasm" ]
+wasm = [ "snarkvm-console/wasm" ]
+dev-print = [ "snarkvm-utilities/dev-print" ]
 
-[dependencies.circuit]
-package = "snarkvm-circuit"
-path = "../../../circuit"
-version = "=3.8.0"
+[dependencies.snarkvm-circuit]
+workspace = true
 optional = true
 
-[dependencies.console]
-package = "snarkvm-console"
-path = "../../../console"
-version = "=3.8.0"
+[dependencies.snarkvm-console]
+workspace = true
 
 [dependencies.snarkvm-ledger-puzzle]
-path = "../."
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm-synthesizer-process]
-path = "../../../synthesizer/process"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [dependencies.snarkvm-synthesizer-program]
-path = "../../../synthesizer/program"
-version = "=3.8.0"
+workspace = true
 optional = true
 
+[dependencies.snarkvm-utilities]
+workspace = true
+
 [dependencies.aleo-std]
-version = "1.0.1"
-default-features = false
+workspace = true
 optional = true
 
 [dependencies.anyhow]
-version = "1.0.73"
+workspace = true
 
 [dependencies.colored]
-version = "2"
+workspace = true
 
 [dependencies.indexmap]
-version = "2.0"
+workspace = true
 features = [ "serde", "rayon" ]
 
 [dependencies.locktick]
-version = "0.3"
+workspace = true
 features = [ "parking_lot" ]
 optional = true
 
 [dependencies.lru]
-version = "0.12"
+workspace = true
 optional = true
 
 [dependencies.parking_lot]
-version = "0.12"
+workspace = true
 optional = true
 
 [dependencies.rand]
-version = "0.8"
+workspace = true
 
 [dependencies.rand_chacha]
-version = "0.3.1"
+workspace = true
 
 [dependencies.rayon]
-version = "1"
+workspace = true
 optional = true
 
-[dev-dependencies.console]
-package = "snarkvm-console"
-path = "../../../console"
+[dev-dependencies.snarkvm-console]
+workspace = true
 features = [ "test" ]

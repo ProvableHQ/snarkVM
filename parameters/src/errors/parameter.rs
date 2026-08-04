@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,12 +34,15 @@ pub enum ParameterError {
 
     #[error("{}", _0)]
     Wasm(String),
+
+    #[error("Filesystem access is disabled, enable compiler flag for feature")]
+    FilesystemDisabled,
 }
 
-#[cfg(not(feature = "wasm"))]
-impl From<curl::Error> for ParameterError {
-    fn from(error: curl::Error) -> Self {
-        ParameterError::Crate("curl::error", format!("{error:?}"))
+#[cfg(all(not(feature = "wasm"), not(target_env = "sgx")))]
+impl From<ureq::Error> for ParameterError {
+    fn from(error: ureq::Error) -> Self {
+        ParameterError::Crate("ureq", format!("{error}"))
     }
 }
 
@@ -57,6 +60,6 @@ impl From<std::path::StripPrefixError> for ParameterError {
 
 impl From<ParameterError> for std::io::Error {
     fn from(error: ParameterError) -> Self {
-        std::io::Error::new(std::io::ErrorKind::Other, format!("{error:?}"))
+        std::io::Error::other(format!("{error:?}"))
     }
 }

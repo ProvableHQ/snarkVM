@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -70,6 +70,8 @@ pub enum Literal<A: Aleo> {
     Signature(Box<Signature<A>>),
     /// The string type.
     String(StringType<A>),
+    /// The identifier literal type.
+    Identifier(Box<IdentifierLiteral<A>>),
 }
 
 macro_rules! impl_from {
@@ -97,7 +99,6 @@ impl<A: Aleo> From<Signature<A>> for Literal<A> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Inject for Literal<A> {
     type Primitive = console::Literal<A::Network>;
 
@@ -121,11 +122,13 @@ impl<A: Aleo> Inject for Literal<A> {
             Self::Primitive::Scalar(scalar) => Self::Scalar(Scalar::new(mode, scalar)),
             Self::Primitive::Signature(signature) => Self::Signature(Box::new(Signature::new(mode, *signature))),
             Self::Primitive::String(string) => Self::String(StringType::new(mode, string)),
+            Self::Primitive::Identifier(identifier) => {
+                Self::Identifier(Box::new(IdentifierLiteral::new(mode, *identifier)))
+            }
         }
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Eject for Literal<A> {
     type Primitive = console::Literal<A::Network>;
 
@@ -149,6 +152,7 @@ impl<A: Aleo> Eject for Literal<A> {
             Self::Scalar(literal) => literal.eject_mode(),
             Self::Signature(literal) => literal.eject_mode(),
             Self::String(literal) => literal.eject_mode(),
+            Self::Identifier(literal) => literal.eject_mode(),
         }
     }
 
@@ -172,11 +176,11 @@ impl<A: Aleo> Eject for Literal<A> {
             Self::Scalar(literal) => Self::Primitive::Scalar(literal.eject_value()),
             Self::Signature(literal) => Self::Primitive::Signature(Box::new(literal.eject_value())),
             Self::String(literal) => Self::Primitive::String(literal.eject_value()),
+            Self::Identifier(literal) => Self::Primitive::Identifier(Box::new(literal.eject_value())),
         }
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Parser for Literal<A> {
     /// Parses a string into a literal.
     #[inline]
@@ -199,11 +203,11 @@ impl<A: Aleo> Parser for Literal<A> {
             map(Scalar::parse, |literal| Self::Scalar(literal)),
             map(Signature::parse, |literal| Self::Signature(Box::new(literal))),
             map(StringType::parse, |literal| Self::String(literal)),
+            map(IdentifierLiteral::parse, |literal| Self::Identifier(Box::new(literal))),
         ))(string)
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> FromStr for Literal<A> {
     type Err = Error;
 
@@ -222,7 +226,6 @@ impl<A: Aleo> FromStr for Literal<A> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Literal<A> {
     /// Returns the type name of the literal.
     pub fn type_name(&self) -> &str {
@@ -244,18 +247,17 @@ impl<A: Aleo> Literal<A> {
             Self::Scalar(..) => Scalar::<A>::type_name(),
             Self::Signature(..) => Signature::<A>::type_name(),
             Self::String(..) => StringType::<A>::type_name(),
+            Self::Identifier(..) => IdentifierLiteral::<A>::type_name(),
         }
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Debug for Literal<A> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Display for Literal<A> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
@@ -276,6 +278,7 @@ impl<A: Aleo> Display for Literal<A> {
             Self::Scalar(literal) => Display::fmt(literal, f),
             Self::Signature(literal) => Display::fmt(literal, f),
             Self::String(literal) => Display::fmt(literal, f),
+            Self::Identifier(literal) => Display::fmt(literal, f),
         }
     }
 }

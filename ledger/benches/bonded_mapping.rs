@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,20 +16,20 @@
 #[macro_use]
 extern crate criterion;
 
-use console::{
+use snarkvm_console::{
     account::{Address, Field, PrivateKey},
     collections::U64,
     network::MainnetV0,
     program::{Identifier, Literal, Plaintext, ProgramID, Value},
 };
-use ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE};
-use ledger_store::ConsensusStore;
-use synthesizer::VM;
+use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE};
+use snarkvm_ledger_store::ConsensusStore;
+use snarkvm_synthesizer::VM;
 
 #[cfg(not(feature = "rocks"))]
-use ledger_store::helpers::memory::ConsensusMemory;
+use snarkvm_ledger_store::helpers::memory::ConsensusMemory;
 #[cfg(feature = "rocks")]
-use ledger_store::helpers::rocksdb::ConsensusDB;
+use snarkvm_ledger_store::helpers::rocksdb::ConsensusDB;
 
 use aleo_std::StorageMode;
 use criterion::Criterion;

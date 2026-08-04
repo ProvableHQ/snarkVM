@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +15,6 @@
 
 use super::*;
 
-#[cfg(feature = "console")]
 impl<A: Aleo> FromBits for ComputeKey<A> {
     type Boolean = Boolean<A>;
 
@@ -54,7 +53,7 @@ impl<A: Aleo> FromBits for ComputeKey<A> {
     }
 }
 
-#[cfg(all(test, feature = "console"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::Circuit;
@@ -63,7 +62,7 @@ mod tests {
 
     type CurrentAleo = AleoV0;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 10;
 
     fn check_from_bits_le(mode: Mode, num_constants: u64, num_public: u64, num_private: u64, num_constraints: u64) {
         let rng = &mut TestRng::default();

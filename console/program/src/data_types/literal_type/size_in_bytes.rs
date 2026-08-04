@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +24,6 @@ impl LiteralType {
         // Note: This upcast to u32 and downcast to u16 is safe because the size of a literal is
         // always less than or equal to u16::MAX bits, and we are dividing by 8, so the result will
         // always fit in a u16.
-        (((self.size_in_bits::<N>() as u32) + 7) / 8) as u16
+        (self.size_in_bits::<N>() as u32).div_ceil(8) as u16
     }
 }

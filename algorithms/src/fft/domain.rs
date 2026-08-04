@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,16 +37,15 @@ use snarkvm_fields::{FftField, FftParameters, Field, batch_inversion};
 use snarkvm_utilities::max_available_threads;
 use snarkvm_utilities::{execute_with_max_available_threads, serialize::*};
 
-use rand::Rng;
+use rand::RngExt;
 use std::{borrow::Cow, fmt};
 
 use anyhow::{Result, ensure};
 
-#[cfg(not(feature = "serial"))]
-use rayon::prelude::*;
-
 #[cfg(feature = "serial")]
 use itertools::Itertools;
+#[cfg(not(feature = "serial"))]
+use rayon::prelude::*;
 
 /// Returns the ceiling of the base-2 logarithm of `x`.
 ///
@@ -105,7 +104,7 @@ impl<F: FftField> fmt::Debug for EvaluationDomain<F> {
 
 impl<F: FftField> EvaluationDomain<F> {
     /// Sample an element that is *not* in the domain.
-    pub fn sample_element_outside_domain<R: Rng>(&self, rng: &mut R) -> F {
+    pub fn sample_element_outside_domain<R: RngExt>(&self, rng: &mut R) -> F {
         let mut t = F::rand(rng);
         while self.evaluate_vanishing_polynomial(t).is_zero() {
             t = F::rand(rng);
@@ -285,7 +284,7 @@ impl<F: FftField> EvaluationDomain<F> {
             }
 
             batch_inversion(u.as_mut_slice());
-            cfg_iter_mut!(u).zip_eq(ls).for_each(|(tau_minus_r, l)| {
+            cfg_iter_mut!(u, 1_000).zip_eq(ls).for_each(|(tau_minus_r, l)| {
                 *tau_minus_r = l * *tau_minus_r;
             });
             u
@@ -398,7 +397,7 @@ impl<F: FftField> EvaluationDomain<F> {
     pub fn in_order_fft_with_pc<T: DomainCoeff<F>>(&self, x_s: &[T], pc: &FFTPrecomputation<F>) -> Vec<T> {
         let mut x_s = x_s.to_vec();
         if self.size() != x_s.len() {
-            x_s.extend(core::iter::repeat(T::zero()).take(self.size() - x_s.len()));
+            x_s.extend(core::iter::repeat_n(T::zero(), self.size() - x_s.len()));
         }
         self.fft_helper_in_place_with_pc(&mut x_s, FFTOrder::II, pc);
         x_s
@@ -422,7 +421,7 @@ impl<F: FftField> EvaluationDomain<F> {
 
         let pc = self.precompute_ifft();
         self.ifft_helper_in_place_with_pc(x_s, FFTOrder::II, &pc);
-        cfg_iter_mut!(x_s).for_each(|val| *val *= self.size_inv);
+        cfg_iter_mut!(x_s, 1_000).for_each(|val| *val *= self.size_inv);
     }
 
     pub(crate) fn in_order_coset_ifft_in_place<T: DomainCoeff<F>>(&self, x_s: &mut [T]) {
@@ -500,7 +499,7 @@ impl<F: FftField> EvaluationDomain<F> {
         }
 
         self.ifft_helper_in_place_with_pc(x_s, FFTOrder::II, pre_comp);
-        cfg_iter_mut!(x_s).for_each(|val| *val *= self.size_inv);
+        cfg_iter_mut!(x_s, 1_000).for_each(|val| *val *= self.size_inv);
     }
 
     pub(crate) fn out_order_ifft_in_place_with_pc<T: DomainCoeff<F>>(
@@ -509,7 +508,7 @@ impl<F: FftField> EvaluationDomain<F> {
         pre_comp: &IFFTPrecomputation<F>,
     ) {
         self.ifft_helper_in_place_with_pc(x_s, FFTOrder::OI, pre_comp);
-        cfg_iter_mut!(x_s).for_each(|val| *val *= self.size_inv);
+        cfg_iter_mut!(x_s, 1_000).for_each(|val| *val *= self.size_inv);
     }
 
     #[allow(unused)]
@@ -634,7 +633,7 @@ impl<F: FftField> EvaluationDomain<F> {
 
         // recursive case:
         // 1. split log_powers in half
-        let (lr_lo, lr_hi) = log_powers.split_at((1 + log_powers.len()) / 2);
+        let (lr_lo, lr_hi) = log_powers.split_at(log_powers.len().div_ceil(2));
         let mut scr_lo = vec![F::default(); 1 << lr_lo.len()];
         let mut scr_hi = vec![F::default(); 1 << lr_hi.len()];
         // 2. compute each half individually
@@ -684,7 +683,7 @@ impl<F: FftField> EvaluationDomain<F> {
             // we parallelize the butterfly operation within the chunk.
 
             if gap > MIN_GAP_SIZE_FOR_PARALLELISATION && num_chunks < max_threads {
-                cfg_iter_mut!(lo).zip(hi).zip(cfg_iter!(roots).step_by(step)).for_each(g);
+                cfg_iter_mut!(lo, 1000).zip(hi).zip(cfg_iter!(roots, 1000).step_by(step)).for_each(g);
             } else {
                 lo.iter_mut().zip(hi).zip(roots.iter().step_by(step)).for_each(g);
             }
@@ -762,8 +761,8 @@ impl<F: FftField> EvaluationDomain<F> {
             // the roots lookup is done a significant amount of times
             // Which also implies a large lookup stride.
             let (roots, step) = if num_chunks >= MIN_NUM_CHUNKS_FOR_COMPACTION && gap < xi.len() / 2 {
-                cfg_iter_mut!(compacted_roots[..gap])
-                    .zip(cfg_iter!(roots_cache[..(gap * num_chunks)]).step_by(num_chunks))
+                cfg_iter_mut!(compacted_roots[..gap], 1_000)
+                    .zip(cfg_iter!(roots_cache[..(gap * num_chunks)], 1_000).step_by(num_chunks))
                     .for_each(|(a, b)| *a = *b);
                 (&compacted_roots[..gap], 1)
             } else {
@@ -942,7 +941,7 @@ mod tests {
     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
     use crate::fft::domain::FFTOrder;
     use crate::fft::{DensePolynomial, EvaluationDomain};
-    use rand::Rng;
+    use rand::RngExt;
     use snarkvm_curves::bls12_377::Fr;
     use snarkvm_fields::{FftField, Field, One, Zero};
     use snarkvm_utilities::{TestRng, Uniform};
@@ -954,7 +953,7 @@ mod tests {
             let domain = EvaluationDomain::<Fr>::new(coeffs).unwrap();
             let z = domain.vanishing_polynomial();
             for _ in 0..100 {
-                let point = rng.gen();
+                let point = rng.random();
                 assert_eq!(z.evaluate(point), domain.evaluate_vanishing_polynomial(point))
             }
         }

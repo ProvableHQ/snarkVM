@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,9 @@
 use super::*;
 use crate::helpers::{NestedMap, NestedMapRead};
 use console::prelude::{FromBytes, anyhow, cfg_into_iter};
+use snarkvm_utilities::{bytes::unchecked_deserialize, flatten_error};
 
+use anyhow::Context;
 use core::{fmt, fmt::Debug, hash::Hash, mem};
 use std::{borrow::Cow, sync::atomic::Ordering};
 use tracing::error;
@@ -59,10 +61,11 @@ impl<M: Serialize + DeserializeOwned, K: Serialize + DeserializeOwned, V: Serial
     fn create_prefixed_map(&self, map: &M) -> Result<Vec<u8>> {
         let mut raw_map = self.context.clone();
 
-        let map_size: u32 = bincode::serialized_size(&map)?.try_into()?;
+        let map_size: u32 =
+            bincode::serialized_size(&map).with_context(|| "Failed to get size of serialize map")?.try_into()?;
         raw_map.extend_from_slice(&map_size.to_le_bytes());
 
-        bincode::serialize_into(&mut raw_map, map)?;
+        bincode::serialize_into(&mut raw_map, map).with_context(|| "Failed to serialize map")?;
         Ok(raw_map)
     }
 
@@ -105,7 +108,7 @@ impl<
     'a,
     M: 'a + Copy + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
     K: 'a + Clone + Debug + PartialEq + Eq + Serialize + DeserializeOwned + Send + Sync,
-    V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned + Send + Sync,
+    V: 'a + Clone + Serialize + DeserializeOwned + Send + Sync,
 > NestedMap<'a, M, K, V> for NestedDataMap<M, K, V>
 {
     ///
@@ -201,11 +204,17 @@ impl<
         self.database.atomic_depth.fetch_add(1, Ordering::SeqCst);
 
         // Ensure that the atomic batch is empty.
-        assert!(self.atomic_batch.lock().is_empty());
+        assert!(
+            self.atomic_batch.lock().is_empty(),
+            "Cannot start an atomic batch operation while another one is already in progress"
+        );
         // Ensure that the database atomic batch is empty; skip this check if the atomic
         // writes are paused, as there may be pending operations.
         if !self.database.are_atomic_writes_paused() {
-            assert!(self.database.atomic_batch.lock().is_empty());
+            assert!(
+                self.database.atomic_batch.lock().is_empty(),
+                "Cannot start a database atomic batch operation while another one is already in progress"
+            );
         }
     }
 
@@ -324,7 +333,10 @@ impl<
 
         // Ensure that the value of `atomic_depth` doesn't overflow, meaning that all the
         // calls to `start_atomic` have corresponding calls to `finish_atomic`.
-        assert!(previous_atomic_depth != 0);
+        assert_ne!(
+            previous_atomic_depth, 0,
+            "Atomic depth underflow: finish_atomic called without corresponding start_atomic"
+        );
 
         // If we're at depth 0, it is the final call to `finish_atomic` and the
         // atomic write batch can be physically executed. This is skipped if the
@@ -335,7 +347,10 @@ impl<
             // Execute all the operations atomically.
             self.database.rocksdb.write(batch)?;
             // Ensure that the database atomic batch is empty.
-            assert!(self.database.atomic_batch.lock().is_empty());
+            assert!(
+                self.database.atomic_batch.lock().is_empty(),
+                "The database atomic batch must be empty when finishing a write batch operation"
+            );
         }
 
         Ok(())
@@ -346,7 +361,7 @@ impl<
     'a,
     M: 'a + Copy + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
     K: 'a + Clone + Debug + PartialEq + Eq + Serialize + DeserializeOwned + Send + Sync,
-    V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned + Send + Sync,
+    V: 'a + Clone + Serialize + DeserializeOwned + Send + Sync,
 > NestedMapRead<'a, M, K, V> for NestedDataMap<M, K, V>
 {
     type Iterator = NestedIter<'a, M, K, V>;
@@ -463,14 +478,15 @@ impl<
         }
 
         // Possibly deserialize the entries in parallel.
-        Ok(cfg_into_iter!(entries)
+        cfg_into_iter!(entries)
             .map(|(k, v)| {
-                let k = bincode::deserialize::<K>(&k);
-                let v = bincode::deserialize::<V>(&v);
+                let k = unchecked_deserialize::<K>(&k);
+                let v = unchecked_deserialize::<V>(&v);
 
                 k.and_then(|k| v.map(|v| (k, v)))
             })
-            .collect::<Result<_, bincode::Error>>()?)
+            .collect::<Result<_, bincode::Error>>()
+            .with_context(|| "Failed to deserialize map entries")
     }
 
     ///
@@ -520,7 +536,7 @@ impl<
     ///
     fn get_value_confirmed(&'a self, map: &M, key: &K) -> Result<Option<Cow<'a, V>>> {
         match self.get_map_key_raw(map, key) {
-            Ok(Some(bytes)) => Ok(Some(Cow::Owned(bincode::deserialize(&bytes)?))),
+            Ok(Some(bytes)) => Ok(Some(Cow::Owned(unchecked_deserialize(&bytes)?))),
             Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
@@ -597,7 +613,7 @@ pub struct NestedIter<
     'a,
     M: 'a + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned,
     K: 'a + Debug + PartialEq + Eq + Serialize + DeserializeOwned,
-    V: 'a + PartialEq + Eq + Serialize + DeserializeOwned,
+    V: 'a + Serialize + DeserializeOwned,
 > {
     db_iter: rocksdb::DBRawIterator<'a>,
     _phantom: PhantomData<(M, K, V)>,
@@ -607,7 +623,7 @@ impl<
     'a,
     M: 'a + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned,
     K: 'a + Debug + PartialEq + Eq + Serialize + DeserializeOwned,
-    V: 'a + PartialEq + Eq + Serialize + DeserializeOwned,
+    V: 'a + Serialize + DeserializeOwned,
 > NestedIter<'a, M, K, V>
 {
     pub(super) fn new(db_iter: rocksdb::DBIterator<'a>) -> Self {
@@ -619,7 +635,7 @@ impl<
     'a,
     M: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned,
     K: 'a + Clone + Debug + PartialEq + Eq + Serialize + DeserializeOwned,
-    V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned,
+    V: 'a + Clone + Serialize + DeserializeOwned,
 > Iterator for NestedIter<'a, M, K, V>
 {
     type Item = (Cow<'a, M>, Cow<'a, K>, Cow<'a, V>);
@@ -633,26 +649,29 @@ impl<
 
         // Extract the bytes belonging to the map and the key.
         let (entry_map, entry_key) = get_map_and_key(map_key)
-            .map_err(|e| {
-                error!("RocksDB NestedIter get_map_and_key error: {e}");
+            .map_err(|err| {
+                error!("{}", &flatten_error(err.context("RocksDB Iter deserialize(key) error")));
             })
             .ok()?;
 
         // Deserialize the map, key, and value.
-        let map = bincode::deserialize(entry_map)
-            .map_err(|e| {
-                error!("RocksDB NestedIter deserialize(map) error: {e}");
+        let map = unchecked_deserialize(entry_map)
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB NestedIter deserialize(map) error")));
             })
             .ok()?;
-        let key = bincode::deserialize(entry_key)
-            .map_err(|e| {
-                error!("RocksDB NestedIter deserialize(key) error: {e}");
+        let key = unchecked_deserialize(entry_key)
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB NestedIter deserialize(key) error")));
             })
             .ok()?;
         // Deserialize the value.
-        let value = bincode::deserialize(value)
-            .map_err(|e| {
-                error!("RocksDB NestedIter deserialize(value) error: {e}");
+        let value = unchecked_deserialize(value)
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB NestedIter deserialize(value) error")));
             })
             .ok()?;
 
@@ -700,20 +719,22 @@ impl<
 
         // Extract the bytes belonging to the map and the key.
         let (entry_map, entry_key) = get_map_and_key(map_key)
-            .map_err(|e| {
-                error!("RocksDB NestedKeys get_map_and_key error: {e}");
+            .map_err(|err| {
+                error!("{}", &flatten_error(err.context("RocksDB  NestedKeys get_map_and_key error")));
             })
             .ok()?;
 
         // Deserialize the map and key.
-        let map = bincode::deserialize(entry_map)
-            .map_err(|e| {
-                error!("RocksDB NestedKeys deserialize(map) error: {e}");
+        let map = unchecked_deserialize(entry_map)
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB  NestedKeys deserialize(map) error")));
             })
             .ok()?;
-        let key = bincode::deserialize(entry_key)
-            .map_err(|e| {
-                error!("RocksDB NestedKeys deserialize(key) error: {e}");
+        let key = unchecked_deserialize(entry_key)
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB  NestedKeys deserialize(key) error")));
             })
             .ok()?;
 
@@ -724,18 +745,18 @@ impl<
 }
 
 /// An iterator over the values of a prefix.
-pub struct NestedValues<'a, V: 'a + PartialEq + Eq + Serialize + DeserializeOwned> {
+pub struct NestedValues<'a, V: 'a + Serialize + DeserializeOwned> {
     db_iter: rocksdb::DBRawIterator<'a>,
     _phantom: PhantomData<V>,
 }
 
-impl<'a, V: 'a + PartialEq + Eq + Serialize + DeserializeOwned> NestedValues<'a, V> {
+impl<'a, V: 'a + Serialize + DeserializeOwned> NestedValues<'a, V> {
     pub(crate) fn new(db_iter: rocksdb::DBIterator<'a>) -> Self {
         Self { db_iter: db_iter.into(), _phantom: PhantomData }
     }
 }
 
-impl<'a, V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned> Iterator for NestedValues<'a, V> {
+impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for NestedValues<'a, V> {
     type Item = Cow<'a, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -746,9 +767,10 @@ impl<'a, V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned> Iterator
         let value = self.db_iter.value()?;
 
         // Deserialize the value.
-        let value = bincode::deserialize(value)
-            .map_err(|e| {
-                error!("RocksDB NestedValues deserialize(value) error: {e}");
+        let value = unchecked_deserialize(value)
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB  NestedValues deserialize(values) error")));
             })
             .ok()?;
 
@@ -873,6 +895,11 @@ mod tests {
             self.extra_maps.finish_atomic()
         }
 
+        fn abort_atomic(&self) {
+            self.own_map.abort_atomic();
+            self.extra_maps.abort_atomic();
+        }
+
         // While the methods above mimic the typical snarkVM ones, this method is purely for testing.
         fn is_atomic_in_progress_everywhere(&self) -> bool {
             self.own_map.is_atomic_in_progress()
@@ -932,6 +959,12 @@ mod tests {
             self.own_map2.finish_atomic()?;
             self.extra_maps.finish_atomic()
         }
+
+        fn abort_atomic(&self) {
+            self.own_map1.abort_atomic();
+            self.own_map2.abort_atomic();
+            self.extra_maps.abort_atomic();
+        }
     }
 
     struct TestStorage3 {
@@ -974,6 +1007,11 @@ mod tests {
         fn finish_atomic(&self) -> Result<()> {
             self.own_nested_map.finish_atomic()?;
             self.own_map.finish_atomic()
+        }
+
+        fn abort_atomic(&self) {
+            self.own_nested_map.abort_atomic();
+            self.own_map.abort_atomic();
         }
     }
 

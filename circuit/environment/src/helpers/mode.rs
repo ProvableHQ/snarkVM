@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,12 +14,8 @@
 // limitations under the License.
 
 use crate::prelude::*;
-use snarkvm_utilities::{
-    FromBytes,
-    ToBytes,
-    error,
-    io::{Read, Result as IoResult, Write},
-};
+use snarkvm_utilities::{FromBytes, ToBytes, error};
+use std::io::{Read, Result as IoResult, Write};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Mode {

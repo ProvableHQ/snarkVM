@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,6 +16,8 @@
 #![forbid(unsafe_code)]
 #![warn(clippy::cast_possible_truncation)]
 
+extern crate snarkvm_console as console;
+
 mod bytes;
 mod serialize;
 mod string;
@@ -32,7 +34,7 @@ use console::{
         Error,
         Formatter,
         FromBytes,
-        FromBytesDeserializer,
+        FromBytesUncheckedDeserializer,
         FromStr,
         IoResult,
         Read,
@@ -49,7 +51,7 @@ use console::{
     },
     types::Field,
 };
-use narwhal_subdag::Subdag;
+use snarkvm_ledger_narwhal_subdag::Subdag;
 
 use anyhow::Result;
 use rand::{CryptoRng, Rng};
@@ -130,7 +132,7 @@ pub mod test_helpers {
     /// Returns a sample quorum authority.
     pub fn sample_quorum_authority(rng: &mut TestRng) -> Authority<CurrentNetwork> {
         // Return the quorum authority.
-        Authority::new_quorum(narwhal_subdag::test_helpers::sample_subdag(rng))
+        Authority::new_quorum(snarkvm_ledger_narwhal_subdag::test_helpers::sample_subdag(rng))
     }
 
     /// Returns a list of sample authorities.

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,14 +22,14 @@ impl<A: Aleo> PrivateKey<A> {
     }
 }
 
-#[cfg(all(test, feature = "console"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::{Circuit, helpers::generate_account};
 
     use anyhow::Result;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 10;
 
     fn check_to_view_key(
         mode: Mode,

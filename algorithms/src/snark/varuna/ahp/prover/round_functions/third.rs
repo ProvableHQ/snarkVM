@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,15 +35,12 @@ use crate::{
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{ExecutionPool, cfg_iter};
+use snarkvm_utilities::ExecutionPool;
 
 use anyhow::{Result, ensure};
 use itertools::Itertools;
-use rand_core::RngCore;
+use rand::Rng;
 use std::collections::BTreeMap;
-
-#[cfg(not(feature = "serial"))]
-use rayon::prelude::*;
 
 struct LinevalInstance<F: PrimeField> {
     h_1_i: DensePolynomial<F>,
@@ -69,7 +66,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     }
 
     /// Output the third round message and the next state.
-    pub fn prover_third_round<'a, R: RngCore>(
+    pub fn prover_third_round<'a, R: Rng>(
         verifier_first_message: &verifier::FirstMessage<F>,
         verifier_second_message: &verifier::SecondMessage<F>,
         verifier_prepare_third_message: &Option<verifier::PrepareThirdMessage<F>>,
@@ -160,6 +157,24 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         // Compute lineval sumcheck witnesses
         let mut job_pool = ExecutionPool::with_capacity(total_instances * 3);
         // Iterate for each circuit in the batch.
+        ensure!(
+            state.circuit_specific_states.len() == third_round_batch_combiners.len(),
+            "[calculate Lineval Sumcheck Witness] Expected {} circuit specific states, but {} were provided.",
+            third_round_batch_combiners.len(),
+            state.circuit_specific_states.len()
+        );
+        ensure!(
+            state.circuit_specific_states.len() == assignments.len(),
+            "[calculate Lineval Sumcheck Witness] Expected {} assignments, but {} were provided.",
+            assignments.len(),
+            state.circuit_specific_states.len()
+        );
+        ensure!(
+            state.circuit_specific_states.len() == matrix_transposes.len(),
+            "[calculate Lineval Sumcheck Witness] Expected {} matrix transposes, but {} were provided.",
+            matrix_transposes.len(),
+            state.circuit_specific_states.len()
+        );
         for ((((circuit, circuit_specific_state), batch_combiner), assignments_i), matrix_transposes_i) in state
             .circuit_specific_states
             .iter_mut()
@@ -179,7 +194,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 // Destructure the optional z_m_at_alpha_polys to a vector of optional
                 // DensePolynomials.
                 let z_m_at_alpha_for_circuit = match &mut circuit_specific_state.z_m_at_alpha_polys {
-                    Some(ref mut z_m_at_alpha) => {
+                    Some(z_m_at_alpha) => {
                         ensure!(z_m_at_alpha.len() > 0);
                         let Some([z_a_at_alpha, z_b_at_alpha, z_c_at_alpha]) = z_m_at_alpha.pop_front() else {
                             anyhow::bail!("Expected z_m_at_alpha_polys to contain sufficient elements.")
@@ -271,16 +286,22 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             .map(|((circuit, circuit_specific_state), w_polys)| {
                 let x_polys = &circuit_specific_state.x_polys;
                 let input_domain = &circuit_specific_state.input_domain;
-                let assignments_i: Vec<_> = cfg_iter!(w_polys)
+                let assignments_i: Vec<_> = w_polys
+                    .iter()
                     .zip_eq(x_polys)
                     .enumerate()
-                    .map(|(_j, (w_poly, x_poly))| {
-                        let z_time = start_timer!(move || format!("Compute z poly for circuit {} {}", circuit.id, _j));
+                    .map(|(j, (w_poly, x_poly))| {
+                        let z_time = start_timer!(move || format!("Compute z poly for circuit {} {}", circuit.id, j));
+
                         let mut assignment =
                             w_poly.0.polynomial().as_dense().unwrap().mul_by_vanishing_poly(*input_domain);
                         // Zip safety: `x_poly` is smaller than `z_poly`.
                         assignment.coeffs.iter_mut().zip(&x_poly.coeffs).for_each(|(z, x)| *z += x);
                         end_timer!(z_time);
+                        // j may not be used if the timer feature is disabled.
+                        #[allow(unused_variables)]
+                        let _ = j;
+                        // return the assignment
                         assignment
                     })
                     .collect();
@@ -341,7 +362,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         // L^C_col(k)(X) will be 1
         let m_at_alpha_evals_time = start_timer!(|| format!("Compute m_at_alpha_evals parallel for {_matrix_label}"));
         let l_at_alpha = constraint_domain.evaluate_all_lagrange_coefficients(alpha);
-        let m_at_alpha_evals: Vec<_> = cfg_iter!(matrix_transpose)
+        let m_at_alpha_evals: Vec<_> = matrix_transpose
+            .iter()
             .map(|col| col.iter().map(|(val, row_index)| *val * l_at_alpha[*row_index]).sum::<F>())
             .collect();
         end_timer!(m_at_alpha_evals_time);
@@ -367,7 +389,13 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         z_m_at_alpha: Option<DensePolynomial<F>>,
     ) -> Result<LinevalInstance<F>> {
         let mut z_m_at_alpha = z_m_at_alpha.ok_or(anyhow::anyhow!(format!("Expected z_{_matrix_label}_at_alpha")))?;
-        let sum = z_m_at_alpha.evaluate_over_domain_by_ref(*variable_domain).evaluations.into_iter().sum::<F>();
+        // sum_{h in H} f(h) = n*(c_0 + c_n) for deg(p) < 2n, where c_0 and c_n are the
+        // coeffs of f at degree 0 and n, resp. and in [0, 2n-2] only k=0 and
+        // k=n are multiples of n. Avoids an O(n log n) FFT.
+        let n = variable_domain.size_as_field_element;
+        let c_0 = z_m_at_alpha.coeffs.first().copied().unwrap_or_default();
+        let c_n = z_m_at_alpha.coeffs.get(variable_domain.size()).copied().unwrap_or_default();
+        let sum = n * (c_0 + c_n);
 
         let (h_1_i, xg_1_i) =
             apply_randomized_selector(&mut z_m_at_alpha, combiner, max_variable_domain, variable_domain, true)?;

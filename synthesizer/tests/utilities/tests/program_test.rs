@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,17 +15,17 @@
 
 use crate::{CurrentNetwork, ExpectedTest, get_expectation_path, print_difference};
 
-use console::{account::PrivateKey, program::Identifier};
+use snarkvm_console::{account::PrivateKey, program::Identifier};
 use snarkvm_synthesizer::program::Program;
 
 use anyhow::{Result, bail};
 use itertools::Itertools;
 use serde_yaml::{Mapping, Sequence, Value};
+use snarkvm_console::{network::ConsensusVersion, prelude::Network};
 use std::{
     path::{Path, PathBuf},
     str::FromStr,
 };
-
 // TODO: Handle tests where the execution panics or fails.
 //  One approach is to create an enum `ExpectedOutput` which can be `Ok(Vec<Value>)` or `Err(String)`.
 
@@ -46,6 +46,8 @@ pub struct ProgramTest {
     randomness: Option<u64>,
     /// Additional keys for the test.
     keys: Vec<PrivateKey<CurrentNetwork>>,
+    /// The start height for the test.
+    start_height: u32,
 }
 
 impl ProgramTest {
@@ -68,6 +70,16 @@ impl ProgramTest {
     pub fn keys(&self) -> &[PrivateKey<CurrentNetwork>] {
         &self.keys
     }
+
+    /// Returns the start height for the test.
+    pub fn start_height(&self) -> u32 {
+        self.start_height
+    }
+
+    /// Returns the path to the expectation file.
+    pub fn path(&self) -> &PathBuf {
+        &self.path
+    }
 }
 
 impl ExpectedTest for ProgramTest {
@@ -82,8 +94,12 @@ impl ExpectedTest for ProgramTest {
         let source = std::fs::read_to_string(&test_path).expect("Failed to read test file.");
 
         // Parse out the first comment, denoted by `/* ... */`.
-        let first_comment_start = source.find("/*").expect("test file must contain a comment");
-        let end_first_comment = source[first_comment_start + 2..].find("*/").expect("test file must contain a comment");
+        let first_comment_start =
+            source.find("/*").unwrap_or_else(|| panic!("Test file '{:?}' must contain a comment", test_path.as_ref()));
+        let end_first_comment = source[first_comment_start + 2..]
+            .find("*/")
+            .unwrap_or_else(|| panic!("Test file '{:?}' must contain a comment", test_path.as_ref()));
+
         let comment = &source[first_comment_start + 2..first_comment_start + 2 + end_first_comment];
 
         // Parse the comment into the test configuration.
@@ -91,6 +107,15 @@ impl ExpectedTest for ProgramTest {
 
         // If the `randomness` field is present in the config, parse it as a `u64`.
         let randomness = test_config.get("randomness").map(|value| value.as_u64().expect("`randomness` must be a u64"));
+
+        // If the `start_height` field is present in the config, parse it as a `u32`.
+        // Otherwise use the latest consensus height as the default.
+        let start_height = test_config
+            .get("start_height")
+            .map(|value| value.as_u64().expect("`start_height` must be a u32"))
+            .unwrap_or(
+                CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::latest()).expect("Expected consensus height") as u64
+            ) as u32;
 
         // If the `keys` field is present in the config, parse it as a sequence of `PrivateKey`s.
         let keys = match test_config.get("keys") {
@@ -131,7 +156,7 @@ impl ExpectedTest for ProgramTest {
             }
         };
 
-        Self { programs, cases, expected, path, rewrite, randomness, keys }
+        Self { programs, cases, expected, path, rewrite, randomness, keys, start_height }
     }
 
     fn check(&self, output: &Self::Output) -> Result<()> {

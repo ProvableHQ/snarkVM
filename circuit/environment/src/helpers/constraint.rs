@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +15,7 @@
 
 use crate::{prelude::*, *};
 use snarkvm_fields::PrimeField;
+use snarkvm_utilities::dev_eprintln;
 
 #[derive(Clone, Debug, Hash)]
 pub struct Constraint<F: PrimeField>(
@@ -33,18 +34,15 @@ impl<F: PrimeField> Constraint<F> {
 
     /// Returns `true` if the constraint is satisfied.
     pub(crate) fn is_satisfied(&self) -> bool {
-        let (scope, a, b, c) = (&self.0, &self.1, &self.2, &self.3);
-        let a = a.value();
-        let b = b.value();
-        let c = c.value();
+        let a = self.1.value();
+        let b = self.2.value();
+        let c = self.3.value();
 
-        match a * b == c {
-            true => true,
-            false => {
-                eprintln!("Failed constraint at {scope}:\n\t({a} * {b}) != {c}");
-                false
-            }
+        let satisfied = a * b == c;
+        if !satisfied {
+            dev_eprintln!("Failed constraint at {scope}:\n\t({a} * {b}) != {c}", scope = self.0);
         }
+        satisfied
     }
 
     /// Returns a reference to the terms `(a, b, c)`.

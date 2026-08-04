@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,16 +33,15 @@ impl<N: Network> Serialize for BatchCertificate<N> {
 impl<'de, N: Network> Deserialize<'de> for BatchCertificate<N> {
     /// Deserializes the batch certificate from a JSON-string or buffer.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        match deserializer.is_human_readable() {
-            true => {
-                let mut value = serde_json::Value::deserialize(deserializer)?;
-                Self::from(
-                    DeserializeExt::take_from_value::<D>(&mut value, "batch_header")?,
-                    DeserializeExt::take_from_value::<D>(&mut value, "signatures")?,
-                )
-                .map_err(de::Error::custom)
-            }
-            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "batch certificate"),
+        if deserializer.is_human_readable() {
+            let mut value = serde_json::Value::deserialize(deserializer)?;
+            Self::from(
+                DeserializeExt::take_from_value::<D>(&mut value, "batch_header")?,
+                DeserializeExt::take_from_value::<D>(&mut value, "signatures")?,
+            )
+            .map_err(de::Error::custom)
+        } else {
+            FromBytesUncheckedDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "batch certificate")
         }
     }
 }

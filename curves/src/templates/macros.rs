@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,7 +23,7 @@ macro_rules! impl_sw_curve_serializer {
         impl<P: $params> CanonicalSerialize for Projective<P> {
             #[allow(unused_qualifications)]
             #[inline]
-            fn serialize_with_mode<W: snarkvm_utilities::io::Write>(
+            fn serialize_with_mode<W: std::io::Write>(
                 &self,
                 writer: W,
                 compress: Compress,
@@ -55,7 +55,7 @@ macro_rules! impl_sw_curve_serializer {
 
         impl<P: $params> CanonicalDeserialize for Projective<P> {
             #[allow(unused_qualifications)]
-            fn deserialize_with_mode<R: snarkvm_utilities::io::Read>(
+            fn deserialize_with_mode<R: std::io::Read>(
                 reader: R,
                 compress: Compress,
                 validate: Validate,
@@ -67,7 +67,7 @@ macro_rules! impl_sw_curve_serializer {
         impl<P: $params> CanonicalSerialize for Affine<P> {
             #[allow(unused_qualifications)]
             #[inline]
-            fn serialize_with_mode<W: snarkvm_utilities::io::Write>(
+            fn serialize_with_mode<W: std::io::Write>(
                 &self,
                 mut writer: W,
                 compress: Compress,
@@ -117,7 +117,7 @@ macro_rules! impl_sw_curve_serializer {
 
         impl<P: $params> CanonicalDeserialize for Affine<P> {
             #[allow(unused_qualifications)]
-            fn deserialize_with_mode<R: snarkvm_utilities::io::Read>(
+            fn deserialize_with_mode<R: std::io::Read>(
                 mut reader: R,
                 compress: Compress,
                 validate: Validate,
@@ -150,7 +150,7 @@ macro_rules! impl_edwards_curve_serializer {
         impl<P: $params> CanonicalSerialize for Projective<P> {
             #[allow(unused_qualifications)]
             #[inline]
-            fn serialize_with_mode<W: snarkvm_utilities::io::Write>(
+            fn serialize_with_mode<W: std::io::Write>(
                 &self,
                 writer: W,
                 compress: Compress,
@@ -177,7 +177,7 @@ macro_rules! impl_edwards_curve_serializer {
 
         impl<P: $params> CanonicalDeserialize for Projective<P> {
             #[allow(unused_qualifications)]
-            fn deserialize_with_mode<R: snarkvm_utilities::io::Read>(
+            fn deserialize_with_mode<R: std::io::Read>(
                 reader: R,
                 compress: Compress,
                 validate: Validate,
@@ -189,7 +189,7 @@ macro_rules! impl_edwards_curve_serializer {
         impl<P: $params> CanonicalSerialize for Affine<P> {
             #[allow(unused_qualifications)]
             #[inline]
-            fn serialize_with_mode<W: snarkvm_utilities::io::Write>(
+            fn serialize_with_mode<W: std::io::Write>(
                 &self,
                 mut writer: W,
                 compress: Compress,
@@ -234,7 +234,7 @@ macro_rules! impl_edwards_curve_serializer {
 
         impl<P: $params> CanonicalDeserialize for Affine<P> {
             #[allow(unused_qualifications)]
-            fn deserialize_with_mode<R: snarkvm_utilities::io::Read>(
+            fn deserialize_with_mode<R: std::io::Read>(
                 mut reader: R,
                 compress: Compress,
                 validate: Validate,

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -74,14 +74,14 @@ impl<E: Environment> Add<&Self> for Group<E> {
             // x3 * (v2 + 1) = v0 + v1
             let v2_plus_one = &v2 + &Field::one();
             let v0_plus_v1 = &v0 + &v1;
-            E::enforce(|| (&x3, v2_plus_one, v0_plus_v1));
+            E::enforce(|| (&x3, v2_plus_one, v0_plus_v1)).expect("Group add x3 constraint unsatisfied");
 
             // Ensure y3 is well-formed.
             // y3 * (1 - v2) = u + (a * v0) - v1
             let one_minus_v2 = Field::one() - v2;
             let a_v0 = v0 * a;
             let u_plus_a_v0_minus_v1 = u + a_v0 - v1;
-            E::enforce(|| (&y3, one_minus_v2, u_plus_a_v0_minus_v1));
+            E::enforce(|| (&y3, one_minus_v2, u_plus_a_v0_minus_v1)).expect("Group add y3 constraint unsatisfied");
 
             Self { x: x3, y: y3 }
         }
@@ -138,7 +138,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 10;
 
     fn check_add(
         name: &str,

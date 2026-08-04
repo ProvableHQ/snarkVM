@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +15,8 @@
 
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
+
+extern crate snarkvm_console_types_address as console;
 
 mod helpers;
 
@@ -48,7 +50,6 @@ impl<E: Environment> Address<E> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment> Inject for Address<E> {
     type Primitive = console::Address<E::Network>;
 
@@ -58,7 +59,6 @@ impl<E: Environment> Inject for Address<E> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment> Eject for Address<E> {
     type Primitive = console::Address<E::Network>;
 
@@ -73,7 +73,6 @@ impl<E: Environment> Eject for Address<E> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment> Parser for Address<E> {
     /// Parses a string into an address circuit.
     #[inline]
@@ -90,7 +89,6 @@ impl<E: Environment> Parser for Address<E> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment> FromStr for Address<E> {
     type Err = Error;
 
@@ -109,7 +107,6 @@ impl<E: Environment> FromStr for Address<E> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment> TypeName for Address<E> {
     /// Returns the type name of the circuit as a string.
     #[inline]
@@ -118,14 +115,12 @@ impl<E: Environment> TypeName for Address<E> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment> Debug for Address<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment> Display for Address<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}.{}", self.eject_value(), self.eject_mode())
@@ -144,7 +139,7 @@ impl<E: Environment> From<&Address<E>> for LinearCombination<E::BaseField> {
     }
 }
 
-#[cfg(all(test, feature = "console"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -76,7 +76,7 @@ fn check_get_same_map(map: &impl for<'a> NestedMap<'a, usize, usize, String>) {
     let mut speculative = Vec::new();
 
     for i in 0..NUM_ITEMS {
-        println!("i: {}", i);
+        println!("i: {i}");
 
         assert_eq!(map.get_map_confirmed(&MAP).unwrap(), confirmed);
         assert_eq!(map.get_map_speculative(&MAP).unwrap(), speculative);
@@ -97,7 +97,7 @@ fn check_get_same_map(map: &impl for<'a> NestedMap<'a, usize, usize, String>) {
         map.start_atomic();
 
         for i in NUM_ITEMS..NUM_TOTAL_ITEMS {
-            println!("i: {}", i);
+            println!("i: {i}");
 
             assert_eq!(map.get_map_confirmed(&MAP).unwrap(), confirmed);
             assert_eq!(map.get_map_speculative(&MAP).unwrap(), speculative);

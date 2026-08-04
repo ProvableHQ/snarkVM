@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,12 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    FinalizeOperation,
-    Opcode,
-    Operand,
-    traits::{FinalizeStoreTrait, RegistersLoad, StackMatches, StackProgram},
-};
+use crate::{FinalizeOperation, FinalizeStoreTrait, Opcode, Operand, RegistersTrait, StackTrait};
 use console::{
     network::prelude::*,
     program::{Identifier, Value},
@@ -30,10 +25,8 @@ use console::{
 pub struct Set<N: Network> {
     /// The mapping name.
     mapping: Identifier<N>,
-    /// The key to access the mapping.
-    key: Operand<N>,
-    /// The value to be set.
-    value: Operand<N>,
+    /// The operands.
+    operands: [Operand<N>; 2],
 }
 
 impl<N: Network> Set<N> {
@@ -45,8 +38,8 @@ impl<N: Network> Set<N> {
 
     /// Returns the operands in the operation.
     #[inline]
-    pub fn operands(&self) -> Vec<Operand<N>> {
-        vec![self.value.clone(), self.key.clone()]
+    pub fn operands(&self) -> &[Operand<N>] {
+        &self.operands
     }
 
     /// Returns the mapping name.
@@ -58,34 +51,39 @@ impl<N: Network> Set<N> {
     /// Returns the operand containing the key.
     #[inline]
     pub const fn key(&self) -> &Operand<N> {
-        &self.key
+        &self.operands[0]
     }
 
     /// Returns the operand containing the value.
     #[inline]
     pub const fn value(&self) -> &Operand<N> {
-        &self.value
+        &self.operands[1]
+    }
+
+    /// Returns whether this command refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
     }
 }
 
 impl<N: Network> Set<N> {
     /// Finalizes the command.
-    #[inline]
     pub fn finalize(
         &self,
-        stack: &(impl StackMatches<N> + StackProgram<N>),
-        store: &impl FinalizeStoreTrait<N>,
-        registers: &mut impl RegistersLoad<N>,
+        stack: &impl StackTrait<N>,
+        store: &dyn FinalizeStoreTrait<N>,
+        registers: &mut impl RegistersTrait<N>,
     ) -> Result<FinalizeOperation<N>> {
-        // Ensure the mapping exists in storage.
-        if !store.contains_mapping_confirmed(stack.program_id(), &self.mapping)? {
-            bail!("Mapping '{}/{}' does not exist in storage", stack.program_id(), self.mapping);
+        // Ensure the mapping exists.
+        if !store.contains_mapping_speculative(stack.program_id(), &self.mapping)? {
+            bail!("Mapping '{}/{}' does not exist", stack.program_id(), self.mapping);
         }
 
         // Load the key operand as a plaintext.
-        let key = registers.load_plaintext(stack, &self.key)?;
+        let key = registers.load_plaintext(stack, self.key())?;
         // Load the value operand as a plaintext.
-        let value = Value::Plaintext(registers.load_plaintext(stack, &self.value)?);
+        let value = Value::Plaintext(registers.load_plaintext(stack, self.value())?);
 
         // Update the value in storage, and return the finalize operation.
         store.update_key_value(*stack.program_id(), self.mapping, key, value)
@@ -94,7 +92,6 @@ impl<N: Network> Set<N> {
 
 impl<N: Network> Parser for Set<N> {
     /// Parses a string into an operation.
-    #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
@@ -130,7 +127,7 @@ impl<N: Network> Parser for Set<N> {
         // Parse the ";" from the string.
         let (string, _) = tag(";")(string)?;
 
-        Ok((string, Self { mapping, key, value }))
+        Ok((string, Self { mapping, operands: [key, value] }))
     }
 }
 
@@ -165,9 +162,9 @@ impl<N: Network> Display for Set<N> {
         // Print the command.
         write!(f, "{} ", Self::opcode())?;
         // Print the value operand.
-        write!(f, "{} into ", self.value)?;
+        write!(f, "{} into ", self.value())?;
         // Print the mapping and key operand.
-        write!(f, "{}[{}];", self.mapping, self.key)
+        write!(f, "{}[{}];", self.mapping, self.key())
     }
 }
 
@@ -181,7 +178,7 @@ impl<N: Network> FromBytes for Set<N> {
         // Read the value operand.
         let value = Operand::read_le(&mut reader)?;
         // Return the command.
-        Ok(Self { mapping, key, value })
+        Ok(Self { mapping, operands: [key, value] })
     }
 }
 
@@ -191,9 +188,9 @@ impl<N: Network> ToBytes for Set<N> {
         // Write the mapping name.
         self.mapping.write_le(&mut writer)?;
         // Write the key operand.
-        self.key.write_le(&mut writer)?;
+        self.key().write_le(&mut writer)?;
         // Write the value operand.
-        self.value.write_le(&mut writer)
+        self.value().write_le(&mut writer)
     }
 }
 
@@ -210,7 +207,7 @@ mod tests {
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
         assert_eq!(set.mapping, Identifier::from_str("account").unwrap());
         assert_eq!(set.operands().len(), 2, "The number of operands is incorrect");
-        assert_eq!(set.value, Operand::Register(Register::Locator(0)), "The first operand is incorrect");
-        assert_eq!(set.key, Operand::Register(Register::Locator(1)), "The second operand is incorrect");
+        assert_eq!(set.value(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
+        assert_eq!(set.key(), &Operand::Register(Register::Locator(1)), "The second operand is incorrect");
     }
 }

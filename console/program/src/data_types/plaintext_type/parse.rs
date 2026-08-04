@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,7 +21,9 @@ impl<N: Network> Parser for PlaintextType<N> {
     fn parse(string: &str) -> ParserResult<Self> {
         // Parse to determine the plaintext type (order matters).
         alt((
+            // Order matters - we shouldn't try to parse Identifier before Locator.
             map(ArrayType::parse, |type_| Self::Array(type_)),
+            map(Locator::parse, |locator| Self::ExternalStruct(locator)),
             map(Identifier::parse, |identifier| Self::Struct(identifier)),
             map(LiteralType::parse, |type_| Self::Literal(type_)),
         ))(string)
@@ -60,6 +62,8 @@ impl<N: Network> Display for PlaintextType<N> {
             Self::Literal(literal) => Display::fmt(literal, f),
             // Prints the struct, i.e. signature
             Self::Struct(struct_) => Display::fmt(struct_, f),
+            // Prints the external struct, i.e. foo.aleo/bar
+            Self::ExternalStruct(locator) => Display::fmt(locator, f),
             // Prints the array type, i.e. [field; 2u32]
             Self::Array(array) => Display::fmt(array, f),
         }

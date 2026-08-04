@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,13 +17,15 @@ use super::{LabeledPolynomial, PolynomialInfo};
 use crate::{crypto_hash::sha256::sha256, fft::EvaluationDomain, polycommit::kzg10};
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{ConstraintFieldError, Field, PrimeField, ToConstraintField};
-use snarkvm_utilities::{FromBytes, ToBytes, error, serialize::*};
+use snarkvm_parameters::mainnet::MAX_NUM_POWERS;
+use snarkvm_utilities::{FromBytes, ToBytes, error, into_io_error, serialize::*};
 
 use hashbrown::HashMap;
 use std::{
     borrow::{Borrow, Cow},
     collections::{BTreeMap, BTreeSet},
     fmt,
+    io,
     ops::{AddAssign, MulAssign, SubAssign},
 };
 
@@ -67,6 +69,12 @@ impl<E: PairingEngine> FromBytes for CommitterKey<E> {
     fn read_le<R: Read>(mut reader: R) -> io::Result<Self> {
         // Deserialize `powers`.
         let powers_len: u32 = FromBytes::read_le(&mut reader)?;
+        // Ensure the number of powers is within bounds.
+        if powers_len as usize > MAX_NUM_POWERS {
+            return Err(error(format!(
+                "CommitterKey (from 'read_le') has too many points ({powers_len} > {MAX_NUM_POWERS})"
+            )));
+        }
         let mut powers_of_beta_g = Vec::with_capacity(powers_len as usize);
         for _ in 0..powers_len {
             let power: E::G1Affine = FromBytes::read_le(&mut reader)?;
@@ -675,12 +683,19 @@ impl<E: PairingEngine> BatchLCProof<E> {
 
 impl<E: PairingEngine> FromBytes for BatchLCProof<E> {
     fn read_le<R: Read>(mut reader: R) -> io::Result<Self> {
-        CanonicalDeserialize::deserialize_compressed(&mut reader).map_err(|_| error("could not deserialize struct"))
+        CanonicalDeserialize::deserialize_compressed(&mut reader)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not deserialize struct")))
+    }
+
+    fn read_le_unchecked<R: Read>(mut reader: R) -> io::Result<Self> {
+        CanonicalDeserialize::deserialize_compressed_unchecked(&mut reader)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not deserialize struct")))
     }
 }
 
 impl<E: PairingEngine> ToBytes for BatchLCProof<E> {
     fn write_le<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        CanonicalSerialize::serialize_compressed(self, &mut writer).map_err(|_| error("could not serialize struct"))
+        CanonicalSerialize::serialize_compressed(self, &mut writer)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not serialize struct")))
     }
 }

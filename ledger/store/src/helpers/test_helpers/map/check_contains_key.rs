@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,7 +23,7 @@ pub fn check_contains_key(map: impl for<'a> Map<'a, usize, String>) {
     ensure_map_is_empty(&map);
 
     for i in 0..NUM_ITEMS {
-        println!("i: {}", i);
+        println!("i: {i}");
 
         assert!(!map.contains_key_confirmed(&i).unwrap());
         assert!(!map.contains_key_speculative(&i).unwrap());
@@ -42,7 +42,7 @@ pub fn check_contains_key(map: impl for<'a> Map<'a, usize, String>) {
         map.start_atomic();
 
         for i in NUM_ITEMS..NUM_TOTAL_ITEMS {
-            println!("i: {}", i);
+            println!("i: {i}");
 
             assert!(!map.contains_key_confirmed(&i).unwrap());
             assert!(!map.contains_key_speculative(&i).unwrap());

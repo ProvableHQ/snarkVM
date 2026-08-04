@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,7 +59,7 @@ fn account_address(c: &mut Criterion) {
 
 criterion_group! {
     name = account;
-    config = Criterion::default().sample_size(20);
+    config = Criterion::default().sample_size(10);
     targets = account_private_key, account_view_key, account_address
 }
 

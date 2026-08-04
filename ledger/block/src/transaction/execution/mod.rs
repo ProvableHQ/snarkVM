@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +19,7 @@ mod string;
 
 use crate::{Transaction, Transition};
 use console::{account::Field, network::prelude::*, program::ProgramID};
-use synthesizer_snark::Proof;
+use snarkvm_synthesizer_snark::Proof;
 
 use indexmap::IndexMap;
 
@@ -134,7 +134,7 @@ impl<N: Network> Execution<N> {
     }
 
     /// Returns an iterator over the underlying transitions.
-    pub fn transitions(&self) -> impl '_ + ExactSizeIterator + DoubleEndedIterator<Item = &Transition<N>> {
+    pub fn transitions(&self) -> impl '_ + ExactSizeIterator + DoubleEndedIterator<Item = &Transition<N>> + Clone {
         self.transitions.values()
     }
 
@@ -151,12 +151,16 @@ pub mod test_helpers {
     type CurrentNetwork = console::network::MainnetV0;
 
     /// Samples a random execution.
-    pub(crate) fn sample_execution(rng: &mut TestRng) -> Execution<CurrentNetwork> {
+    pub(crate) fn sample_execution(rng: &mut TestRng, index: usize) -> Execution<CurrentNetwork> {
         // Sample the genesis block.
         let block = crate::test_helpers::sample_genesis_block(rng);
         // Retrieve a transaction.
-        let transaction = block.transactions().iter().next().unwrap().deref().clone();
+        let transaction = block.transactions().iter().nth(index).unwrap().deref().clone();
         // Retrieve the execution.
-        if let Transaction::Execute(_, _, execution, _) = transaction { *execution } else { unreachable!() }
+        if let Transaction::Execute(_, _, execution, _) = transaction {
+            *execution
+        } else {
+            panic!("Index {index} exceeded the number of executions in the genesis block")
+        }
     }
 }

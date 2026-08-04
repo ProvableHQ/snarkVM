@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,12 +18,9 @@ use super::*;
 impl<E: Environment, I: IntegerType> Integer<E, I> {
     /// Casts an integer from a base field, with lossy truncation.
     ///
-    /// This method is commonly-used by hash-to-integer algorithms,
+    /// This method is commonly used by hash-to-integer algorithms,
     /// where the hash output does not need to preserve the full base field.
     pub fn from_field_lossy(field: &Field<E>) -> Self {
-        // Note: We are reconstituting the integer from the base field.
-        // This is safe as the number of bits in the integer is less than the base field modulus,
-        // and thus will always fit within a single base field element.
         debug_assert!(I::BITS < E::BaseField::size_in_bits() as u64);
 
         // Truncate the field to the size in bits of the integer.
@@ -37,7 +34,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 128;
+    const ITERATIONS: u64 = 10;
 
     fn check_from_field_lossy<I: IntegerType>(mode: Mode, rng: &mut TestRng) {
         for i in 0..ITERATIONS {

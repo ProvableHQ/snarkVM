@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +30,9 @@ impl<'de, N: Network> Deserialize<'de> for Certificate<N> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         match deserializer.is_human_readable() {
             true => FromStr::from_str(&String::deserialize(deserializer)?).map_err(de::Error::custom),
-            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "certificate"),
+            false => {
+                FromBytesUncheckedDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "certificate")
+            }
         }
     }
 }

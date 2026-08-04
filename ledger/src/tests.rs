@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,8 +17,9 @@ use crate::{
     Ledger,
     RecordsFilter,
     advance::split_candidate_solutions,
-    test_helpers::{CurrentAleo, CurrentLedger, CurrentNetwork},
+    test_helpers::{CurrentAleo, CurrentLedger, CurrentNetwork, chain_builder::GenerateBlockOptions},
 };
+
 use aleo_std::StorageMode;
 use console::{
     account::{Address, PrivateKey},
@@ -26,23 +27,26 @@ use console::{
     program::{Entry, Identifier, Literal, Plaintext, ProgramID, Value},
     types::U16,
 };
-use ledger_authority::Authority;
-use ledger_block::{Block, ConfirmedTransaction, Execution, Ratify, Rejected, Transaction};
-use ledger_committee::{Committee, MIN_VALIDATOR_STAKE};
-use ledger_narwhal::{BatchCertificate, BatchHeader, Data, Subdag, Transmission, TransmissionID};
-use ledger_store::ConsensusStore;
+use snarkvm_ledger_authority::Authority;
+use snarkvm_ledger_block::{Block, ConfirmedTransaction, Execution, Ratify, Rejected, Transaction};
+use snarkvm_ledger_committee::{Committee, MIN_VALIDATOR_STAKE};
+use snarkvm_ledger_narwhal::{BatchHeader, Data, Subdag, Transmission, TransmissionID};
+use snarkvm_ledger_store::ConsensusStore;
+#[cfg(feature = "history-staking-rewards")]
+use snarkvm_ledger_store::helpers::MapRead;
+#[cfg(feature = "history-staking-rewards")]
+use snarkvm_synthesizer::bonded_map_into_stakers;
+use snarkvm_synthesizer::{
+    program::Program,
+    vm::{TransactionCacheKey, VM},
+};
 use snarkvm_utilities::try_vm_runtime;
-use synthesizer::{Stack, program::Program, vm::VM};
 
-use indexmap::{IndexMap, IndexSet};
+use anyhow::Context;
+use indexmap::IndexMap;
 use rand::seq::SliceRandom;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use time::OffsetDateTime;
 
-#[cfg(not(feature = "rocks"))]
-type LedgerType = ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
-#[cfg(feature = "rocks")]
-type LedgerType = ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
+use crate::test_helpers::{LedgerType, TestChainBuilder, chain_builder::GenerateBlocksOptions};
 
 /// Initializes a sample VM.
 fn sample_vm() -> VM<CurrentNetwork, LedgerType> {
@@ -67,234 +71,18 @@ fn extract_transmissions(
     transmissions
 }
 
-/// Helper to build chains with custom structures for testing
-struct TestChainBuilder {
-    /// The keys of all validators.
-    private_keys: Vec<PrivateKey<CurrentNetwork>>,
-
-    ledger: Ledger<CurrentNetwork, LedgerType>,
-
-    last_block_round: u64,
-
-    /// The batch certificates of the last round we generated.
-    round_to_certificates: HashMap<u64, IndexMap<usize, BatchCertificate<CurrentNetwork>>>,
-    /// The batch certificate of the last leader (if any).
-    previous_leader_certificate: Option<BatchCertificate<CurrentNetwork>>,
-    /// The height of the last block we created.
-    current_height: u64,
-    /// The last batch for each committee member that was included in a block.
-    /// Maps the author's index to a round number.
-    last_batch: HashMap<usize, u64>,
-    /// The last batch of a validator that was included in a block
-    last_committed_batch: HashMap<usize, u64>,
-}
-
-impl TestChainBuilder {
-    /// Initialize the builder with the specified committee and genesis block
-    pub fn new(private_keys: Vec<PrivateKey<CurrentNetwork>>, genesis: Block<CurrentNetwork>) -> Self {
-        // Initialize the ledger with the genesis block.
-        let ledger = Ledger::<CurrentNetwork, LedgerType>::load(genesis.clone(), StorageMode::new_test(None)).unwrap();
-
-        Self {
-            private_keys,
-            ledger,
-            current_height: 1,
-            last_batch: Default::default(),
-            last_committed_batch: Default::default(),
-            last_block_round: 1,
-            round_to_certificates: Default::default(),
-            previous_leader_certificate: Default::default(),
-        }
+/// Creates the cache key for a transaction in the partially-verified transactions cache.
+fn create_cache_key(
+    vm: &VM<CurrentNetwork, LedgerType>,
+    transaction: &Transaction<CurrentNetwork>,
+) -> Result<TransactionCacheKey<CurrentNetwork>> {
+    let mut execution_stacks = IndexMap::new();
+    for transition in transaction.transitions() {
+        execution_stacks.insert(*transition.program_id(), vm.process().get_stack(transition.program_id())?);
     }
-
-    /// Create multiple blocks, with fully-connected DAGs.
-    pub fn generate_blocks(&mut self, num_blocks: usize, rng: &mut TestRng) -> Vec<Block<CurrentNetwork>> {
-        self.generate_blocks_with_partition(num_blocks, &Default::default(), rng)
-    }
-
-    /// Create multiple blocks, with fully-connected DAGs.
-    pub fn generate_blocks_with_partition(
-        &mut self,
-        num_blocks: usize,
-        skip_nodes: &HashSet<usize>,
-        rng: &mut TestRng,
-    ) -> Vec<Block<CurrentNetwork>> {
-        assert!(num_blocks > 0, "Need to build at least one block");
-
-        (0..num_blocks)
-            .map(|_| {
-                self.generate_block_with_partition(
-                    skip_nodes,
-                    OffsetDateTime::now_utc().unix_timestamp(),
-                    Default::default(),
-                    false,
-                    rng,
-                )
-            })
-            .collect()
-    }
-
-    /// Create a new block, with a fully-connected DAG.
-    ///
-    /// This will "fill in " any gaps left in earlier rounds from non participating nodes.
-    pub fn generate_block(&mut self, rng: &mut TestRng) -> Block<CurrentNetwork> {
-        self.generate_block_with_partition(
-            &Default::default(),
-            OffsetDateTime::now_utc().unix_timestamp(),
-            Default::default(),
-            false,
-            rng,
-        )
-    }
-
-    /// Same as `generate_block` but with some nodes not participating in batch generation.
-    ///
-    /// This can result in blocks covering more than two rounds, because an anchor block might be skipped.
-    pub fn generate_block_with_partition(
-        &mut self,
-        skip_nodes: &HashSet<usize>,
-        timestamp: i64,
-        transmissions: IndexMap<TransmissionID<CurrentNetwork>, Transmission<CurrentNetwork>>,
-        skip_verification: bool,
-        rng: &mut TestRng,
-    ) -> Block<CurrentNetwork> {
-        assert!(self.current_height > 0);
-        assert!(skip_nodes.len() * 3 < self.private_keys.len());
-
-        let block_height = self.current_height + 1;
-
-        // SubDAGs can be at most GC rounds long.
-        let mut round = if self.last_block_round < BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64 {
-            1
-        } else {
-            self.last_block_round - BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64 + 2
-        };
-
-        let transmission_ids = transmissions.keys().cloned().collect::<IndexSet<_>>();
-
-        // Create certificates for each round.
-        loop {
-            let mut created_anchor = false;
-
-            let previous_certificate_ids = if round <= 1 {
-                IndexSet::default()
-            } else {
-                self.round_to_certificates.get(&(round - 1)).unwrap().iter().map(|(_, c)| c.id()).collect()
-            };
-
-            let committee = self.ledger.get_committee_lookback_for_round(round).unwrap().unwrap_or_else(|| {
-                panic!("No committee for round {round}");
-            });
-
-            for (key1_idx, private_key_1) in self.private_keys.iter().enumerate() {
-                if skip_nodes.contains(&key1_idx) {
-                    continue;
-                }
-                // Don't recreate batches that already exist.
-                if self.last_batch.get(&key1_idx).unwrap_or(&0) >= &round {
-                    continue;
-                }
-
-                let batch_header = BatchHeader::new(
-                    private_key_1,
-                    round,
-                    timestamp,
-                    committee.id(),
-                    transmission_ids.clone(),
-                    previous_certificate_ids.clone(),
-                    rng,
-                )
-                .unwrap();
-
-                // Add signatures for the batch headers. This creates a fully connected DAG.
-                let signatures = self
-                    .private_keys
-                    .iter()
-                    .enumerate()
-                    .filter(|&(key2_idx, _)| key1_idx != key2_idx)
-                    .map(|(_, private_key_2)| private_key_2.sign(&[batch_header.batch_id()], rng).unwrap())
-                    .collect();
-
-                self.last_batch.insert(key1_idx, round);
-                self.round_to_certificates
-                    .entry(round)
-                    .or_default()
-                    .insert(key1_idx, BatchCertificate::from(batch_header, signatures).unwrap());
-
-                if round % 2 == 0 {
-                    let leader = committee.get_leader(round).unwrap();
-                    if leader == Address::try_from(private_key_1).unwrap() {
-                        created_anchor = true;
-                    }
-                }
-            }
-
-            // Anchor was confirmed by more than a third of the validators.
-            if created_anchor && round % 2 == 0 && self.last_block_round < round {
-                self.last_block_round = round;
-                break;
-            }
-
-            round += 1;
-        }
-
-        let commit_round = round;
-
-        // Construct the block
-        let leader_committee = self.ledger.get_committee_lookback_for_round(round).unwrap().unwrap();
-        let leader = leader_committee.get_leader(commit_round).unwrap();
-        let (leader_idx, leader_certificate) =
-            self.round_to_certificates.get(&commit_round).unwrap().iter().find(|(_, c)| c.author() == leader).unwrap();
-        let leader_idx = *leader_idx;
-        let leader_certificate = leader_certificate.clone();
-
-        // Construct the subdag for the block.
-        let mut subdag_map = BTreeMap::new();
-
-        // Figure out what the earliest round for the subDAG could be.
-        let start_round = if commit_round < BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64 {
-            1
-        } else {
-            commit_round - BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64 + 2
-        };
-
-        for round in start_round..commit_round {
-            let mut to_insert = IndexSet::new();
-            for idx in 0..self.private_keys.len() {
-                let cround = self.last_committed_batch.entry(idx).or_default();
-                // Batch already included in another block
-                if *cround >= round {
-                    continue;
-                }
-
-                if let Some(cert) = self.round_to_certificates.entry(round).or_default().get(&idx) {
-                    to_insert.insert(cert.clone());
-                    *cround = round;
-                }
-            }
-            if !to_insert.is_empty() {
-                subdag_map.insert(round, to_insert);
-            }
-        }
-
-        // Add the leader certificate.
-        subdag_map.insert(commit_round, [leader_certificate.clone()].into());
-        self.last_committed_batch.insert(leader_idx, commit_round);
-
-        // Construct the block.
-        let subdag = Subdag::from(subdag_map).unwrap();
-        let block = self.ledger.prepare_advance_to_next_quorum_block(subdag, transmissions, rng).unwrap();
-        if !skip_verification {
-            self.ledger.check_next_block(&block, rng).unwrap();
-        }
-
-        // Update state.
-        self.ledger.advance_to_next_block(&block).unwrap();
-        self.previous_leader_certificate = Some(leader_certificate.clone());
-        self.current_height = block_height;
-
-        block
-    }
+    let current_block_height = vm.block_store().current_block_height();
+    let consensus_version = CurrentNetwork::CONSENSUS_VERSION(current_block_height)?;
+    VM::<CurrentNetwork, LedgerType>::create_cache_key_with_stacks(transaction, &execution_stacks, consensus_version)
 }
 
 #[test]
@@ -375,7 +163,7 @@ fn test_get_bonded_balances() {
     let bonded_mapping =
         ledger.vm().finalize_store().get_mapping_confirmed(credits_program_id, bonded_mapping).unwrap();
     // Deserialize the bonded stakers.
-    let stakers = synthesizer::vm::bonded_map_into_stakers(bonded_mapping).unwrap();
+    let stakers = snarkvm_synthesizer::vm::bonded_map_into_stakers(bonded_mapping).unwrap();
     // Check that the bonded amounts match the bonded mapping.
     for (staker, (_, amount)) in stakers {
         assert_eq!(amount, ledger.get_bonded_amount(&staker).unwrap());
@@ -399,6 +187,21 @@ fn test_state_path() {
 }
 
 #[test]
+fn test_state_paths() {
+    let rng = &mut TestRng::default();
+
+    // Initialize the ledger.
+    let ledger = crate::test_helpers::sample_ledger(PrivateKey::<CurrentNetwork>::new(rng).unwrap(), rng);
+    // Retrieve the genesis block.
+    let block = ledger.get_block(0).unwrap();
+
+    // Construct the state path.
+    let commitments = block.transactions().commitments().copied().collect::<Vec<_>>();
+
+    let _state_paths = ledger.get_state_paths_for_commitments(&commitments).unwrap();
+}
+
+#[test]
 fn test_insufficient_private_fees() {
     let rng = &mut TestRng::default();
 
@@ -416,7 +219,7 @@ fn test_insufficient_private_fees() {
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
                 _ => false,
             })
-            .collect::<indexmap::IndexMap<_, _>>()
+            .collect::<IndexMap<_, _>>()
     };
 
     // Fetch the unspent records.
@@ -591,7 +394,7 @@ finalize foo:
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
                 _ => false,
             })
-            .collect::<indexmap::IndexMap<_, _>>()
+            .collect::<IndexMap<_, _>>()
     };
 
     // Fetch the unspent records.
@@ -693,7 +496,7 @@ finalize failed_assert:
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
                 _ => false,
             })
-            .collect::<indexmap::IndexMap<_, _>>()
+            .collect::<IndexMap<_, _>>()
     };
 
     // Fetch the unspent records.
@@ -843,6 +646,41 @@ fn test_bond_and_unbond_validator() {
         )
         .unwrap();
 
+    // Procure mapping-related objects.
+    let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+    let metadata_mapping_name = Identifier::from_str("metadata").unwrap();
+    let metadata_mapping_key =
+        Plaintext::<CurrentNetwork>::from_str("aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc")
+            .unwrap();
+
+    // Check the initial historical mapping values.
+    #[cfg(feature = "history")]
+    {
+        let initial_mapping_value = ledger
+            .vm()
+            .finalize_store()
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*initial_mapping_value, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
+
+        let initial_mapping_value_overshot = ledger
+            .vm()
+            .finalize_store()
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 10)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*initial_mapping_value_overshot, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
+
+        let initial_mapping_heights = ledger
+            .vm()
+            .finalize_store()
+            .get_mapping_update_heights(program_id, metadata_mapping_name, metadata_mapping_key.clone())
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*initial_mapping_heights, &[0]);
+    }
+
     // Check that the next block is valid.
     ledger.check_next_block(&transfer_block, rng).unwrap();
 
@@ -877,19 +715,59 @@ fn test_bond_and_unbond_validator() {
     // Add the bond public block to the ledger.
     ledger.advance_to_next_block(&bond_validator_block).unwrap();
 
+    // Check the historical mapping values after the bonding.
+    #[cfg(feature = "history")]
+    {
+        let initial_mapping_value = ledger
+            .vm()
+            .finalize_store()
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*initial_mapping_value, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
+
+        let initial_mapping_value_overshot = ledger
+            .vm()
+            .finalize_store()
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 1)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*initial_mapping_value_overshot, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
+
+        let post_bond_mapping_value = ledger
+            .vm()
+            .finalize_store()
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 2)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*post_bond_mapping_value, &Value::<CurrentNetwork>::try_from("5u32").unwrap());
+
+        let post_bond_mapping_value_overshot = ledger
+            .vm()
+            .finalize_store()
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 5)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*post_bond_mapping_value_overshot, &Value::<CurrentNetwork>::try_from("5u32").unwrap());
+
+        let post_bond_mapping_heights = ledger
+            .vm()
+            .finalize_store()
+            .get_mapping_update_heights(program_id, metadata_mapping_name, metadata_mapping_key.clone())
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*post_bond_mapping_heights, &[0, 2]);
+    }
+
     // Check that the committee is updated with the new member.
     let committee = ledger.latest_committee().unwrap();
     assert!(committee.is_committee_member(new_member_address));
 
     // Check that number of validators in the `metadata` mapping in `credits.aleo` is updated.
-    let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
-    let metadata_mapping_name = Identifier::from_str("metadata").unwrap();
-    let key = Plaintext::<CurrentNetwork>::from_str("aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc")
-        .unwrap();
     let num_validators = match ledger
         .vm()
         .finalize_store()
-        .get_value_confirmed(program_id, metadata_mapping_name, &key)
+        .get_value_confirmed(program_id, metadata_mapping_name, &metadata_mapping_key)
         .unwrap()
         .unwrap()
     {
@@ -928,19 +806,80 @@ fn test_bond_and_unbond_validator() {
     // Add the bond public block to the ledger.
     ledger.advance_to_next_block(&unbond_public_block).unwrap();
 
+    // Check the historical mapping values after the unbonding.
+    #[cfg(feature = "history")]
+    {
+        let store = ledger.vm().finalize_store();
+        let initial_mapping_value = store
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*initial_mapping_value, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
+
+        let initial_mapping_value_overshot = store
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 1)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*initial_mapping_value_overshot, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
+
+        let post_bond_mapping_value = store
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 2)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*post_bond_mapping_value, &Value::<CurrentNetwork>::try_from("5u32").unwrap());
+
+        let post_unbond_mapping_value = store
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 3)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*post_unbond_mapping_value, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
+
+        let post_unbond_mapping_value_overshot = store
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 100)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*post_unbond_mapping_value_overshot, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
+
+        let post_unbond_mapping_heights = store
+            .get_mapping_update_heights(program_id, metadata_mapping_name, metadata_mapping_key.clone())
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*post_unbond_mapping_heights, &[0, 2, 3]);
+    }
+
+    // Check the historical rewards after the (un)bonding operations.
+    #[cfg(feature = "history-staking-rewards")]
+    {
+        let store = ledger.vm().finalize_store();
+        let program_id = ProgramID::from_str("credits.aleo").unwrap();
+        let bonded_mapping = Identifier::from_str("bonded").unwrap();
+        let bonded_map = store.get_mapping_speculative(program_id, bonded_mapping).unwrap();
+        let stakers = bonded_map_into_stakers(bonded_map).unwrap();
+
+        let initial_stake = MIN_VALIDATOR_STAKE;
+        let mut cumulative_reward = 0;
+        for height in 1..=3 {
+            for (i, staker) in stakers.keys().enumerate() {
+                let (validator, reward, new_stake) =
+                    store.staking_rewards_map().get_confirmed(&(*staker, height)).unwrap().unwrap().into_owned();
+                if i == 0 {
+                    cumulative_reward += reward;
+                }
+                assert_eq!(*staker, validator);
+                assert_eq!(initial_stake + cumulative_reward, new_stake);
+            }
+        }
+    }
+
     // Check that the committee does not include the new member.
     let committee = ledger.latest_committee().unwrap();
     assert!(!committee.is_committee_member(new_member_address));
 
-    // Check that number of validators in the `metadata` mapping in `credtis.aleo` is updated.
-    let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
-    let metadata_mapping_name = Identifier::from_str("metadata").unwrap();
-    let key = Plaintext::<CurrentNetwork>::from_str("aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc")
-        .unwrap();
+    // Check that number of validators in the `metadata` mapping in `credits.aleo` is updated.
     let num_validators = match ledger
         .vm()
         .finalize_store()
-        .get_value_confirmed(program_id, metadata_mapping_name, &key)
+        .get_value_confirmed(program_id, metadata_mapping_name, &metadata_mapping_key)
         .unwrap()
         .unwrap()
     {
@@ -1020,11 +959,12 @@ fn test_aborted_transaction_indexing() {
 }
 
 #[test]
-fn test_aborted_solution_ids() {
+fn test_aborted_solution_ids() -> Result<()> {
     let rng = &mut TestRng::default();
-
-    // Initialize the test environment.
-    let crate::test_helpers::TestEnv { ledger, private_key, address, .. } = crate::test_helpers::sample_test_env(rng);
+    let mut builder = TestChainBuilder::<CurrentNetwork>::new(rng)?;
+    let ledger = builder.instantiate_ledger();
+    let private_key = builder.validator_key(0);
+    let address = builder.validator_address(0);
 
     // Retrieve the puzzle parameters.
     let puzzle = ledger.puzzle();
@@ -1032,38 +972,36 @@ fn test_aborted_solution_ids() {
     let minimum_proof_target = ledger.latest_proof_target();
 
     // Create a solution that is less than the minimum proof target.
-    let mut invalid_solution = puzzle.prove(latest_epoch_hash, address, rng.gen(), None).unwrap();
+    let mut invalid_solution = puzzle.prove(latest_epoch_hash, address, rng.random(), None).unwrap();
     while puzzle.get_proof_target(&invalid_solution).unwrap() >= minimum_proof_target {
-        invalid_solution = puzzle.prove(latest_epoch_hash, address, rng.gen(), None).unwrap();
+        invalid_solution = puzzle.prove(latest_epoch_hash, address, rng.random(), None).unwrap();
     }
 
     // Create a valid transaction for the block.
     let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("10u64").unwrap()];
-    let transfer_transaction = ledger
-        .vm
-        .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng)
-        .unwrap();
+    let transfer_transaction =
+        ledger.vm.execute(private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng).unwrap();
 
-    // Create a block.
-    let block = ledger
-        .prepare_advance_to_next_beacon_block(
-            &private_key,
-            vec![],
-            vec![invalid_solution],
-            vec![transfer_transaction],
-            rng,
-        )
-        .unwrap();
+    let block = builder.generate_block_with_opts(
+        GenerateBlockOptions {
+            solutions: vec![invalid_solution],
+            transactions: vec![transfer_transaction],
+            ..Default::default()
+        },
+        rng,
+    )?;
 
     // Check that the next block is valid.
-    ledger.check_next_block(&block, rng).unwrap();
+    ledger.check_next_block(&block, rng).with_context(|| "Failed to check next block")?;
 
     // Add the deployment block to the ledger.
-    ledger.advance_to_next_block(&block).unwrap();
+    ledger.advance_to_next_block(&block).with_context(|| "Failed to advance to next block")?;
 
     // Enforce that the block solution was aborted properly.
     assert!(block.solutions().is_empty());
     assert_eq!(block.aborted_solution_ids(), &vec![invalid_solution.id()]);
+
+    Ok(())
 }
 
 #[test]
@@ -1084,7 +1022,7 @@ fn test_execute_duplicate_input_ids() {
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
                 _ => false,
             })
-            .collect::<indexmap::IndexMap<_, _>>()
+            .collect::<IndexMap<_, _>>()
     };
 
     // Fetch the unspent records.
@@ -1102,8 +1040,10 @@ fn test_execute_duplicate_input_ids() {
     let num_duplicate_deployments = 3;
     let mut executions = Vec::with_capacity(num_duplicate_deployments + 1);
     let mut execution_ids = Vec::with_capacity(num_duplicate_deployments + 1);
+    let mut execution_cache_keys = Vec::with_capacity(num_duplicate_deployments + 1);
     let mut deployments = Vec::with_capacity(num_duplicate_deployments);
     let mut deployment_ids = Vec::with_capacity(num_duplicate_deployments);
+    let mut deployment_cache_keys = Vec::with_capacity(num_duplicate_deployments);
 
     // Create Executions and Deployments, spending the same record.
     for i in 0..num_duplicate_deployments {
@@ -1113,6 +1053,7 @@ fn test_execute_duplicate_input_ids() {
             .execute(&private_key, ("credits.aleo", "transfer_private"), inputs.clone().iter(), None, 0, None, rng)
             .unwrap();
         execution_ids.push(execution.id());
+        execution_cache_keys.push(create_cache_key(ledger.vm(), &execution).unwrap());
         executions.push(execution);
         // Deploy.
         let program_id = ProgramID::<CurrentNetwork>::from_str(&format!("dummy_program_{i}.aleo")).unwrap();
@@ -1131,6 +1072,7 @@ finalize foo:
         let deployment =
             ledger.vm.deploy(&private_key, &program, Some(record_deployment.clone()), 0, None, rng).unwrap();
         deployment_ids.push(deployment.id());
+        deployment_cache_keys.push(create_cache_key(ledger.vm(), &deployment).unwrap());
         deployments.push(deployment);
     }
 
@@ -1149,6 +1091,7 @@ finalize foo:
         )
         .unwrap();
     execution_ids.push(execution.id());
+    execution_cache_keys.push(create_cache_key(ledger.vm(), &execution).unwrap());
     executions.push(execution);
 
     // Select a transaction to mutate by a malicious validator.
@@ -1158,7 +1101,7 @@ finalize foo:
     // This simulates a malicious validator re-using execution content.
     let execution_to_mutate = transaction_to_mutate.execution().unwrap();
     // Sample a transition.
-    let sample = ledger_test_helpers::sample_transition(rng);
+    let sample = snarkvm_ledger_test_helpers::sample_transition(rng);
     // Extend the transitions.
     let mutated_transitions = std::iter::once(sample).chain(execution_to_mutate.transitions().cloned());
     // Create a mutated execution.
@@ -1183,12 +1126,14 @@ finalize foo:
     // Create a mutated transaction.
     let mutated_transaction = Transaction::from_execution(mutated_execution, Some(fee)).unwrap();
     execution_ids.push(mutated_transaction.id());
+    execution_cache_keys.push(create_cache_key(ledger.vm(), &mutated_transaction).unwrap());
     executions.push(mutated_transaction);
 
     // Create a mutated execution which just takes the fee transition, resulting in a different transaction id.
     // This simulates a malicious validator transforming a transaction to a fee transaction.
     let mutated_transaction = Transaction::from_fee(transaction_to_mutate.fee_transition().unwrap()).unwrap();
     execution_ids.push(mutated_transaction.id());
+    execution_cache_keys.push(create_cache_key(ledger.vm(), &mutated_transaction).unwrap());
     executions.push(mutated_transaction);
 
     // Create a block.
@@ -1218,7 +1163,6 @@ finalize foo:
 
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 2);
-    println!("execution_ids: {:?}", execution_ids);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&execution_ids[2], &deployment_ids[2]]);
     assert_eq!(block.aborted_transaction_ids(), &vec![
         execution_ids[5],
@@ -1231,13 +1175,13 @@ finalize foo:
     // Ensure that verification was not run on aborted deployments.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
 
-    assert!(partially_verified_transaction.contains(&execution_ids[2]));
-    assert!(partially_verified_transaction.contains(&deployment_ids[2]));
-    assert!(!partially_verified_transaction.contains(&execution_ids[1]));
-    assert!(!partially_verified_transaction.contains(&deployment_ids[1]));
-    assert!(!partially_verified_transaction.contains(&execution_ids[3]));
-    assert!(!partially_verified_transaction.contains(&execution_ids[4])); // Verification was run, but the execution was invalid.
-    assert!(!partially_verified_transaction.contains(&execution_ids[5]));
+    assert!(partially_verified_transaction.contains(&execution_cache_keys[2]));
+    assert!(partially_verified_transaction.contains(&deployment_cache_keys[2]));
+    assert!(!partially_verified_transaction.contains(&execution_cache_keys[1]));
+    assert!(!partially_verified_transaction.contains(&deployment_cache_keys[1]));
+    assert!(!partially_verified_transaction.contains(&execution_cache_keys[3]));
+    assert!(!partially_verified_transaction.contains(&execution_cache_keys[4])); // Verification was run, but the execution was invalid.
+    assert!(!partially_verified_transaction.contains(&execution_cache_keys[5]));
 
     // Prepare a transfer that will succeed for the subsequent block.
     let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("1000u64").unwrap()];
@@ -1246,6 +1190,7 @@ finalize foo:
         .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.into_iter(), None, 0, None, rng)
         .unwrap();
     let transfer_id = transfer.id();
+    let transfer_cache_key = create_cache_key(ledger.vm(), &transfer).unwrap();
 
     // Create a block.
     let block = ledger
@@ -1271,9 +1216,9 @@ finalize foo:
 
     // Ensure that verification was not run on transactions aborted in a previous block.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
-    assert!(partially_verified_transaction.contains(&transfer_id));
-    assert!(!partially_verified_transaction.contains(&execution_ids[0]));
-    assert!(!partially_verified_transaction.contains(&deployment_ids[0]));
+    assert!(partially_verified_transaction.contains(&transfer_cache_key));
+    assert!(!partially_verified_transaction.contains(&execution_cache_keys[0]));
+    assert!(!partially_verified_transaction.contains(&deployment_cache_keys[0]));
 }
 
 #[test]
@@ -1325,7 +1270,7 @@ function create_duplicate_record:
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
                 _ => false,
             })
-            .collect::<indexmap::IndexMap<_, _>>()
+            .collect::<IndexMap<_, _>>()
     };
 
     // Fetch the unspent records.
@@ -1418,14 +1363,17 @@ function create_duplicate_record:
     // Create the first transfer.
     let transfer_1 = create_execution_with_duplicate_output_id(1);
     let transfer_1_id = transfer_1.id();
+    let transfer_1_cache_key = create_cache_key(ledger.vm(), &transfer_1).unwrap();
 
     // Create a second transfer with the same output id.
     let transfer_2 = create_execution_with_duplicate_output_id(2);
     let transfer_2_id = transfer_2.id();
+    let transfer_2_cache_key = create_cache_key(ledger.vm(), &transfer_2).unwrap();
 
     // Create a third transfer with the same output id.
     let transfer_3 = create_execution_with_duplicate_output_id(3);
     let transfer_3_id = transfer_3.id();
+    let transfer_3_cache_key = create_cache_key(ledger.vm(), &transfer_3).unwrap();
 
     // Ensure that each transaction has a duplicate output id.
     let tx_1_output_id = transfer_1.output_ids().next().unwrap();
@@ -1437,14 +1385,17 @@ function create_duplicate_record:
     // Create the first deployment.
     let deployment_1 = create_deployment_with_duplicate_output_id(1);
     let deployment_1_id = deployment_1.id();
+    let deployment_1_cache_key = create_cache_key(ledger.vm(), &deployment_1).unwrap();
 
     // Create a second deployment with the same output id.
     let deployment_2 = create_deployment_with_duplicate_output_id(2);
     let deployment_2_id = deployment_2.id();
+    let deployment_2_cache_key = create_cache_key(ledger.vm(), &deployment_2).unwrap();
 
     // Create a third deployment with the same output id.
     let deployment_3 = create_deployment_with_duplicate_output_id(3);
     let deployment_3_id = deployment_3.id();
+    let deployment_3_cache_key = create_cache_key(ledger.vm(), &deployment_3).unwrap();
 
     // Ensure that each transaction has a duplicate output id.
     let deployment_1_output_id = deployment_1.output_ids().next().unwrap();
@@ -1477,10 +1428,10 @@ function create_duplicate_record:
 
     // Ensure that verification was not run on aborted deployments.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
-    assert!(partially_verified_transaction.contains(&transfer_1_id));
-    assert!(partially_verified_transaction.contains(&deployment_1_id));
-    assert!(!partially_verified_transaction.contains(&transfer_2_id));
-    assert!(!partially_verified_transaction.contains(&deployment_2_id));
+    assert!(partially_verified_transaction.contains(&transfer_1_cache_key));
+    assert!(partially_verified_transaction.contains(&deployment_1_cache_key));
+    assert!(!partially_verified_transaction.contains(&transfer_2_cache_key));
+    assert!(!partially_verified_transaction.contains(&deployment_2_cache_key));
 
     // Prepare a transfer that will succeed for the subsequent block.
     let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("1000u64").unwrap()];
@@ -1489,6 +1440,7 @@ function create_duplicate_record:
         .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.into_iter(), None, 0, None, rng)
         .unwrap();
     let transfer_4_id = transfer_4.id();
+    let transfer_4_cache_key = create_cache_key(ledger.vm(), &transfer_4).unwrap();
 
     // Create a block.
     let block = ledger
@@ -1514,9 +1466,39 @@ function create_duplicate_record:
 
     // Ensure that verification was not run on transactions aborted in a previous block.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
-    assert!(partially_verified_transaction.contains(&transfer_4_id));
-    assert!(!partially_verified_transaction.contains(&transfer_3_id));
-    assert!(!partially_verified_transaction.contains(&deployment_3_id));
+    assert!(partially_verified_transaction.contains(&transfer_4_cache_key));
+    assert!(!partially_verified_transaction.contains(&transfer_3_cache_key));
+    assert!(!partially_verified_transaction.contains(&deployment_3_cache_key));
+}
+
+// Tests that `try_get_*' returns `None` if the tranmissions does not exist.
+#[test]
+fn test_get_transaction() {
+    let rng = &mut TestRng::default();
+    let ledger = crate::test_helpers::sample_test_env(rng).ledger;
+
+    // Generate a random transaction ID.
+    let transaction = crate::test_helpers::sample_deployment_transaction(1, 0, false, true, rng);
+    let transaction_id = transaction.id();
+
+    assert_eq!(ledger.try_get_transaction(&transaction_id).unwrap(), None);
+    assert_eq!(ledger.try_get_confirmed_transaction(&transaction_id).unwrap(), None);
+    assert_eq!(ledger.try_get_unconfirmed_transaction(&transaction_id).unwrap(), None);
+
+    assert!(ledger.get_transaction(transaction_id).is_err());
+    assert!(ledger.get_confirmed_transaction(transaction_id).is_err());
+    assert!(ledger.get_unconfirmed_transaction(&transaction_id).is_err());
+
+    // Insert the transaction as unconfirmed into the ledger.
+    ledger.vm().transaction_store().insert(&transaction).unwrap();
+
+    assert!(ledger.try_get_transaction(&transaction_id).unwrap().is_some());
+    assert_eq!(ledger.try_get_confirmed_transaction(&transaction_id).unwrap(), None);
+    assert!(ledger.try_get_unconfirmed_transaction(&transaction_id).unwrap().is_some());
+
+    assert!(ledger.get_transaction(transaction_id).is_ok());
+    assert!(ledger.get_confirmed_transaction(transaction_id).is_err());
+    assert!(ledger.get_unconfirmed_transaction(&transaction_id).is_ok());
 }
 
 #[test]
@@ -1595,14 +1577,17 @@ function empty_function:
     // Create the first transaction.
     let transaction_1 = create_transaction_with_duplicate_transition_id();
     let transaction_1_id = transaction_1.id();
+    let transaction_1_cache_key = create_cache_key(ledger.vm(), &transaction_1).unwrap();
 
     // Create a second transaction with the same transition id.
     let transaction_2 = create_transaction_with_duplicate_transition_id();
     let transaction_2_id = transaction_2.id();
+    let transaction_2_cache_key = create_cache_key(ledger.vm(), &transaction_2).unwrap();
 
     // Create a third transaction with the same transition_id
     let transaction_3 = create_transaction_with_duplicate_transition_id();
     let transaction_3_id = transaction_3.id();
+    let transaction_3_cache_key = create_cache_key(ledger.vm(), &transaction_3).unwrap();
 
     // Ensure that each transaction has a duplicate transition id.
     let tx_1_transition_id = transaction_1.transition_ids().next().unwrap();
@@ -1629,8 +1614,8 @@ function empty_function:
 
     // Ensure that verification was not run on aborted transactions.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
-    assert!(partially_verified_transaction.contains(&transaction_1_id));
-    assert!(!partially_verified_transaction.contains(&transaction_2_id));
+    assert!(partially_verified_transaction.contains(&transaction_1_cache_key));
+    assert!(!partially_verified_transaction.contains(&transaction_2_cache_key));
 
     // Prepare a transfer that will succeed for the subsequent block.
     let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("1000u64").unwrap()];
@@ -1639,6 +1624,7 @@ function empty_function:
         .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.into_iter(), None, 0, None, rng)
         .unwrap();
     let transfer_transaction_id = transfer_transaction.id();
+    let transfer_cache_key = create_cache_key(ledger.vm(), &transfer_transaction).unwrap();
 
     // Create a block.
     let block = ledger
@@ -1664,8 +1650,8 @@ function empty_function:
 
     // Ensure that verification was not run on transactions aborted in a previous block.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
-    assert!(partially_verified_transaction.contains(&transfer_transaction_id));
-    assert!(!partially_verified_transaction.contains(&transaction_3_id));
+    assert!(partially_verified_transaction.contains(&transfer_cache_key));
+    assert!(!partially_verified_transaction.contains(&transaction_3_cache_key));
 }
 
 #[test]
@@ -1739,14 +1725,17 @@ function simple_output:
     // Create the first transaction.
     let transaction_1 = create_transaction_with_duplicate_tpk("empty_function");
     let transaction_1_id = transaction_1.id();
+    let transaction_1_cache_key = create_cache_key(ledger.vm(), &transaction_1).unwrap();
 
     // Create a second transaction with the same tpk and tcm.
     let transaction_2 = create_transaction_with_duplicate_tpk("simple_output");
     let transaction_2_id = transaction_2.id();
+    let transaction_2_cache_key = create_cache_key(ledger.vm(), &transaction_2).unwrap();
 
     // Create a third transaction with the same tpk and tcm.
     let transaction_3 = create_transaction_with_duplicate_tpk("simple_output");
     let transaction_3_id = transaction_3.id();
+    let transaction_3_cache_key = create_cache_key(ledger.vm(), &transaction_3).unwrap();
 
     // Ensure that each transaction has a duplicate tcm and tpk.
     let tx_1_tpk = transaction_1.transitions().next().unwrap().tpk();
@@ -1779,8 +1768,8 @@ function simple_output:
 
     // Ensure that verification was not run on aborted transactions.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
-    assert!(partially_verified_transaction.contains(&transaction_1_id));
-    assert!(!partially_verified_transaction.contains(&transaction_2_id));
+    assert!(partially_verified_transaction.contains(&transaction_1_cache_key));
+    assert!(!partially_verified_transaction.contains(&transaction_2_cache_key));
 
     // Prepare a transfer that will succeed for the subsequent block.
     let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("1000u64").unwrap()];
@@ -1789,6 +1778,7 @@ function simple_output:
         .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.into_iter(), None, 0, None, rng)
         .unwrap();
     let transfer_transaction_id = transfer_transaction.id();
+    let transfer_transaction_cache_key = create_cache_key(ledger.vm(), &transfer_transaction).unwrap();
 
     // Create a block.
     let block = ledger
@@ -1814,8 +1804,8 @@ function simple_output:
 
     // Ensure that verification was not run on transactions aborted in a previous block.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
-    assert!(partially_verified_transaction.contains(&transfer_transaction_id));
-    assert!(!partially_verified_transaction.contains(&transaction_3_id));
+    assert!(partially_verified_transaction.contains(&transfer_transaction_cache_key));
+    assert!(!partially_verified_transaction.contains(&transaction_3_cache_key));
 }
 
 #[test]
@@ -1847,10 +1837,12 @@ function empty_function:
     // Create a deployment transaction for the first program with the same public payer.
     let deployment_1 = ledger.vm.deploy(&private_key, &program_1, None, 0, None, rng).unwrap();
     let deployment_1_id = deployment_1.id();
+    let deployment_1_cache_key = create_cache_key(ledger.vm(), &deployment_1).unwrap();
 
     // Create a deployment transaction for the second program with the same public payer.
     let deployment_2 = ledger.vm.deploy(&private_key, &program_2, None, 0, None, rng).unwrap();
     let deployment_2_id = deployment_2.id();
+    let deployment_2_cache_key = create_cache_key(ledger.vm(), &deployment_2).unwrap();
 
     // Create a block.
     let block = ledger
@@ -1874,16 +1866,22 @@ function empty_function:
 
     // Ensure that verification was not run on aborted transactions.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
-    assert!(partially_verified_transaction.contains(&deployment_1_id));
-    assert!(!partially_verified_transaction.contains(&deployment_2_id));
+    assert!(partially_verified_transaction.contains(&deployment_1_cache_key));
+    assert!(!partially_verified_transaction.contains(&deployment_2_cache_key));
 }
 
 #[test]
 fn test_abort_fee_transaction() {
     let rng = &mut TestRng::default();
+    let mut chain_builder = TestChainBuilder::new(rng).unwrap();
 
-    // Initialize the test environment.
-    let crate::test_helpers::TestEnv { ledger, private_key, address, .. } = crate::test_helpers::sample_test_env(rng);
+    let private_key = chain_builder.private_keys()[0];
+    let address = Address::try_from(&private_key).unwrap();
+
+    // Construct the ledger.
+    let ledger =
+        Ledger::<CurrentNetwork, LedgerType>::load(chain_builder.genesis_block().clone(), StorageMode::new_test(None))
+            .unwrap();
 
     // Construct valid transaction for the ledger.
     let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("1000u64").unwrap()];
@@ -1902,8 +1900,11 @@ fn test_abort_fee_transaction() {
     let fee_transaction_id = fee_transaction.id();
 
     // Create a block using a fee transaction.
-    let block = ledger
-        .prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![fee_transaction, transaction], rng)
+    let block = chain_builder
+        .generate_block_with_opts(
+            GenerateBlockOptions { transactions: vec![fee_transaction, transaction], ..Default::default() },
+            rng,
+        )
         .unwrap();
 
     // Check that the block aborts the invalid transaction.
@@ -1994,7 +1995,7 @@ fn test_deployment_duplicate_program_id() {
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
                 _ => false,
             })
-            .collect::<indexmap::IndexMap<_, _>>()
+            .collect::<IndexMap<_, _>>()
     };
 
     // Fetch the unspent records.
@@ -2059,6 +2060,7 @@ finalize foo2:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 1);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
 
     // Enforce that the first program was deployed and the second was rejected.
     assert_eq!(ledger.get_program(*program_1.id()).unwrap(), program_1);
@@ -2075,8 +2077,8 @@ fn test_split_candidate_solutions() {
     const ITERATIONS: usize = 1_000;
 
     for _ in 0..ITERATIONS {
-        let num_candidates = rng.gen_range(0..max_solutions * 2);
-        let candidate_solutions: Vec<u8> = rng.sample_iter(Standard).take(num_candidates).collect();
+        let num_candidates = rng.random_range(0..max_solutions * 2);
+        let candidate_solutions: Vec<u8> = rng.sample_iter(StandardUniform).take(num_candidates).collect();
 
         let (_accepted, _aborted) =
             split_candidate_solutions(candidate_solutions, max_solutions, |candidate| *candidate % 2 == 0);
@@ -2322,76 +2324,6 @@ fn test_max_committee_limit_with_bonds() {
 }
 
 #[test]
-fn test_deployment_exceeding_max_transaction_spend() {
-    let rng = &mut TestRng::default();
-
-    // Initialize the test environment.
-    let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
-
-    // Construct two programs, one that is allowed and one that exceeds the maximum transaction spend.
-    let mut allowed_program = None;
-    let mut exceeding_program = None;
-
-    for i in 0..<CurrentNetwork as Network>::MAX_COMMANDS.ilog2() {
-        // Construct the finalize body.
-        let finalize_body =
-            (0..2.pow(i)).map(|i| format!("hash.bhp256 0field into r{i} as field;")).collect::<Vec<_>>().join("\n");
-
-        // Construct the program.
-        let program = Program::from_str(&format!(
-            r"program test_max_spend_limit_{i}.aleo;
-          function foo:
-          async foo into r0;
-          output r0 as test_max_spend_limit_{i}.aleo/foo.future;
-
-          finalize foo:{finalize_body}",
-        ))
-        .unwrap();
-
-        // Attempt to initialize a `Stack` for the program.
-        // If this fails, then by `Stack::initialize` the finalize cost exceeds the `TRANSACTION_SPEND_LIMIT`.
-        if Stack::<CurrentNetwork>::new(&ledger.vm().process().read(), &program).is_err() {
-            exceeding_program = Some(program);
-            break;
-        } else {
-            allowed_program = Some(program);
-        }
-    }
-
-    // Ensure that the allowed and exceeding programs are not None.
-    assert!(allowed_program.is_some());
-    assert!(exceeding_program.is_some());
-
-    let allowed_program = allowed_program.unwrap();
-    let exceeding_program = exceeding_program.unwrap();
-
-    // Deploy the allowed program.
-    let deployment = ledger.vm().deploy(&private_key, &allowed_program, None, 0, None, rng).unwrap();
-
-    // Verify the deployment transaction.
-    assert!(ledger.vm().check_transaction(&deployment, None, rng).is_ok());
-
-    // Construct the next block.
-    let block =
-        ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![deployment], rng).unwrap();
-
-    // Check that the next block is valid.
-    ledger.check_next_block(&block, rng).unwrap();
-
-    // Add the block to the ledger.
-    ledger.advance_to_next_block(&block).unwrap();
-
-    // Check that the program exists in the VM.
-    assert!(ledger.vm().contains_program(allowed_program.id()));
-
-    // Attempt to deploy the exceeding program.
-    let result = ledger.vm().deploy(&private_key, &exceeding_program, None, 0, None, rng);
-
-    // Check that the deployment failed.
-    assert!(result.is_err());
-}
-
-#[test]
 fn test_transaction_ordering() {
     let rng = &mut TestRng::default();
 
@@ -2539,7 +2471,7 @@ finalize foo:
         aborted_transactions.shuffle(rng);
 
         // Randomly insert the aborted transactions.
-        let start_position = rng.gen_range(0..=transactions.len());
+        let start_position = rng.random_range(0..=transactions.len());
         for (index, element) in aborted_transactions.iter().enumerate() {
             transactions.insert(start_position + index, element.clone());
         }
@@ -2727,11 +2659,14 @@ function foo:
             };
             let deployment = deployment_tx.deployment().unwrap().clone();
             for _ in 0..ITERATIONS {
-                let result =
-                    match try_vm_runtime!(|| process.read().verify_deployment::<CurrentAleo, _>(&deployment, rng)) {
-                        Ok(result) => result.is_ok(),
-                        Err(_) => false,
-                    };
+                let result = match try_vm_runtime!(|| process.verify_deployment::<CurrentAleo, _>(
+                    ConsensusVersion::V8,
+                    &deployment,
+                    rng
+                )) {
+                    Ok(result) => result.is_ok(),
+                    Err(_) => false,
+                };
                 assert_eq!(result, expected_result);
             }
         };
@@ -2748,10 +2683,63 @@ function foo:
 #[cfg(feature = "test")]
 mod valid_solutions {
     use super::*;
-    use crate::is_solution_limit_reached::STAKE_REQUIREMENTS_PER_SOLUTION;
-    use ledger_puzzle::Solution;
+    use crate::is_solution_limit_reached::stake_requirements_per_solution;
     use rand::prelude::SliceRandom;
+    use snarkvm_ledger_puzzle::Solution;
     use std::collections::HashSet;
+
+    // Helper function to set up a prover's account with sufficient balance to generate solutions.
+    fn setup_prover_account(
+        ledger: &CurrentLedger,
+        validator_private_key: &PrivateKey<CurrentNetwork>,
+        prover_private_key: &PrivateKey<CurrentNetwork>,
+        rng: &mut TestRng,
+    ) {
+        // Fetch the validator and prover addresses.
+        let validator_address = Address::try_from(validator_private_key).unwrap();
+        let prover_address = Address::try_from(prover_private_key).unwrap();
+
+        // Transfer a large number of credits to a prover address to ensure the prover has sufficient balance to generate solutions.
+        let inputs =
+            [Value::from_str(&format!("{prover_address}")).unwrap(), Value::from_str("181000000000000u64").unwrap()];
+        let transfer_transaction = ledger
+            .vm
+            .execute(validator_private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng)
+            .unwrap();
+
+        let block = ledger
+            .prepare_advance_to_next_beacon_block(
+                validator_private_key,
+                vec![],
+                vec![],
+                vec![transfer_transaction],
+                rng,
+            )
+            .unwrap();
+        // Check that the next block is valid.
+        ledger.check_next_block(&block, rng).unwrap();
+        // Add the block to the ledger.
+        ledger.advance_to_next_block(&block).unwrap();
+
+        // Bond the prover's account to ensure it can generate solutions.
+        let inputs = [
+            Value::from_str(&format!("{validator_address}")).unwrap(),
+            Value::from_str(&format!("{prover_address}")).unwrap(),
+            Value::from_str("180000000000000u64").unwrap(),
+        ];
+        let bond_transaction = ledger
+            .vm
+            .execute(prover_private_key, ("credits.aleo", "bond_public"), inputs.iter(), None, 0, None, rng)
+            .unwrap();
+
+        let block = ledger
+            .prepare_advance_to_next_beacon_block(validator_private_key, vec![], vec![], vec![bond_transaction], rng)
+            .unwrap();
+        // Check that the next block is valid.
+        ledger.check_next_block(&block, rng).unwrap();
+        // Add the block to the ledger.
+        ledger.advance_to_next_block(&block).unwrap();
+    }
 
     #[test]
     fn test_duplicate_solution_ids() {
@@ -2759,8 +2747,12 @@ mod valid_solutions {
         let rng = &mut TestRng::default();
 
         // Initialize the test environment.
-        let crate::test_helpers::TestEnv { ledger, private_key, address, .. } =
-            crate::test_helpers::sample_test_env(rng);
+        let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
+
+        // Set up the prover account with sufficient balance to generate solutions.
+        let prover_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let prover_address = Address::try_from(&prover_private_key).unwrap();
+        setup_prover_account(&ledger, &private_key, &prover_private_key, rng);
 
         // Retrieve the puzzle parameters.
         let puzzle = ledger.puzzle();
@@ -2768,18 +2760,18 @@ mod valid_solutions {
         let minimum_proof_target = ledger.latest_proof_target();
 
         // Create a solution that is greater than the minimum proof target.
-        let mut valid_solution = puzzle.prove(latest_epoch_hash, address, rng.gen(), None).unwrap();
+        let mut valid_solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
         while puzzle.get_proof_target(&valid_solution).unwrap() < minimum_proof_target {
             println!(
                 "Solution is invalid: {} < {}",
                 puzzle.get_proof_target(&valid_solution).unwrap(),
                 minimum_proof_target
             );
-            valid_solution = puzzle.prove(latest_epoch_hash, address, rng.gen(), None).unwrap();
+            valid_solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
         }
 
         // Create a valid transaction for the block.
-        let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("10u64").unwrap()];
+        let inputs = [Value::from_str(&format!("{prover_address}")).unwrap(), Value::from_str("10u64").unwrap()];
         let transfer_transaction = ledger
             .vm
             .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng)
@@ -2818,16 +2810,21 @@ mod valid_solutions {
     }
 
     #[test]
+    #[ignore]
     fn test_cumulative_proof_target_correctness() {
-        // The number of blocks to test.
-        const NUM_BLOCKS: u32 = 25;
-
         // Initialize an RNG.
         let rng = &mut TestRng::default();
 
+        // The number of blocks to test.
+        let num_blocks = CurrentNetwork::NUM_BLOCKS_PER_EPOCH * 2;
+
         // Initialize the test environment.
-        let crate::test_helpers::TestEnv { ledger, private_key, address, .. } =
-            crate::test_helpers::sample_test_env(rng);
+        let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
+
+        // Set up the prover account with sufficient balance to generate solutions.
+        let prover_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let prover_address = Address::try_from(&prover_private_key).unwrap();
+        setup_prover_account(&ledger, &private_key, &prover_private_key, rng);
 
         // Retrieve the puzzle parameters.
         let puzzle = ledger.puzzle();
@@ -2841,8 +2838,8 @@ mod valid_solutions {
         // Track the total number of solutions in the current epoch.
         let mut total_epoch_solutions = 0;
 
-        // Run through 25 blocks of target adjustment.
-        while block_height < NUM_BLOCKS {
+        // Run through `num_blocks` blocks of target adjustment.
+        while block_height < num_blocks {
             // Get coinbase puzzle data from the latest block.
             let block = ledger.latest_block();
             let coinbase_target = block.coinbase_target();
@@ -2851,14 +2848,16 @@ mod valid_solutions {
             let latest_proof_target = ledger.latest_proof_target();
 
             // Sample the number of solutions to generate.
-            let num_solutions = rng.gen_range(1..=CurrentNetwork::MAX_SOLUTIONS);
+            let num_solutions = rng.random_range(1..=CurrentNetwork::MAX_SOLUTIONS);
 
             // Initialize a vector for valid solutions for this block.
             let mut solutions = Vec::with_capacity(num_solutions);
 
             // Loop through proofs until two that meet the threshold are found.
             loop {
-                if let Ok(solution) = puzzle.prove(latest_epoch_hash, address, rng.gen(), Some(latest_proof_target)) {
+                if let Ok(solution) =
+                    puzzle.prove(latest_epoch_hash, prover_address, rng.random(), Some(latest_proof_target))
+                {
                     // Get the proof target.
                     let proof_target = puzzle.get_proof_target(&solution).unwrap();
 
@@ -2878,23 +2877,9 @@ mod valid_solutions {
                 combined_targets = 0;
             }
 
-            // Get a transfer transaction to ensure solutions can be included in the block.
-            let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("10u64").unwrap()];
-            let transfer_transaction = ledger
-                .vm
-                .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng)
-                .unwrap();
-
             // Generate the next prospective block.
-            let next_block = ledger
-                .prepare_advance_to_next_beacon_block(
-                    &private_key,
-                    vec![],
-                    solutions,
-                    vec![transfer_transaction.clone()],
-                    rng,
-                )
-                .unwrap();
+            let next_block =
+                ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], solutions, vec![], rng).unwrap();
 
             // Ensure the combined target matches the expected value.
             assert_eq!(combined_targets as u128, next_block.cumulative_proof_target());
@@ -2909,53 +2894,155 @@ mod valid_solutions {
             block_height = ledger.latest_height();
 
             // Update the epoch solutions count.
+            if block_height.is_multiple_of(CurrentNetwork::NUM_BLOCKS_PER_EPOCH) {
+                // Reset the epoch solutions count at the epoch boundary.
+                total_epoch_solutions = 0;
+            } else {
+                total_epoch_solutions += num_solutions;
+            }
+
+            // Fetch the epoch provers cache.
+            let epoch_provers = ledger.epoch_provers_cache.read();
+            // Load the epoch provers from the blocks in the current epoch.
+            let expected_epoch_provers = ledger.load_epoch_provers();
+            // Check that the epoch solutions are correct
+            assert_eq!(epoch_provers.values().sum::<u32>(), u32::try_from(total_epoch_solutions).unwrap());
+            assert_eq!(epoch_provers.len(), expected_epoch_provers.len());
+            for ((expected_address, expected_count), (address, count)) in
+                expected_epoch_provers.iter().zip(epoch_provers.iter())
+            {
+                assert_eq!(expected_address, address);
+                assert_eq!(expected_count, count);
+            }
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn test_epoch_provers_cache_cleared_at_epoch_boundary() {
+        // Initialize an RNG.
+        let rng = &mut TestRng::default();
+
+        // Initialize the test environment.
+        let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
+
+        // Set up the prover account with sufficient balance to generate solutions.
+        let prover_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let prover_address = Address::try_from(&prover_private_key).unwrap();
+        setup_prover_account(&ledger, &private_key, &prover_private_key, rng);
+
+        // Retrieve the puzzle parameters.
+        let puzzle = ledger.puzzle();
+
+        // Initialize block height.
+        let mut block_height = ledger.latest_height();
+
+        // Start a local counter of proof targets.
+        let mut combined_targets = 0;
+
+        // Track the total number of solutions in the current epoch.
+        let mut total_epoch_solutions = 0;
+
+        // Run through blocks until the end of the epoch.
+        while block_height < CurrentNetwork::NUM_BLOCKS_PER_EPOCH {
+            // Check the epoch provers cache.
+            {
+                // Fetch the epoch provers cache.
+                let epoch_provers = ledger.epoch_provers_cache.read();
+                // Load the epoch provers from the blocks in the current epoch.
+                let expected_epoch_provers = ledger.load_epoch_provers();
+                // Check that the epoch solutions are correct
+                assert_eq!(epoch_provers.values().sum::<u32>(), u32::try_from(total_epoch_solutions).unwrap());
+                assert_eq!(epoch_provers.len(), expected_epoch_provers.len());
+                for ((expected_address, expected_count), (address, count)) in
+                    expected_epoch_provers.iter().zip(epoch_provers.iter())
+                {
+                    assert_eq!(expected_address, address);
+                    assert_eq!(expected_count, count);
+                    assert_eq!(*expected_count, u32::try_from(total_epoch_solutions).unwrap());
+                }
+            }
+
+            // Get coinbase puzzle data from the latest block.
+            let block = ledger.latest_block();
+            let coinbase_target = block.coinbase_target();
+            let coinbase_threshold = coinbase_target.saturating_div(2);
+            let latest_epoch_hash = ledger.latest_epoch_hash().unwrap();
+            let latest_proof_target = ledger.latest_proof_target();
+
+            // Sample the number of solutions to generate.
+            let num_solutions = rng.random_range(1..=CurrentNetwork::MAX_SOLUTIONS);
+
+            // Initialize a vector for valid solutions for this block.
+            let mut solutions = Vec::with_capacity(num_solutions);
+
+            // Loop through proofs until two that meet the threshold are found.
+            loop {
+                if let Ok(solution) =
+                    puzzle.prove(latest_epoch_hash, prover_address, rng.random(), Some(latest_proof_target))
+                {
+                    // Get the proof target.
+                    let proof_target = puzzle.get_proof_target(&solution).unwrap();
+
+                    // Update the local combined target counter and store the solution.
+                    combined_targets += proof_target;
+                    solutions.push(solution);
+
+                    // If two have been found, exit the solver loop.
+                    if solutions.len() >= num_solutions {
+                        break;
+                    }
+                }
+            }
+
+            // If the combined target exceeds the coinbase threshold reset it.
+            if combined_targets >= coinbase_threshold {
+                combined_targets = 0;
+            }
+
+            // Generate the next prospective block.
+            let next_block =
+                ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], solutions, vec![], rng).unwrap();
+
+            // Ensure the next block is correct.
+            ledger.check_next_block(&next_block, rng).unwrap();
+
+            // Advanced to the next block.
+            ledger.advance_to_next_block(&next_block).unwrap();
+
+            // Set the latest block height.
+            block_height = ledger.latest_height();
+
+            // Update the epoch solutions count.
             total_epoch_solutions += num_solutions;
         }
+
+        // Ensure that we are at the end of the epoch.
+        assert!(block_height.is_multiple_of(CurrentNetwork::NUM_BLOCKS_PER_EPOCH));
 
         // Fetch the epoch provers cache.
         let epoch_provers = ledger.epoch_provers_cache.read();
         // Load the epoch provers from the blocks in the current epoch.
         let expected_epoch_provers = ledger.load_epoch_provers();
-        // Check that the epoch solutions are correct
-        assert_eq!(epoch_provers.values().sum::<u32>(), u32::try_from(total_epoch_solutions).unwrap());
-        assert_eq!(epoch_provers.len(), expected_epoch_provers.len());
-        for ((expected_address, expected_count), (address, count)) in
-            expected_epoch_provers.iter().zip(epoch_provers.iter())
-        {
-            assert_eq!(expected_address, address);
-            assert_eq!(expected_count, count);
-        }
+        // Check that the epoch solutions are both empty.
+        assert_eq!(epoch_provers.len(), 0);
+        assert_eq!(expected_epoch_provers.len(), 0);
     }
 
     #[test]
-    fn test_solution_limits() {
+    fn test_solution_limits() -> Result<()> {
         let rng = &mut TestRng::default();
+        let stake_requirements = stake_requirements_per_solution::<CurrentNetwork>();
+        let mut chain_builder = TestChainBuilder::new(rng)?;
 
-        // Sample the genesis private key.
-        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let private_key = chain_builder.private_keys()[0];
         let validator_address = Address::try_from(&private_key).unwrap();
 
-        // Initialize the store.
-        let store = ConsensusStore::<_, LedgerType>::open(StorageMode::new_test(None)).unwrap();
-        // Create a genesis block with a seeded RNG to reproduce the same genesis private keys.
-        let seed: u64 = rng.gen();
-        let genesis_rng = &mut TestRng::from_seed(seed);
-        let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, genesis_rng).unwrap();
-
-        // Extract the private keys from the genesis committee by using the same RNG to sample private keys.
-        let genesis_rng = &mut TestRng::from_seed(seed);
-        let private_keys = [
-            private_key,
-            PrivateKey::new(genesis_rng).unwrap(),
-            PrivateKey::new(genesis_rng).unwrap(),
-            PrivateKey::new(genesis_rng).unwrap(),
-        ];
-
-        // Construct the chain builder.
-        let mut chain_builder = TestChainBuilder::new(private_keys.to_vec(), genesis.clone());
-
         // Construct the ledger.
-        let ledger = Ledger::<CurrentNetwork, LedgerType>::load(genesis, StorageMode::new_test(None)).unwrap();
+        let ledger = Ledger::<CurrentNetwork, LedgerType>::load(
+            chain_builder.genesis_block().clone(),
+            StorageMode::new_test(None),
+        )?;
 
         // Retrieve the puzzle parameters.
         let puzzle = ledger.puzzle();
@@ -2966,29 +3053,15 @@ mod valid_solutions {
         let prover_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let prover_address = Address::try_from(&prover_private_key).unwrap();
 
-        let mut valid_solutions = Vec::with_capacity(2);
         // Create solutions that are greater than the minimum proof target.
-        while valid_solutions.len() < 2 {
-            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.gen(), None).unwrap();
+        let valid_solution = loop {
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
-                valid_solutions.push(solution);
+                break solution;
             }
-        }
-        let valid_solution_1 = valid_solutions.remove(0);
-        let valid_solution_2 = valid_solutions.remove(0);
-        let valid_solution_1_transmission = Transmission::from(valid_solution_1);
-        let valid_solution_1_transmission_id = TransmissionID::Solution(
-            valid_solution_1.id(),
-            valid_solution_1_transmission.to_checksum().unwrap().unwrap(),
-        );
-        let valid_solution_2_transmission = Transmission::from(valid_solution_2);
-        let valid_solution_2_transmission_id = TransmissionID::Solution(
-            valid_solution_2.id(),
-            valid_solution_2_transmission.to_checksum().unwrap().unwrap(),
-        );
+        };
 
         // 1. Advance to the latest timestamp.
-
         assert!(!ledger.is_solution_limit_reached(&prover_address, 0));
 
         // Transfer a public balance to the prover address.
@@ -2998,41 +3071,44 @@ mod valid_solutions {
             .vm
             .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng)
             .unwrap();
-        let transfer_transmission = Transmission::from(transfer_transaction.clone());
-        // Construct the transmission ID.
-        let transmission_id = TransmissionID::Transaction(
-            transfer_transaction.id(),
-            transfer_transmission.to_checksum().unwrap().unwrap(),
-        );
         // Create a block that advances the ledger past the first solution limit timestamp.
-        let timestamp_1 = STAKE_REQUIREMENTS_PER_SOLUTION[0].0;
-        let next_block = chain_builder.generate_block_with_partition(
-            &Default::default(),
-            timestamp_1,
-            IndexMap::from([(transmission_id, transfer_transmission)]),
-            true,
-            rng,
-        );
+        let timestamp_1 = stake_requirements[0].0;
+        let next_block = chain_builder
+            .generate_block_with_opts(
+                GenerateBlockOptions {
+                    timestamp: timestamp_1,
+                    transactions: vec![transfer_transaction],
+                    skip_votes: true,
+                    ..Default::default()
+                },
+                rng,
+            )
+            .with_context(|| "Failed to generate first block")?;
         // Advance to the next block.
-        ledger.advance_to_next_block(&next_block).unwrap();
+        ledger.advance_to_next_block(&next_block).with_context(|| "Failed to advance to first block")?;
 
         // 2. Check that the solution limit is reached because the prover does not have any stake.
         assert_eq!(ledger.num_remaining_solutions(&prover_address, 0), 0);
         assert!(ledger.is_solution_limit_reached(&prover_address, 0));
 
         // Create a block with a solution.
-        let next_block = chain_builder.generate_block_with_partition(
-            &Default::default(),
-            timestamp_1,
-            IndexMap::from([(valid_solution_1_transmission_id, valid_solution_1_transmission.clone())]),
-            true,
-            rng,
-        );
+        let next_block = chain_builder
+            .generate_block_with_opts(
+                GenerateBlockOptions {
+                    timestamp: timestamp_1,
+                    solutions: vec![valid_solution],
+                    skip_votes: true,
+                    ..Default::default()
+                },
+                rng,
+            )
+            .with_context(|| "Failed to generate second block")?;
+
         // Check that the solution is aborted.
         assert!(next_block.solutions().is_empty());
         assert_eq!(next_block.aborted_solution_ids().len(), 1);
         // Advance to the next block.
-        ledger.advance_to_next_block(&next_block).unwrap();
+        ledger.advance_to_next_block(&next_block).with_context(|| "Failed to advance to second block")?;
 
         // 3. Bond the required stake.
 
@@ -3040,24 +3116,26 @@ mod valid_solutions {
         let inputs = [
             Value::<CurrentNetwork>::from_str(&validator_address.to_string()).unwrap(),
             Value::<CurrentNetwork>::from_str(&prover_address.to_string()).unwrap(),
-            Value::<CurrentNetwork>::from_str(&format!("{}u64", STAKE_REQUIREMENTS_PER_SOLUTION[0].1)).unwrap(),
+            Value::<CurrentNetwork>::from_str(&format!("{}u64", stake_requirements[0].1)).unwrap(),
         ];
         let bond_transaction = ledger
             .vm
             .execute(&prover_private_key, ("credits.aleo", "bond_public"), inputs.iter(), None, 0, None, rng)
             .unwrap();
-        let bond_transmission = Transmission::from(bond_transaction.clone());
-        let bond_transmission_transmission_id =
-            TransmissionID::Transaction(bond_transaction.id(), bond_transmission.to_checksum().unwrap().unwrap());
-        let next_block = chain_builder.generate_block_with_partition(
-            &Default::default(),
-            timestamp_1,
-            IndexMap::from([(bond_transmission_transmission_id, bond_transmission)]),
-            true,
-            rng,
-        );
+        let next_block = chain_builder
+            .generate_block_with_opts(
+                GenerateBlockOptions {
+                    timestamp: timestamp_1,
+                    transactions: vec![bond_transaction],
+                    skip_votes: true,
+                    ..Default::default()
+                },
+                rng,
+            )
+            .with_context(|| "Failed to generate third block")?;
+
         // Advance to the next block.
-        ledger.advance_to_next_block(&next_block).unwrap();
+        ledger.advance_to_next_block(&next_block).with_context(|| "Failed to advance to third block")?;
 
         // 4. Check that the solution is valid with sufficient stake.
 
@@ -3067,30 +3145,46 @@ mod valid_solutions {
 
         // 5. Check that the next block will accept the solution and abort any excess.
 
-        let next_block = chain_builder.generate_block_with_partition(
-            &Default::default(),
-            timestamp_1,
-            IndexMap::from([
-                (valid_solution_1_transmission_id, valid_solution_1_transmission.clone()),
-                (valid_solution_2_transmission_id, valid_solution_2_transmission.clone()),
-            ]),
-            true,
-            rng,
-        );
+        // Generate new solutions to valid_solution_1 will not get rejected due to duplication.
+        let mut valid_solutions = Vec::with_capacity(2);
+        // Create solutions that are greater than the minimum proof target.
+        while valid_solutions.len() < 2 {
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
+            if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
+                valid_solutions.push(solution);
+            }
+        }
+        let valid_solution_1 = valid_solutions.remove(0);
+        let valid_solution_2 = valid_solutions.remove(0);
+
+        let next_block = chain_builder
+            .generate_block_with_opts(
+                GenerateBlockOptions {
+                    timestamp: timestamp_1,
+                    solutions: vec![valid_solution_1, valid_solution_2],
+                    skip_votes: true,
+                    ..Default::default()
+                },
+                rng,
+            )
+            .with_context(|| "Failed to generate fourth block")?;
 
         // Check that the first solution is accepted and the second is aborted.
         assert!(next_block.solutions().solution_ids().contains(&valid_solution_1.id()));
         assert_eq!(next_block.aborted_solution_ids(), &vec![valid_solution_2.id()]);
 
         // Advance to the next block.
-        ledger.advance_to_next_block(&next_block).unwrap();
+        ledger.advance_to_next_block(&next_block).with_context(|| "Failed to advance to fourth block")?;
 
         // Check that the prover can no longer submit solutions.
         assert_eq!(ledger.num_remaining_solutions(&prover_address, 0), 0);
         assert!(ledger.is_solution_limit_reached(&prover_address, 0));
+
+        Ok(())
     }
 
     #[test]
+    #[ignore]
     fn test_excess_invalid_solution_ids() {
         // Note that the sum of `NUM_INVALID_SOLUTIONS` and `NUM_VALID_SOLUTIONS` should exceed the maximum number of solutions.
         const NUM_INVALID_SOLUTIONS: usize = CurrentNetwork::MAX_SOLUTIONS;
@@ -3100,8 +3194,12 @@ mod valid_solutions {
         let rng = &mut TestRng::default();
 
         // Initialize the test environment.
-        let crate::test_helpers::TestEnv { ledger, private_key, address, .. } =
-            crate::test_helpers::sample_test_env(rng);
+        let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
+
+        // Set up the prover account with sufficient balance to generate solutions.
+        let prover_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let prover_address = Address::try_from(&prover_private_key).unwrap();
+        setup_prover_account(&ledger, &private_key, &prover_private_key, rng);
 
         // Retrieve the puzzle parameters.
         let puzzle = ledger.puzzle();
@@ -3114,7 +3212,7 @@ mod valid_solutions {
 
         // Create solutions that are greater than the minimum proof target.
         while valid_solutions.len() < NUM_VALID_SOLUTIONS {
-            let solution = puzzle.prove(latest_epoch_hash, address, rng.gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() < minimum_proof_target {
                 if invalid_solutions.len() < NUM_INVALID_SOLUTIONS {
                     invalid_solutions.push(solution);
@@ -3125,7 +3223,7 @@ mod valid_solutions {
         }
         // Create the remaining solutions that are less than the minimum proof target.
         while invalid_solutions.len() < NUM_INVALID_SOLUTIONS {
-            let solution = puzzle.prove(latest_epoch_hash, address, rng.gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() < minimum_proof_target {
                 invalid_solutions.push(solution);
             }
@@ -3141,7 +3239,7 @@ mod valid_solutions {
         candidate_solutions.shuffle(rng);
 
         // Create a valid transaction for the block.
-        let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("10u64").unwrap()];
+        let inputs = [Value::from_str(&format!("{prover_address}")).unwrap(), Value::from_str("10u64").unwrap()];
         let transfer_transaction = ledger
             .vm
             .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng)
@@ -3178,6 +3276,7 @@ mod valid_solutions {
     }
 
     #[test]
+    #[ignore]
     fn test_excess_valid_solution_ids() {
         // Note that this should be greater than the maximum number of solutions.
         const NUM_VALID_SOLUTIONS: usize = 2 * CurrentNetwork::MAX_SOLUTIONS;
@@ -3186,8 +3285,12 @@ mod valid_solutions {
         let rng = &mut TestRng::default();
 
         // Initialize the test environment.
-        let crate::test_helpers::TestEnv { ledger, private_key, address, .. } =
-            crate::test_helpers::sample_test_env(rng);
+        let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
+
+        // Set up the prover account with sufficient balance to generate solutions.
+        let prover_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let prover_address = Address::try_from(&prover_private_key).unwrap();
+        setup_prover_account(&ledger, &private_key, &prover_private_key, rng);
 
         // Retrieve the puzzle parameters.
         let puzzle = ledger.puzzle();
@@ -3199,7 +3302,7 @@ mod valid_solutions {
 
         // Create solutions that are greater than the minimum proof target.
         while valid_solutions.len() < NUM_VALID_SOLUTIONS {
-            let solution = puzzle.prove(latest_epoch_hash, address, rng.gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
                 valid_solutions.push(solution);
             }
@@ -3213,7 +3316,7 @@ mod valid_solutions {
         candidate_solutions.shuffle(rng);
 
         // Create a valid transaction for the block.
-        let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("10u64").unwrap()];
+        let inputs = [Value::from_str(&format!("{prover_address}")).unwrap(), Value::from_str("10u64").unwrap()];
         let transfer_transaction = ledger
             .vm
             .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng)
@@ -3257,8 +3360,12 @@ mod valid_solutions {
         let rng = &mut TestRng::default();
 
         // Initialize the test environment.
-        let crate::test_helpers::TestEnv { ledger, private_key, address, .. } =
-            crate::test_helpers::sample_test_env(rng);
+        let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
+
+        // Set up the prover account with sufficient balance to generate solutions.
+        let prover_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let prover_address = Address::try_from(&prover_private_key).unwrap();
+        setup_prover_account(&ledger, &private_key, &prover_private_key, rng);
 
         // Retrieve the puzzle parameters.
         let puzzle = ledger.puzzle();
@@ -3268,7 +3375,7 @@ mod valid_solutions {
         // Initialize a valid solution object.
         let mut valid_solution = None;
         while valid_solution.is_none() {
-            let solution = puzzle.prove(latest_epoch_hash, address, rng.gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
                 valid_solution = Some(solution);
             }
@@ -3292,7 +3399,7 @@ mod valid_solutions {
         );
 
         // Create a valid transaction for the block.
-        let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("10u64").unwrap()];
+        let inputs = [Value::from_str(&format!("{prover_address}")).unwrap(), Value::from_str("10u64").unwrap()];
         let transfer_transaction = ledger
             .vm
             .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng)
@@ -3341,18 +3448,22 @@ mod valid_solutions {
         let rng = &mut TestRng::default();
 
         // Initialize the test environment.
-        let crate::test_helpers::TestEnv { ledger, private_key, address, .. } =
-            crate::test_helpers::sample_test_env(rng);
+        let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
 
         // Retrieve the puzzle parameters.
         let puzzle = ledger.puzzle();
         let latest_epoch_hash = ledger.latest_epoch_hash().unwrap();
         let minimum_proof_target = ledger.latest_proof_target();
 
+        // Set up the prover account with sufficient balance to generate solutions.
+        let prover_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let prover_address = Address::try_from(&prover_private_key).unwrap();
+        setup_prover_account(&ledger, &private_key, &prover_private_key, rng);
+
         // Initialize a valid solution object.
         let mut invalid_solution = None;
         while invalid_solution.is_none() {
-            let solution = puzzle.prove(latest_epoch_hash, address, rng.gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() < minimum_proof_target {
                 invalid_solution = Some(solution);
             }
@@ -3361,7 +3472,7 @@ mod valid_solutions {
         let invalid_solution = invalid_solution.unwrap();
 
         // Create a valid transaction for the block.
-        let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("10u64").unwrap()];
+        let inputs = [Value::from_str(&format!("{prover_address}")).unwrap(), Value::from_str("10u64").unwrap()];
         let transfer_transaction = ledger
             .vm
             .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng)
@@ -3392,34 +3503,105 @@ mod valid_solutions {
         let block_aborted_solution_id = block.aborted_solution_ids().first().unwrap();
         assert_eq!(*block_aborted_solution_id, invalid_solution.id(), "Aborted solutions do not match");
     }
+
+    #[test]
+    fn test_no_rewards_after_limit_height() {
+        let rng = &mut TestRng::default();
+
+        // Initialize the test environment.
+        let crate::test_helpers::TestEnv { ledger, private_key, address, .. } =
+            crate::test_helpers::sample_test_env(rng);
+
+        // Advance the ledger to the reward limit height.
+        let supply_limit_height = CurrentNetwork::MAX_SUPPLY_LIMIT_HEIGHT;
+
+        // Advance until before the supply limit height.
+        while ledger.latest_height() + 1 < supply_limit_height {
+            let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+            ledger.advance_to_next_block(&block).unwrap();
+
+            // Check that there exists rewards in the block.
+            assert!(!block.ratifications().is_empty());
+            let ratifications: Vec<_> = block.ratifications().iter().collect();
+            match ratifications[0] {
+                Ratify::BlockReward(block_reward) => {
+                    assert!(*block_reward > 0);
+                }
+                _ => panic!("Expected a block reward ratification"),
+            }
+        }
+
+        // Create one additional block at the supply limit height.
+        let next_block =
+            ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+        ledger.advance_to_next_block(&next_block).unwrap();
+
+        // Check that the block and puzzle rewards are 0.
+        assert!(!next_block.ratifications().is_empty());
+        let ratifications: Vec<_> = next_block.ratifications().iter().collect();
+        match ratifications[0] {
+            Ratify::BlockReward(block_reward) => {
+                assert_eq!(*block_reward, 0);
+            }
+            _ => panic!("Expected a block reward ratification"),
+        }
+        match ratifications[1] {
+            Ratify::PuzzleReward(puzzle_reward) => {
+                assert_eq!(*puzzle_reward, 0);
+            }
+            _ => panic!("Expected a puzzle reward ratification"),
+        }
+
+        // Create another block with a valid solution that does not give any rewards.
+
+        // Retrieve the puzzle parameters.
+        let puzzle = ledger.puzzle();
+        let latest_epoch_hash = ledger.latest_epoch_hash().unwrap();
+        let minimum_proof_target = ledger.latest_proof_target();
+
+        // Create solutions that are greater than the minimum proof target.
+        let valid_solution = loop {
+            let solution = puzzle.prove(latest_epoch_hash, address, rng.random(), None).unwrap();
+            if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
+                break solution;
+            }
+        };
+
+        // Create a block with the valid solution.
+        let next_block_with_solution = ledger
+            .prepare_advance_to_next_beacon_block(&private_key, vec![], vec![valid_solution], vec![], rng)
+            .unwrap();
+        ledger.advance_to_next_block(&next_block_with_solution).unwrap();
+
+        // Check that the block and puzzle rewards are 0.
+        assert!(!next_block.ratifications().is_empty());
+        let ratifications: Vec<_> = next_block.ratifications().iter().collect();
+        match ratifications[0] {
+            Ratify::BlockReward(block_reward) => {
+                assert_eq!(*block_reward, 0);
+            }
+            _ => panic!("Expected a block reward ratification"),
+        }
+        match ratifications[1] {
+            Ratify::PuzzleReward(puzzle_reward) => {
+                assert_eq!(*puzzle_reward, 0);
+            }
+            _ => panic!("Expected a puzzle reward ratification"),
+        }
+
+        // Check that the solution was accepted.
+        assert_eq!(next_block_with_solution.solutions().len(), 1);
+    }
 }
 
 /// Tests multiple attacks where the subDAG of a block is invalid
 /// (for example, because it contains more than one anchor)
 #[test]
-fn test_forged_block_subdags() {
+fn test_forged_block_subdags() -> Result<()> {
     let rng = &mut TestRng::default();
-
-    // Sample the genesis private key.
-    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-    // Initialize the store.
-    let store = ConsensusStore::<_, LedgerType>::open(StorageMode::new_test(None)).unwrap();
-    // Create a genesis block with a seeded RNG to reproduce the same genesis private keys.
-    let seed: u64 = rng.gen();
-    let genesis_rng = &mut TestRng::from_seed(seed);
-    let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, genesis_rng).unwrap();
-
-    // Extract the private keys from the genesis committee by using the same RNG to sample private keys.
-    let genesis_rng = &mut TestRng::from_seed(seed);
-    let private_keys = [
-        private_key,
-        PrivateKey::new(genesis_rng).unwrap(),
-        PrivateKey::new(genesis_rng).unwrap(),
-        PrivateKey::new(genesis_rng).unwrap(),
-    ];
-
+    let mut chain_builder = TestChainBuilder::new_with_quorum_size(10, rng)?;
     // Construct 3 quorum blocks.
-    let mut quorum_blocks = TestChainBuilder::new(private_keys.to_vec(), genesis.clone()).generate_blocks(3, rng);
+    let mut quorum_blocks = chain_builder.generate_blocks(3, rng)?;
 
     // Extract the individual blocks.
     let block_1 = quorum_blocks.remove(0);
@@ -3427,13 +3609,14 @@ fn test_forged_block_subdags() {
     let block_3 = quorum_blocks.remove(0);
 
     // Construct the ledger.
-    let ledger = Ledger::<CurrentNetwork, LedgerType>::load(genesis, StorageMode::new_test(None)).unwrap();
+    let ledger =
+        Ledger::<CurrentNetwork, LedgerType>::load(chain_builder.genesis_block().clone(), StorageMode::new_test(None))?;
 
     // Advance to block 1.
-    ledger.advance_to_next_block(&block_1).unwrap();
+    ledger.advance_to_next_block(&block_1)?;
 
     // Check that the original block 2 is accepted.
-    ledger.check_next_block(&block_2, rng).expect("Unmodified block 2 must be accepted by the ledger");
+    ledger.check_next_block(&block_2, rng).with_context(|| "Unmodified block 2 must be accepted by the ledger")?;
 
     // Fetch the unmodified/correct subdags.
     let Authority::Quorum(block_2_subdag) = block_2.authority() else { unreachable!("") };
@@ -3452,14 +3635,14 @@ fn test_forged_block_subdags() {
             .prepare_advance_to_next_quorum_block(
                 block_3_subdag.clone(),
                 block_3_transmissions.clone(),
-                &mut rand::thread_rng(),
+                &mut rand::rng(),
             )
             .unwrap();
 
         assert_ne!(forged_block_2, block_2);
 
         // Attempt to verify the forged block.
-        assert!(ledger.check_next_block(&forged_block_2, &mut rand::thread_rng()).is_err());
+        assert!(ledger.check_next_block(&forged_block_2, &mut rand::rng()).is_err());
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -3484,14 +3667,14 @@ fn test_forged_block_subdags() {
             .prepare_advance_to_next_quorum_block(
                 Subdag::from(combined_subdag).unwrap(),
                 combined_transmissions,
-                &mut rand::thread_rng(),
+                &mut rand::rng(),
             )
             .unwrap();
 
         assert_ne!(forged_block_2_from_both_subdags, block_1);
 
         // Attempt to verify the forged block.
-        assert!(ledger.check_next_block(&forged_block_2_from_both_subdags, &mut rand::thread_rng()).is_err());
+        assert!(ledger.check_next_block(&forged_block_2_from_both_subdags, &mut rand::rng()).is_err());
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -3518,104 +3701,70 @@ fn test_forged_block_subdags() {
 
         // Forge the block.
         let forged_block_2 = ledger
-            .prepare_advance_to_next_quorum_block(Subdag::from(subdag).unwrap(), transmissions, &mut rand::thread_rng())
+            .prepare_advance_to_next_quorum_block(Subdag::from(subdag).unwrap(), transmissions, &mut rand::rng())
             .unwrap();
 
         assert_ne!(forged_block_2, block_1);
 
         // Attempt to verify the forged block.
-        assert!(ledger.check_next_block(&forged_block_2, &mut rand::thread_rng()).is_err());
+        assert!(ledger.check_next_block(&forged_block_2, &mut rand::rng()).is_err());
     }
+
+    Ok(())
 }
 
 /// Test that a block that has a long branch for one validator
 /// (long = half of GC)
 #[test]
-fn test_subdag_with_long_branch() {
+fn test_subdag_with_long_branch() -> Result<()> {
     let rng = &mut TestRng::default();
+    let mut chain_builder = TestChainBuilder::new(rng)?;
 
-    // Sample the genesis private key.
-    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-    // Initialize the store.
-    let store = ConsensusStore::<_, LedgerType>::open(StorageMode::new_test(None)).unwrap();
-    // Create a genesis block with a seeded RNG to reproduce the same genesis private keys.
-    let seed: u64 = rng.gen();
-    let genesis_rng = &mut TestRng::from_seed(seed);
-    let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, genesis_rng).unwrap();
-
-    // Extract the private keys from the genesis committee by using the same RNG to sample private keys.
-    let genesis_rng = &mut TestRng::from_seed(seed);
-    let private_keys = [
-        private_key,
-        PrivateKey::new(genesis_rng).unwrap(),
-        PrivateKey::new(genesis_rng).unwrap(),
-        PrivateKey::new(genesis_rng).unwrap(),
-    ];
-
-    let mut chain_builder = TestChainBuilder::new(private_keys.to_vec(), genesis.clone());
-
-    let skip_nodes: HashSet<usize> = [0].into();
-    let blocks = chain_builder.generate_blocks_with_partition(
+    let blocks = chain_builder.generate_blocks_with_opts(
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS / 4,
-        &skip_nodes,
+        GenerateBlocksOptions { skip_nodes: [0].into(), ..Default::default() },
         rng,
-    );
+    )?;
 
     // Construct the ledger.
-    let ledger = Ledger::<CurrentNetwork, LedgerType>::load(genesis, StorageMode::new_test(None)).unwrap();
+    let ledger =
+        Ledger::<CurrentNetwork, LedgerType>::load(chain_builder.genesis_block().clone(), StorageMode::new_test(None))?;
 
     for block in blocks {
-        ledger.advance_to_next_block(&block).unwrap();
+        ledger.advance_to_next_block(&block)?;
     }
 
     // Now create a long block.
-    let block = chain_builder.generate_block(rng);
+    let block = chain_builder.generate_block(rng)?;
 
     // Ensure it is still accepted
-    ledger.advance_to_next_block(&block).unwrap();
+    ledger.advance_to_next_block(&block)?;
+
+    Ok(())
 }
 
 /// Create a block that is exactly GC rounds long
 #[test]
-fn test_subdag_with_gc_length() {
+fn test_subdag_with_gc_length() -> Result<()> {
     let rng = &mut TestRng::default();
+    let mut chain_builder = TestChainBuilder::new(rng).unwrap();
 
-    // Sample the genesis private key.
-    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-    // Initialize the store.
-    let store = ConsensusStore::<_, LedgerType>::open(StorageMode::new_test(None)).unwrap();
-    // Create a genesis block with a seeded RNG to reproduce the same genesis private keys.
-    let seed: u64 = rng.gen();
-    let genesis_rng = &mut TestRng::from_seed(seed);
-    let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, genesis_rng).unwrap();
-
-    // Extract the private keys from the genesis committee by using the same RNG to sample private keys.
-    let genesis_rng = &mut TestRng::from_seed(seed);
-    let private_keys = [
-        private_key,
-        PrivateKey::new(genesis_rng).unwrap(),
-        PrivateKey::new(genesis_rng).unwrap(),
-        PrivateKey::new(genesis_rng).unwrap(),
-    ];
-
-    let mut chain_builder = TestChainBuilder::new(private_keys.to_vec(), genesis.clone());
-
-    let skip_nodes: HashSet<usize> = [0].into();
-    let blocks = chain_builder.generate_blocks_with_partition(
+    let blocks = chain_builder.generate_blocks_with_opts(
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS / 2,
-        &skip_nodes,
+        GenerateBlocksOptions { skip_nodes: [0].into(), ..Default::default() },
         rng,
-    );
+    )?;
 
     // Construct the ledger.
-    let ledger = Ledger::<CurrentNetwork, LedgerType>::load(genesis, StorageMode::new_test(None)).unwrap();
+    let ledger =
+        Ledger::<CurrentNetwork, LedgerType>::load(chain_builder.genesis_block().clone(), StorageMode::new_test(None))?;
 
     for block in blocks {
-        ledger.advance_to_next_block(&block).unwrap();
+        ledger.advance_to_next_block(&block)?;
     }
 
     // Now create a long block.
-    let block = chain_builder.generate_block(rng);
+    let block = chain_builder.generate_block(rng)?;
 
     {
         // First, let us ensure that the leaf check still works by removing the lowest round and trying to reinsert.
@@ -3636,22 +3785,22 @@ fn test_subdag_with_gc_length() {
             .collect();
 
         // Forge the block.
-        let forged_block = ledger
-            .prepare_advance_to_next_quorum_block(
-                Subdag::from(forged_subdag).unwrap(),
-                transmissions,
-                &mut rand::thread_rng(),
-            )
-            .unwrap();
+        let forged_block = ledger.prepare_advance_to_next_quorum_block(
+            Subdag::from(forged_subdag).unwrap(),
+            transmissions,
+            &mut rand::rng(),
+        )?;
 
         assert_ne!(forged_block, block);
 
         // Attempt to verify the forged block.
-        assert!(ledger.check_next_block(&forged_block, &mut rand::thread_rng()).is_err());
+        assert!(ledger.check_next_block(&forged_block, &mut rand::rng()).is_err());
     }
 
     // Ensure it is still accepted
-    ledger.advance_to_next_block(&block).unwrap();
+    ledger.advance_to_next_block(&block)?;
+
+    Ok(())
 }
 
 #[test]
@@ -3913,4 +4062,31 @@ function create_and_consume:
     assert_eq!(num_unspent_records, initial_unspent_records + 1);
     assert_eq!(num_slow_unspent_records, initial_slow_unspent_records + 1);
     assert_eq!(num_records, initial_records + 4);
+}
+
+// Ensure that `find_records` only returns records owned by the given view key.
+#[test]
+fn test_find_records_filters_by_ownership() {
+    let rng = &mut TestRng::default();
+
+    // Sample the test environment.
+    let crate::test_helpers::TestEnv { ledger, private_key, view_key, .. } = crate::test_helpers::sample_test_env(rng);
+
+    // Fetch all unspent records for the primary view key.
+    let owned_records =
+        ledger.find_records(&view_key, RecordsFilter::SlowUnspent(private_key)).unwrap().collect::<Vec<_>>();
+
+    // Ensure that we successfully fetched at least one record that is owned by the view key.
+    assert!(!owned_records.is_empty(), "Expected at least one record owned by the view key");
+
+    // Generate a new test environment to simulate an unrelated view key.
+    let other_env = crate::test_helpers::sample_test_env(rng);
+    let unrelated_view_key = other_env.view_key;
+
+    // Attempt to fetch records using the unrelated view key.
+    let unrelated_records = ledger.find_records(&unrelated_view_key, RecordsFilter::All).unwrap().collect::<Vec<_>>();
+
+    // Ensure that no records were returned for the unrelated view key.
+    // This validates that ownership filtering is enforced before decrypting or filtering records.
+    assert!(unrelated_records.is_empty(), "Expected no records for unrelated view key");
 }

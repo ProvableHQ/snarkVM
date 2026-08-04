@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -65,7 +65,7 @@ mod tests {
     const ITERATIONS: u64 = 1;
 
     #[test]
-    fn test_serde_json() -> Result<()> {
+    fn test_serde_json_without_version() -> Result<()> {
         for _ in 0..ITERATIONS {
             // Sample a new record.
             let expected = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(
@@ -86,11 +86,52 @@ mod tests {
     }
 
     #[test]
-    fn test_bincode() -> Result<()> {
+    fn test_serde_json_with_version() -> Result<()> {
+        for _ in 0..ITERATIONS {
+            // Sample a new record.
+            let expected = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(
+                "{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private, token_amount: 100u64.private, _nonce: 0group.public, _version: 1u8.public }",
+            )?;
+            println!("{}", serde_json::to_string_pretty(&expected)?);
+
+            // Serialize
+            let expected_string = &expected.to_string();
+            let candidate_string = serde_json::to_string(&expected)?;
+            assert_eq!(expected_string, serde_json::Value::from_str(&candidate_string)?.as_str().unwrap());
+
+            // Deserialize
+            assert_eq!(expected, Record::from_str(expected_string)?);
+            assert_eq!(expected, serde_json::from_str(&candidate_string)?);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_bincode_without_version() -> Result<()> {
         for _ in 0..ITERATIONS {
             // Sample a new record.
             let expected = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(
                 "{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private, token_amount: 100u64.private, _nonce: 0group.public }",
+            )?;
+
+            // Serialize
+            let expected_bytes = expected.to_bytes_le()?;
+            let expected_bytes_with_size_encoding = bincode::serialize(&expected)?;
+            assert_eq!(&expected_bytes[..], &expected_bytes_with_size_encoding[8..]);
+
+            // Deserialize
+            assert_eq!(expected, Record::read_le(&expected_bytes[..])?);
+            assert_eq!(expected, bincode::deserialize(&expected_bytes_with_size_encoding[..])?);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_bincode_with_version() -> Result<()> {
+        for _ in 0..ITERATIONS {
+            // Sample a new record.
+            let expected = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(
+                "{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private, token_amount: 100u64.private, _nonce: 0group.public, _version: 1u8.public }",
             )?;
 
             // Serialize

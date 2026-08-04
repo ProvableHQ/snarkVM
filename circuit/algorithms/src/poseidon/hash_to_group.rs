@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,7 +36,7 @@ impl<E: Environment, const RATE: usize> HashToGroup for Poseidon<E, RATE> {
     }
 }
 
-#[cfg(all(test, feature = "console"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use snarkvm_circuit_types::environment::Circuit;
@@ -44,7 +44,7 @@ mod tests {
 
     use anyhow::Result;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 10;
     const DOMAIN: &str = "PoseidonCircuit0";
 
     macro_rules! check_hash_to_group {

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,8 +18,23 @@ use super::*;
 impl<N: Network, Private: Visibility> FromBytes for Record<N, Private> {
     /// Reads the record from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the variant.
+        let variant = U8::<N>::new(u8::read_le(&mut reader)?);
+
+        // Set the version based on the variant.
+        let version = match *variant {
+            0 | 1 => U8::zero(),
+            2 | 3 => U8::one(),
+            4.. => return Err(error(format!("Failed to decode record variant ({variant}) for the version"))),
+        };
+
         // Read the owner.
-        let owner = Owner::read_le(&mut reader)?;
+        let owner = match *variant {
+            0 | 2 => Owner::Public(Address::read_le(&mut reader)?),
+            1 | 3 => Owner::Private(Private::read_le(&mut reader)?),
+            4.. => return Err(error(format!("Failed to decode record variant ({variant}) for the owner"))),
+        };
+
         // Read the number of entries in the record data.
         let num_entries = u8::read_le(&mut reader)?;
         // Read the record data.
@@ -37,6 +52,7 @@ impl<N: Network, Private: Visibility> FromBytes for Record<N, Private> {
             // Add the entry.
             data.insert(identifier, entry);
         }
+
         // Read the nonce.
         let nonce = Group::read_le(&mut reader)?;
 
@@ -48,18 +64,60 @@ impl<N: Network, Private: Visibility> FromBytes for Record<N, Private> {
         }
         // Ensure the number of entries is within the maximum limit.
         if data.len() > N::MAX_DATA_ENTRIES {
-            return Err(error("Failed to parse record: too many entries"));
+            return Err(error("Failed to parse record - too many entries"));
         }
 
-        Ok(Self { owner, data, nonce })
+        Ok(Self { owner, data, nonce, version })
     }
 }
 
 impl<N: Network, Private: Visibility> ToBytes for Record<N, Private> {
     /// Writes the record to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
+        // Set the variant.
+        let variant = match (*self.version, self.owner.is_public()) {
+            (0, true) => 0u8,
+            (0, false) => 1u8,
+            (1, true) => 2u8,
+            (1, false) => 3u8,
+            (_, _) => {
+                return Err(error(format!(
+                    "Failed to encode record - variant mismatch (version = {}, hiding = {}, owner = {})",
+                    self.version,
+                    self.is_hiding(),
+                    self.owner.is_public()
+                )));
+            }
+        };
+
+        #[cfg(debug_assertions)]
+        {
+            // Ensure the version is correct.
+            let is_version_correct = match (!self.is_hiding(), self.owner.is_public()) {
+                (true, true) => variant == 0,
+                (true, false) => variant == 1,
+                (false, true) => variant == 2,
+                (false, false) => variant == 3,
+            };
+            if !is_version_correct {
+                return Err(error(format!(
+                    "Failed to encode record - version mismatch (version = {}, hiding = {}, owner = {})",
+                    self.version,
+                    self.is_hiding(),
+                    self.owner.is_public()
+                )));
+            }
+        }
+
+        // Write the variant.
+        variant.write_le(&mut writer)?;
+
         // Write the owner.
-        self.owner.write_le(&mut writer)?;
+        match &self.owner {
+            Owner::Public(owner) => owner.write_le(&mut writer)?,
+            Owner::Private(owner) => owner.write_le(&mut writer)?,
+        };
+
         // Write the number of entries in the record data.
         u8::try_from(self.data.len()).or_halt_with::<N>("Record length exceeds u8::MAX").write_le(&mut writer)?;
         // Write each entry.
@@ -75,6 +133,7 @@ impl<N: Network, Private: Visibility> ToBytes for Record<N, Private> {
             // Write the bytes.
             bytes.write_le(&mut writer)?;
         }
+
         // Write the nonce.
         self.nonce.write_le(&mut writer)
     }
@@ -92,6 +151,15 @@ mod tests {
         // Construct a new record.
         let expected = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(
             "{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private, token_amount: 100u64.private, _nonce: 0group.public }",
+        )?;
+
+        // Check the byte representation.
+        let expected_bytes = expected.to_bytes_le()?;
+        assert_eq!(expected, Record::read_le(&expected_bytes[..])?);
+
+        // Construct a new record.
+        let expected = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(
+            "{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private, token_amount: 100u64.private, _nonce: 0group.public, _version: 1u8.public }",
         )?;
 
         // Check the byte representation.

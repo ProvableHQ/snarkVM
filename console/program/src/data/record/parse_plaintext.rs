@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 use super::*;
 
 impl<N: Network> Parser for Record<N, Plaintext<N>> {
-    /// Parses a string as a record: `{ owner: address, identifier_0: entry_0, ..., identifier_n: entry_n, _nonce: field }`.
+    /// Parses a string as a record: `{ owner: address, identifier_0: entry_0, ..., identifier_n: entry_n, _nonce: field, _version: u8 }`.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
         /// Parses a sanitized pair: `identifier: entry`.
@@ -98,12 +98,39 @@ impl<N: Network> Parser for Record<N, Plaintext<N>> {
         // Parse the nonce from the string.
         let (string, (nonce, _)) = pair(Group::parse, tag(".public"))(string)?;
 
+        // There may be an optional "_version" tag. Parse the "," from the string if it exists.
+        let string = match opt(tag(","))(string)? {
+            // If there is a version, then parse the "," from the string.
+            (string, Some(_)) => string,
+            // If there is no version, then keep the string as is.
+            (string, None) => string,
+        };
+
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the optional "_version" tag from the string.
+        let (string, version) = match opt(tag("_version"))(string)? {
+            // If there is no version, then set the version to zero.
+            (string, None) => (string, U8::zero()),
+            // If there is a version, then parse the version from the string.
+            (string, Some(_)) => {
+                // Parse the whitespace and comments from the string.
+                let (string, _) = Sanitizer::parse(string)?;
+                // Parse the ":" from the string.
+                let (string, _) = tag(":")(string)?;
+                // Parse the whitespace and comments from the string.
+                let (string, _) = Sanitizer::parse(string)?;
+                // Parse the version from the string.
+                terminated(U8::parse, tag(".public"))(string)?
+            }
+        };
+
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the '}' from the string.
         let (string, _) = tag("}")(string)?;
         // Output the record.
-        Ok((string, Record { owner, data: IndexMap::from_iter(entries), nonce }))
+        Ok((string, Record { owner, data: IndexMap::from_iter(entries), nonce, version }))
     }
 }
 
@@ -169,8 +196,10 @@ impl<N: Network> Record<N, Plaintext<N>> {
             // Print the comma.
             write!(f, ",")?;
         }
-        // Print the nonce without a comma.
-        write!(f, "\n{:indent$}_nonce: {}.public", "", self.nonce, indent = (depth + 1) * INDENT)?;
+        // Print the nonce with a comma.
+        write!(f, "\n{:indent$}_nonce: {}.public,", "", self.nonce, indent = (depth + 1) * INDENT)?;
+        // Print the version without a comma.
+        write!(f, "\n{:indent$}_version: {}.public", "", self.version, indent = (depth + 1) * INDENT)?;
         // Print the closing brace.
         write!(f, "\n{:indent$}}}", "", indent = depth * INDENT)
     }
@@ -184,11 +213,57 @@ mod tests {
     type CurrentNetwork = MainnetV0;
 
     #[test]
+    fn test_parse_without_version() -> Result<()> {
+        // Sanity check.
+        let expected = r"{
+  owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
+  _nonce: 0group.public,
+  _version: 0u8.public
+}";
+        let given =
+            "{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private, _nonce: 0group.public }";
+        let (remainder, candidate) = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::parse(given)?;
+        println!("\nExpected: {expected}\n\nFound: {candidate}\n");
+        assert_eq!(expected, candidate.to_string());
+        assert_eq!("", remainder);
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_with_version() -> Result<()> {
+        // Sanity check.
+        let expected = r"{
+  owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
+  _nonce: 0group.public,
+  _version: 0u8.public
+}";
+        let given = "{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private, _nonce: 0group.public, _version: 0u8.public }";
+        let (remainder, candidate) = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::parse(given)?;
+        println!("\nExpected: {expected}\n\nFound: {candidate}\n");
+        assert_eq!(expected, candidate.to_string());
+        assert_eq!("", remainder);
+
+        // Sanity check.
+        let expected = r"{
+  owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
+  _nonce: 0group.public,
+  _version: 1u8.public
+}";
+        let given = "{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private, _nonce: 0group.public, _version: 1u8.public }";
+        let (remainder, candidate) = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::parse(given)?;
+        println!("\nExpected: {expected}\n\nFound: {candidate}\n");
+        assert_eq!(expected, candidate.to_string());
+        assert_eq!("", remainder);
+        Ok(())
+    }
+
+    #[test]
     fn test_parse_without_data_entries() -> Result<()> {
         // Sanity check.
         let expected = r"{
   owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
-  _nonce: 0group.public
+  _nonce: 0group.public,
+  _version: 0u8.public
 }";
         let given =
             "{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private, _nonce: 0group.public }";
@@ -204,7 +279,8 @@ mod tests {
         let expected = r"{
   owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public,
   foo: 5u8.constant,
-  _nonce: 0group.public
+  _nonce: 0group.public,
+  _version: 0u8.public
 }";
         let given = "{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public, foo: 5u8.constant, _nonce: 0group.public }";
         let (remainder, candidate) = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::parse(given)?;
@@ -234,7 +310,8 @@ mod tests {
   xyzzy: {
     thud: 12u8.public
   },
-  _nonce: 2293253577170800572742339369209137467208538700597121244293392265726446806023group.public
+  _nonce: 2293253577170800572742339369209137467208538700597121244293392265726446806023group.public,
+  _version: 0u8.public
 }";
         let (remainder, candidate) = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::parse(expected)?;
         println!("\nExpected: {expected}\n\nFound: {candidate}\n");
@@ -259,7 +336,8 @@ mod tests {
       fourth: 3u128.private
     }
   },
-  _nonce: 0group.public
+  _nonce: 0group.public,
+  _version: 0u8.public
 }";
         let (remainder, candidate) = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::parse(expected)?;
         println!("\nExpected: {expected}\n\nFound: {candidate}\n");
@@ -288,7 +366,8 @@ mod tests {
       b: 1u8.private
     }
   },
-  _nonce: 8102307625287186026775464343238779600702564007094834161216556016558567413871group.public
+  _nonce: 8102307625287186026775464343238779600702564007094834161216556016558567413871group.public,
+  _version: 0u8.public
 }";
         let (remainder, candidate) = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::parse(expected)?;
         println!("\nExpected: {expected}\n\nFound: {candidate}\n");
@@ -308,7 +387,8 @@ mod tests {
     7u8.private,
     8u8.private
   ],
-  _nonce: 0group.public
+  _nonce: 0group.public,
+  _version: 0u8.public
 }";
         let (remainder, candidate) = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::parse(expected)?;
         println!("\nExpected: {expected}\n\nFound: {candidate}\n");
@@ -339,7 +419,8 @@ mod tests {
         f: 123456789field.public,
         g: 0group.private
     },
-    _nonce: 0group.public
+    _nonce: 0group.public,
+    _version: 0u8.public
 }";
         assert!(Plaintext::<CurrentNetwork>::parse(expected).is_err());
         Ok(())

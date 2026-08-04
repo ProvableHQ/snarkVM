@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +14,8 @@
 // limitations under the License.
 
 use super::*;
+
+use snarkvm_utilities::flatten_error;
 
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns the block height that contains the given `state root`.
@@ -31,9 +33,50 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.vm.block_store().find_block_height_from_solution_id(solution_id)
     }
 
-    /// Returns the transaction ID that contains the given `program ID`.
-    pub fn find_transaction_id_from_program_id(&self, program_id: &ProgramID<N>) -> Result<Option<N::TransactionID>> {
-        self.vm.transaction_store().find_transaction_id_from_program_id(program_id)
+    /// Returns the latest transaction ID that contains the given `program ID`.
+    /// If amendments exist for the latest edition, returns the latest amendment transaction ID.
+    /// Otherwise, returns the original deployment transaction ID for the latest edition.
+    pub fn find_latest_transaction_id_from_program_id(
+        &self,
+        program_id: &ProgramID<N>,
+    ) -> Result<Option<N::TransactionID>> {
+        self.vm.transaction_store().find_latest_transaction_id_from_program_id(program_id)
+    }
+
+    /// Returns the original deployment transaction ID for the given `program ID` and `edition`.
+    /// This returns the initial deployment, not any subsequent amendments.
+    pub fn find_original_transaction_id_from_program_id_and_edition(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+    ) -> Result<Option<N::TransactionID>> {
+        self.vm.transaction_store().find_original_transaction_id_from_program_id_and_edition(program_id, edition)
+    }
+
+    /// Returns the latest transaction ID for the given `program ID` and `edition`.
+    /// If amendments exist, returns the latest amendment transaction ID.
+    /// Otherwise, returns the original deployment transaction ID.
+    pub fn find_latest_transaction_id_from_program_id_and_edition(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+    ) -> Result<Option<N::TransactionID>> {
+        self.vm.transaction_store().find_latest_transaction_id_from_program_id_and_edition(program_id, edition)
+    }
+
+    /// Returns the transaction ID for the given `program ID`, `edition`, and `amendment_index`.
+    /// Returns `None` if no such amendment exists.
+    pub fn find_transaction_id_from_program_id_edition_and_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<N::TransactionID>> {
+        self.vm.transaction_store().find_transaction_id_from_program_id_edition_and_amendment(
+            program_id,
+            edition,
+            amendment_index,
+        )
     }
 
     /// Returns the transaction ID that contains the given `transition ID`.
@@ -70,6 +113,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 (Cow::Borrowed(commitment), record) => (*commitment, record),
                 (Cow::Owned(commitment), record) => (commitment, record),
             };
+
+            // Check ownership before determining whether to decrypt the record.
+            if !record.is_owner_with_address_x_coordinate(view_key, &address_x_coordinate) {
+                return None;
+            }
 
             // Determine whether to decrypt this record (or not), based on the filter.
             let commitment = match filter {
@@ -109,15 +157,10 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             };
 
             match commitment {
-                Ok(Some(commitment)) => {
-                    match record.is_owner_with_address_x_coordinate(view_key, &address_x_coordinate) {
-                        true => Some((commitment, record)),
-                        false => None,
-                    }
-                }
+                Ok(Some(commitment)) => Some((commitment, record)),
                 Ok(None) => None,
-                Err(e) => {
-                    warn!("Failed to process 'find_record_ciphertexts({:?})': {e}", filter);
+                Err(err) => {
+                    warn!("{}", &flatten_error(err.context("Failed to process 'find_record_ciphertexts({filter:?})'")));
                     None
                 }
             }
@@ -134,8 +177,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.find_record_ciphertexts(view_key, filter).map(|iter| {
             iter.flat_map(|(commitment, record)| match record.decrypt(view_key) {
                 Ok(record) => Some((commitment, record)),
-                Err(e) => {
-                    warn!("Failed to decrypt the record: {e}");
+                Err(err) => {
+                    warn!("{}", &flatten_error(err.context("Failed to decrypt record")));
                     None
                 }
             })

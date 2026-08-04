@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,7 +23,7 @@ pub trait NestedMap<
     'a,
     M: 'a + Copy + Clone + PartialEq + Eq + Hash + Serialize + Deserialize<'a> + Send + Sync,
     K: 'a + Clone + PartialEq + Eq + Serialize + Deserialize<'a> + Send + Sync,
-    V: 'a + Clone + PartialEq + Eq + Serialize + Deserialize<'a> + Send + Sync,
+    V: 'a + Clone + Serialize + Deserialize<'a> + Send + Sync,
 >: Clone + NestedMapRead<'a, M, K, V> + Send + Sync
 {
     ///
@@ -87,7 +87,7 @@ pub trait NestedMapRead<
     'a,
     M: 'a + Copy + Clone + PartialEq + Eq + Hash + Serialize + Deserialize<'a> + Sync,
     K: 'a + Clone + PartialEq + Eq + Serialize + Deserialize<'a> + Sync,
-    V: 'a + Clone + PartialEq + Eq + Serialize + Deserialize<'a> + Sync,
+    V: 'a + Clone + Serialize + Deserialize<'a> + Sync,
 >
 {
     type PendingIterator: Iterator<Item = (Cow<'a, M>, Option<Cow<'a, K>>, Option<Cow<'a, V>>)>;

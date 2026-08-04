@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +20,7 @@ impl<N: Network> Process<N> {
     #[inline]
     pub fn verify_deployment<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
+        consensus_version: ConsensusVersion,
         deployment: &Deployment<N>,
         rng: &mut R,
     ) -> Result<()> {
@@ -27,15 +28,48 @@ impl<N: Network> Process<N> {
 
         // Retrieve the program ID.
         let program_id = deployment.program().id();
-        // Ensure the program does not already exist in the process.
-        ensure!(!self.contains_program(program_id), "Program '{program_id}' already exists");
+        // Check if this deployment is an amendment.
+        let version = deployment.version()?;
+        let is_amendment = matches!(version, DeploymentVersion::V3);
+        // If the deployment is an amendment, verify that the program exists.
+        // If the edition is zero (and not an amendment), verify that the program does not exist.
+        // Otherwise, verify that the program exists.
+        if is_amendment {
+            ensure!(
+                self.contains_program(program_id),
+                "Program '{program_id}' does not exist, but amendment requires an existing program"
+            );
+        } else {
+            match deployment.edition().is_zero() {
+                true => ensure!(
+                    !self.contains_program(program_id),
+                    "Program '{program_id}' already exists, but the deployment edition is zero"
+                ),
+                false => ensure!(
+                    self.contains_program(program_id),
+                    "Program '{program_id}' does not exist, but the deployment edition is non-zero"
+                ),
+            }
+        }
 
         // Ensure the program is well-formed, by computing the stack.
-        let stack = Stack::new(self, deployment.program())?;
+        // Note: The program owner is intentionally not set, since `program_owner` is an operand
+        //   that is only available in a finalize scope.
+        let stack = if is_amendment {
+            // For amendments, use the existing edition instead of incrementing.
+            // Note: `Stack::new` cannot be used here because it would increment the edition.
+            // Amendments must preserve the existing edition. Validity is verified by `initialize_and_check`.
+            let existing_stack = self.get_stack(program_id)?;
+            let stack = Stack::new_raw(self, deployment.program(), *existing_stack.program_edition())?;
+            stack.initialize_and_check(self)?;
+            stack
+        } else {
+            Stack::new(self, deployment.program())?
+        };
         lap!(timer, "Compute the stack");
 
         // Ensure the verifying keys are well-formed and the certificates are valid.
-        let verification = stack.verify_deployment::<A, R>(deployment, rng);
+        let verification = stack.verify_deployment::<A, R>(consensus_version, deployment, rng);
         lap!(timer, "Verify the deployment");
 
         finish!(timer);
@@ -65,7 +99,7 @@ mod tests {
         let deployment = process.deploy::<CurrentAleo, _>(&large_program, rng)?;
 
         // Verify the deployment.
-        assert!(process.verify_deployment::<CurrentAleo, _>(&deployment, rng).is_ok());
+        assert!(process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).is_ok());
 
         bail!("\n\nRemember to #[ignore] this test!\n\n")
     }

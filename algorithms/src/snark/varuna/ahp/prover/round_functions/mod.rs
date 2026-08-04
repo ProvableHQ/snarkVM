@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,14 +25,10 @@ use snarkvm_fields::PrimeField;
 
 use anyhow::Result;
 use itertools::Itertools;
-use rand::Rng;
-use rand_core::CryptoRng;
+use rand::{CryptoRng, Rng};
 use std::collections::BTreeMap;
 
-use snarkvm_utilities::{cfg_iter, println};
-
-#[cfg(not(feature = "serial"))]
-use rayon::prelude::*;
+use snarkvm_utilities::dev_println;
 
 mod fifth;
 mod first;
@@ -65,28 +61,37 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             randomizing_assignments.push(circuit_assignments);
         }
 
+        if randomizing_assignments.len() != circuits_to_constraints.len() {
+            return Err(AHPError::AnyhowError(anyhow::anyhow!(
+                "[prover Init] Expected {} randomizing assignments, but {} were provided.",
+                circuits_to_constraints.len(),
+                randomizing_assignments.len()
+            )));
+        }
         let indices_and_assignments = circuits_to_constraints
             .iter()
             .zip_eq(randomizing_assignments.into_iter())
             .map(|((circuit, constraints), circuit_rand_assignments)| {
-                let num_non_zero_a = circuit.index_info.num_non_zero_a;
-                let num_non_zero_b = circuit.index_info.num_non_zero_b;
-                let num_non_zero_c = circuit.index_info.num_non_zero_c;
-
-                let assignments = cfg_iter!(constraints)
+                let assignments = constraints
+                    .iter()
                     .zip(circuit_rand_assignments)
                     .enumerate()
-                    .map(|(_i, (instance, rand_assignments))| {
+                    .map(|(i, (instance, rand_assignments))| {
                         let constraint_time = start_timer!(|| format!(
-                            "Generating constraints and witnesses for {:?} and index {_i}",
+                            "Generating constraints and witnesses for {:?} and index {i}",
                             circuit.id
                         ));
+
+                        // i may not be used if the timer feature is disabled.
+                        #[allow(unused_variables)]
+                        let _ = i;
+
                         let mut pcs = prover::ConstraintSystem::new();
                         instance.generate_constraints(&mut pcs)?;
                         end_timer!(constraint_time);
 
                         let padding_time =
-                            start_timer!(|| format!("Padding matrices for {:?} and index {_i}", circuit.id));
+                            start_timer!(|| format!("Padding matrices for {:?} and index {i}", circuit.id));
 
                         SM::ZK.then(|| {
                             crate::snark::varuna::ahp::matrices::add_randomizing_variables::<_, _>(
@@ -111,14 +116,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                         assert!(padded_public_variables[0].is_one());
                         assert_eq!(private_variables.len(), num_private_variables);
 
-                        if cfg!(debug_assertions) {
-                            println!("Number of padded public variables in Prover::Init: {num_public_variables}");
-                            println!("Number of private variables: {num_private_variables}");
-                            println!("Number of constraints: {num_constraints}");
-                            println!("Number of non-zero entries in A: {num_non_zero_a}");
-                            println!("Number of non-zero entries in B: {num_non_zero_b}");
-                            println!("Number of non-zero entries in C: {num_non_zero_c}");
-                        }
+                        dev_println!("Number of padded public variables in Prover::Init: {num_public_variables}");
+                        dev_println!("Number of private variables: {num_private_variables}");
+                        dev_println!("Number of constraints: {num_constraints}");
+                        dev_println!("Number of non-zero entries in A: {}", circuit.index_info.num_non_zero_a);
+                        dev_println!("Number of non-zero entries in B: {}", circuit.index_info.num_non_zero_b);
+                        dev_println!("Number of non-zero entries in C: {}", circuit.index_info.num_non_zero_c);
 
                         if circuit.index_info.num_constraints != num_constraints
                             || circuit.index_info.num_public_and_private_variables
@@ -129,24 +132,30 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
                         Self::formatted_public_input_is_admissible(&padded_public_variables)?;
 
-                        let eval_z_a_time = start_timer!(|| format!("For {:?}, evaluating z_A_{_i}", circuit.id));
-                        let z_a = cfg_iter!(circuit.a)
+                        let eval_z_a_time = start_timer!(|| format!("For {:?}, evaluating z_A_{i}", circuit.id));
+                        let z_a = circuit
+                            .a
+                            .iter()
                             .map(|row| {
                                 inner_product(&padded_public_variables, &private_variables, row, num_public_variables)
                             })
                             .collect();
                         end_timer!(eval_z_a_time);
 
-                        let eval_z_b_time = start_timer!(|| format!("For {:?}, evaluating z_B_{_i}", circuit.id));
-                        let z_b = cfg_iter!(circuit.b)
+                        let eval_z_b_time = start_timer!(|| format!("For {:?}, evaluating z_B_{i}", circuit.id));
+                        let z_b = circuit
+                            .b
+                            .iter()
                             .map(|row| {
                                 inner_product(&padded_public_variables, &private_variables, row, num_public_variables)
                             })
                             .collect();
                         end_timer!(eval_z_b_time);
 
-                        let eval_z_c_time = start_timer!(|| format!("For {:?}, evaluating z_C_{_i}", circuit.id));
-                        let z_c = cfg_iter!(circuit.c)
+                        let eval_z_c_time = start_timer!(|| format!("For {:?}, evaluating z_C_{i}", circuit.id));
+                        let z_c = circuit
+                            .c
+                            .iter()
                             .map(|row| {
                                 inner_product(&padded_public_variables, &private_variables, row, num_public_variables)
                             })

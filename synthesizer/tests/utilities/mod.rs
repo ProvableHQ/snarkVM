@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,8 +25,8 @@
 
 #![allow(unused)]
 
-pub type CurrentAleo = circuit::network::AleoV0;
-pub type CurrentNetwork = console::network::MainnetV0;
+pub type CurrentAleo = snarkvm_circuit::network::AleoV0;
+pub type CurrentNetwork = snarkvm_console::network::MainnetV0;
 
 pub mod expectation;
 pub use expectation::*;

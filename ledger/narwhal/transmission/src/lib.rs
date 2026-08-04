@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,15 +16,18 @@
 #![forbid(unsafe_code)]
 #![warn(clippy::cast_possible_truncation)]
 
+extern crate snarkvm_console as console;
+
 mod bytes;
 mod serialize;
 mod string;
 
-use console::prelude::*;
-use ledger_block::Transaction;
-use ledger_narwhal_data::Data;
-use ledger_puzzle::Solution;
+use console::{network::error, prelude::*};
+use snarkvm_ledger_block::Transaction;
+use snarkvm_ledger_narwhal_data::Data;
+use snarkvm_ledger_puzzle::Solution;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq, Eq)]
 pub enum Transmission<N: Network> {
     /// A ratification.
@@ -96,14 +99,14 @@ pub mod test_helpers {
         // Append sample solutions.
         for _ in 0..5 {
             // Sample random fake solution bytes.
-            let solution = Data::Buffer(Bytes::from((0..1024).map(|_| rng.gen::<u8>()).collect::<Vec<_>>()));
+            let solution = Data::Buffer(Bytes::from((0..1024).map(|_| rng.random::<u8>()).collect::<Vec<_>>()));
             // Append the solution.
             sample.push(Transmission::Solution(solution));
         }
         // Append sample transactions.
         for _ in 0..5 {
             // Sample random fake transaction bytes.
-            let transaction = Data::Buffer(Bytes::from((0..1024).map(|_| rng.gen::<u8>()).collect::<Vec<_>>()));
+            let transaction = Data::Buffer(Bytes::from((0..1024).map(|_| rng.random::<u8>()).collect::<Vec<_>>()));
             // Append the transaction.
             sample.push(Transmission::Transaction(transaction));
         }

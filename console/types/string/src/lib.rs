@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +15,9 @@
 
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 #![warn(clippy::cast_possible_truncation)]
+
+pub mod identifier_literal;
+pub use identifier_literal::{IdentifierLiteral, SIZE_IN_BITS, SIZE_IN_BYTES};
 
 mod bitwise;
 mod bytes;

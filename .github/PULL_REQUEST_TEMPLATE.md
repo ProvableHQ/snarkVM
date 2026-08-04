@@ -2,23 +2,16 @@
 
 ## Motivation
 
-(Write your motivation here)
+Write your motivation here, make sure to link related issues and PRs.
 
 ## Test Plan
 
-<!--
-    If you changed any code, please provide us with clear instructions on how you verified your changes work.
-    Bonus points for screenshots and videos!
--->
+If you changed any code, please provide us with clear instructions on how you verified your changes work. Bonus points for screenshots and videos!
 
-(Write your test plan here)
+## Documentation
 
-## Related PRs
+If this PR adds or changes functionality, consider clarifying which docs need to be updated, e.g. on [AleoNet/welcome](https://github.com/AleoNet/welcome).
 
-<!--
-    If this PR adds or changes functionality, please take some time to
-    update the docs at https://github.com/ProvableHQ/snarkVM and https://github.com/AleoHQ/protocol-docs,
-    and link to your PR here.
--->
+## Backwards compatibility
 
-(Link your related PRs here)
+Please review backwards compatibility. Does any functionality need to be guarded by an existing or new `ConsensusVersion`?

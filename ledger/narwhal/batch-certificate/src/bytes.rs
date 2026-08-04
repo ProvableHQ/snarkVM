@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +15,27 @@
 
 use super::*;
 
+impl<N: Network> BatchCertificate<N> {
+    /// Used by FromBytes and FromBytesUnchecked.
+    fn read_signatures<R: Read>(mut reader: R, unchecked: bool) -> IoResult<IndexSet<Signature<N>>> {
+        // Read the number of signatures.
+        let num_signatures = u16::read_le(&mut reader)?;
+        // Ensure the number of signatures is within bounds.
+        if num_signatures > Self::max_signatures() {
+            return Err(error(format!(
+                "Number of signatures ({num_signatures}) exceeds the maximum ({})",
+                Self::max_signatures()
+            )));
+        }
+        // Read the signature bytes.
+        let mut signature_bytes = vec![0u8; num_signatures as usize * Signature::<N>::size_in_bytes()];
+        reader.read_exact(&mut signature_bytes)?;
+        // Read the signatures.
+        cfg_chunks!(signature_bytes, Signature::<N>::size_in_bytes())
+            .map(|data| Signature::read_le_with_unchecked(data, unchecked))
+            .collect::<Result<IndexSet<_>, _>>()
+    }
+}
 impl<N: Network> FromBytes for BatchCertificate<N> {
     /// Reads the batch certificate from the buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
@@ -25,26 +46,29 @@ impl<N: Network> FromBytes for BatchCertificate<N> {
             return Err(error("Invalid batch certificate version"));
         }
 
-        // Read the batch header.
+        // Read the batch header and signatures.
         let batch_header = BatchHeader::read_le(&mut reader)?;
-        // Read the number of signatures.
-        let num_signatures = u16::read_le(&mut reader)?;
-        // Ensure the number of signatures is within bounds.
-        if num_signatures > Self::max_signatures().map_err(error)? {
-            return Err(error(format!(
-                "Number of signatures ({num_signatures}) exceeds the maximum ({})",
-                Self::max_signatures().map_err(error)?
-            )));
-        }
-        // Read the signature bytes.
-        let mut signature_bytes = vec![0u8; num_signatures as usize * Signature::<N>::size_in_bytes()];
-        reader.read_exact(&mut signature_bytes)?;
-        // Read the signatures.
-        let signatures = cfg_chunks!(signature_bytes, Signature::<N>::size_in_bytes())
-            .map(Signature::read_le)
-            .collect::<Result<IndexSet<_>, _>>()?;
+        let signatures = Self::read_signatures(reader, false)?;
+
         // Return the batch certificate.
         Self::from(batch_header, signatures).map_err(error)
+    }
+
+    /// Reads the batch certificate from the buffer.
+    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the version.
+        let version = u8::read_le(&mut reader)?;
+        // Ensure the version is valid.
+        if version != 1 {
+            return Err(error("Invalid batch certificate version"));
+        }
+
+        // Read the batch header and signatures.
+        let batch_header = BatchHeader::read_le_unchecked(&mut reader)?;
+        let signatures = Self::read_signatures(reader, true)?;
+
+        // Return the batch certificate without performing additional checks.
+        Self::from_unchecked(batch_header, signatures).map_err(error)
     }
 }
 
@@ -78,6 +102,7 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le().unwrap();
             assert_eq!(expected, BatchCertificate::read_le(&expected_bytes[..]).unwrap());
+            assert_eq!(expected, BatchCertificate::read_le_unchecked(&expected_bytes[..]).unwrap());
         }
     }
 }

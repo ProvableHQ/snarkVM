@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,32 +13,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod call;
-mod caller;
-mod load;
-mod store;
+mod registers_circuit;
+mod registers_trait;
 
-use crate::{CallStack, RegisterTypes, RegistersCall};
+use crate::{CallStack, RegisterTypes};
 use console::{
     network::prelude::*,
-    program::{Entry, Literal, Plaintext, Register, Value},
+    program::{Entry, Literal, Plaintext, Register, Request, Value},
     types::{Address, Field},
 };
-use synthesizer_program::{
-    Operand,
-    RegistersLoad,
-    RegistersLoadCircuit,
-    RegistersSigner,
-    RegistersSignerCircuit,
-    RegistersStore,
-    RegistersStoreCircuit,
-    StackMatches,
-    StackProgram,
-};
+use snarkvm_synthesizer_program::{Operand, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait};
 
 use indexmap::IndexMap;
+use std::{cell::OnceCell, sync::OnceLock};
 
 #[derive(Clone)]
+/// Registers are a collection of console/circuit values and metadata used in a particular transition context.
 pub struct Registers<N: Network, A: circuit::Aleo<Network = N>> {
     /// The current call stack.
     call_stack: CallStack<N>,
@@ -64,9 +54,29 @@ pub struct Registers<N: Network, A: circuit::Aleo<Network = N>> {
     tvk: Option<Field<N>>,
     /// The transition view key, as a circuit.
     tvk_circuit: Option<circuit::Field<A>>,
+    /// The request.
+    request: Option<Request<N>>,
 }
 
 impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
+    /// Returns the current call stack.
+    #[inline]
+    pub fn call_stack(&self) -> CallStack<N> {
+        self.call_stack.clone()
+    }
+
+    /// Returns a reference to the current call stack.
+    #[inline]
+    pub fn call_stack_ref(&self) -> &CallStack<N> {
+        &self.call_stack
+    }
+
+    /// Returns a mutable reference to the current call stack.
+    #[inline]
+    pub fn call_stack_mut(&mut self) -> &mut CallStack<N> {
+        &mut self.call_stack
+    }
+
     /// Initializes a new set of registers, given the call stack.
     #[inline]
     pub fn new(call_stack: CallStack<N>, register_types: RegisterTypes<N>) -> Self {
@@ -83,6 +93,7 @@ impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
             caller_circuit: None,
             tvk: None,
             tvk_circuit: None,
+            request: None,
         }
     }
 

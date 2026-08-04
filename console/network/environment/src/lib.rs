@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +31,7 @@ pub mod prelude {
         helpers::*,
         traits::{
             ToBits,
+            ToBitsRaw,
             algorithms::*,
             arithmetic::*,
             bitwise::*,
@@ -65,12 +66,15 @@ pub mod prelude {
         FromBits as _,
         FromBytes,
         FromBytesDeserializer,
+        FromBytesUncheckedDeserializer,
         LimitedWriter,
         TestRng,
         ToBits as _,
+        ToBitsRaw as _,
         ToBytes,
         ToBytesSerializer,
         Uniform,
+        UniformExt,
         cfg_chunks,
         cfg_chunks_mut,
         cfg_find,
@@ -89,8 +93,11 @@ pub mod prelude {
         cfg_zip_fold,
         error,
         has_duplicates,
-        io::{Read, Result as IoResult, Write},
+        into_io_error,
+        io_error,
     };
+
+    pub use std::io::{Read, Result as IoResult, Write};
 
     pub use core::{
         cmp::Ordering,
@@ -127,7 +134,7 @@ pub mod prelude {
     };
 
     pub use anyhow::{Error, Result, anyhow, bail, ensure};
-    pub use bech32::{self, FromBase32, ToBase32};
+    pub use bech32;
     pub use itertools::Itertools;
     pub use nom::{
         Err,
@@ -136,14 +143,14 @@ pub mod prelude {
         character::complete::{alpha1, alphanumeric1, char, one_of},
         combinator::{complete, fail, map, map_res, opt, recognize},
         error::{ErrorKind, make_error},
-        multi::{count, many0, many0_count, many1, separated_list0, separated_list1},
-        sequence::{pair, terminated},
+        multi::{count, many_m_n, many0, many0_count, many1, separated_list0, separated_list1},
+        sequence::{delimited, pair, terminated},
     };
     pub use num_traits::{AsPrimitive, One, Pow, Zero};
     pub use rand::{
         CryptoRng,
-        Rng,
-        distributions::{Alphanumeric, Distribution, Standard},
+        RngExt as Rng,
+        distr::{Alphanumeric, Distribution, StandardUniform},
     };
     pub use serde::{
         Deserialize,

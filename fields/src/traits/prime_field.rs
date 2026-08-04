@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,8 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::{cmp::min, str::FromStr};
+
 use crate::{FftField, FieldError, FieldParameters, PoseidonDefaultField};
-use snarkvm_utilities::{biginteger::BigInteger, cmp::min, str::FromStr};
+use snarkvm_utilities::biginteger::BigInteger;
 
 /// The interface for a prime field.
 pub trait PrimeField:
@@ -78,7 +80,7 @@ pub trait PrimeField:
     /// Reads bytes in big-endian, and converts them to a field element.
     /// If the bytes are larger than the modulus, it will reduce them.
     fn from_bytes_be_mod_order(bytes: &[u8]) -> Self {
-        let num_modulus_bytes = ((Self::Parameters::MODULUS_BITS + 7) / 8) as usize;
+        let num_modulus_bytes = Self::Parameters::MODULUS_BITS.div_ceil(8) as usize;
         let num_bytes_to_directly_convert = min(num_modulus_bytes - 1, bytes.len());
         let (leading_bytes, remaining_bytes) = bytes.split_at(num_bytes_to_directly_convert);
         // Copy the leading big-endian bytes directly into a field element.

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +17,7 @@ use super::*;
 
 impl<N: Network> ToBits for Future<N> {
     /// Returns the future as a list of **little-endian** bits.
+    // Note: Any updates to bit serialization will require updating `FinalizeType::future_size_in_bits`.
     #[inline]
     fn write_bits_le(&self, vec: &mut Vec<bool>) {
         // Write the bits for the program ID.
@@ -39,7 +40,15 @@ impl<N: Network> ToBits for Future<N> {
             let argument_bits = argument.to_bits_le();
 
             // Write the size of the argument.
-            u16::try_from(argument_bits.len()).or_halt_with::<N>("argument exceeds u16::MAX bits").write_bits_le(vec);
+            let argument_length = argument_bits.len();
+            match argument_length <= u16::MAX as usize {
+                true => u16::try_from(argument_length)
+                    .or_halt_with::<N>("argument exceeds u16::MAX bits")
+                    .write_bits_le(vec),
+                false => u32::try_from(argument_length)
+                    .or_halt_with::<N>("argument exceeds u32::MAX bits")
+                    .write_bits_le(vec),
+            }
 
             // Write the argument.
             vec.extend_from_slice(&argument_bits);
@@ -47,6 +56,7 @@ impl<N: Network> ToBits for Future<N> {
     }
 
     /// Returns the future as a list of **big-endian** bits.
+    // Note: Any updates to bit serialization will require updating `FinalizeType::future_size_in_bits`.
     #[inline]
     fn write_bits_be(&self, vec: &mut Vec<bool>) {
         // Write the bits for the program ID.
@@ -69,7 +79,15 @@ impl<N: Network> ToBits for Future<N> {
             let argument_bits = argument.to_bits_be();
 
             // Write the size of the argument.
-            u16::try_from(argument_bits.len()).or_halt_with::<N>("argument exceeds u16::MAX bits").write_bits_be(vec);
+            let argument_length = argument_bits.len();
+            match argument_length <= u16::MAX as usize {
+                true => u16::try_from(argument_length)
+                    .or_halt_with::<N>("argument exceeds u16::MAX bits")
+                    .write_bits_be(vec),
+                false => u32::try_from(argument_length)
+                    .or_halt_with::<N>("argument exceeds u32::MAX bits")
+                    .write_bits_be(vec),
+            }
 
             // Write the argument.
             vec.extend_from_slice(&argument_bits);

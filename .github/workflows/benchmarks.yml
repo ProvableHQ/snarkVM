@@ -4,24 +4,26 @@ on:
   push:
     branches:
       - 'staging'
+      - 'fix_benchmark_pushing'
+  workflow_dispatch:
 
 jobs:
   # Run benchmarks and stores the output to a file
   benchmark:
     name: Benchmark
-    runs-on: ubuntu-latest
+    # Pin to a specific image to reduce runner-image drift between comparisons.
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install required Debian pacakges
+        run: sudo apt install -y lld
 
       - uses: actions/cache@v4
         with:
@@ -34,60 +36,67 @@ jobs:
       - name: Benchmark algorithms
         run: |
           cd algorithms
-          cargo bench --bench variable_base -- --output-format bencher | tee -a ../output.txt
-          cargo bench --bench poseidon_sponge -- --output-format bencher | tee -a ../output.txt
+          cargo bench --locked --bench variable_base -- --output-format bencher | tee -a ../output.txt
+          cargo bench --locked --bench poseidon_sponge -- --output-format bencher | tee -a ../output.txt
           cargo bench --bench varuna -- --output-format bencher | tee -a ../output.txt
           cd ..
 
       - name: Benchmark circuit/environment
         run: |
           cd circuit/environment
-          cargo bench --bench linear_combination -- --output-format bencher | tee -a ../../output.txt
+          cargo bench --locked --bench linear_combination -- --output-format bencher | tee -a ../../output.txt
           cd ../..
 
       - name: Benchmark console/account
         run: |
           cd console/account
-          cargo bench --bench account -- --output-format bencher | tee -a ../../output.txt
+          cargo bench --locked --bench account -- --output-format bencher | tee -a ../../output.txt
           cd ../..
 
       - name: Benchmark console/algorithms
         run: |
           cd console/algorithms
-          cargo bench --bench poseidon -- --output-format bencher | tee -a ../../output.txt
-          cargo bench --bench elligator2 -- --output-format bencher | tee -a ../../output.txt
+          cargo bench --locked --bench poseidon -- --output-format bencher | tee -a ../../output.txt
+          cargo bench --locked --bench elligator2 -- --output-format bencher | tee -a ../../output.txt
           cd ../..
 
       - name: Benchmark console/collections
         run: |
           cd console/collections
-          cargo bench --bench merkle_tree -- --output-format bencher | tee -a ../../output.txt
+          cargo bench --locked --bench merkle_tree -- --output-format bencher | tee -a ../../output.txt
           cd ../..
           
       - name: Benchmark console/types
         run: |
           cd console/types
-          cargo bench --bench group -- --output-format bencher | tee -a ../../output.txt
+          cargo bench --locked --bench group -- --output-format bencher | tee -a ../../output.txt
           cd ../..
 
       - name: Benchmark curves
         run: |
           cd curves
-          cargo bench --bench curves -- --output-format bencher | tee -a ../output.txt
+          cargo bench --locked --bench curves -- --output-format bencher | tee -a ../output.txt
           cd ..
 
-      - name: Benchmark ledger
+      - name: Benchmark ledger (block)
         run: |
-          cd ledger
-          cargo bench --bench block -- --output-format bencher | tee -a ../output.txt
-          cargo bench --bench transaction -- --output-format bencher | tee -a ../output.txt
-          cd ..
+          cargo bench --package=snarkvm-ledger --bench block  --features=rocks,test-helpers,test -- --output-format bencher | tee -a output.txt
+
+      - name: Benchmark ledger (dag)
+        run: |
+          cargo bench --package=snarkvm-ledger --bench dag -- --output-format bencher | tee -a output.txt
+
+      - name: Benchmark ledger (transaction)
+        run: |
+          cargo bench --package=snarkvm-ledger --bench transaction -- --output-format bencher | tee -a output.txt
+
+      - name: Benchmark ledger (store)
+        run: |
+          cargo bench --package=snarkvm-ledger --bench store -- --output-format bencher | tee -a output.txt
 
       - name: Benchmark ledger/puzzle
         run: |
-          cd ledger/puzzle
-          cargo bench --bench puzzle --features "setup" -- --output-format bencher | tee -a ../../output.txt
-          cd ../..
+          cargo bench --package=snarkvm-ledger-puzzle --bench puzzle --features=setup -- --output-format bencher | tee -a output.txt
 
       # Clean benchmark output to remove unnecessary lines
       - name: Clean benchmark output
@@ -108,8 +117,10 @@ jobs:
           tool: 'cargo'
           output-file-path: output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          auto-push: true
           alert-threshold: '150%'
           comment-on-alert: true
           fail-on-alert: true
-          alert-comment-cc-users: '@raychu86'
+          alert-comment-cc-users: '@vicsn'
+          auto-push: true
+          # Enable Job Summary for PRs
+          summary-always: true

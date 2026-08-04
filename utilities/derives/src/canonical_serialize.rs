@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -93,9 +93,9 @@ pub(super) fn impl_canonical_serialize(ast: &syn::DeriveInput) -> TokenStream {
         _ => panic!("`CanonicalSerialize` can only be derived for structs, {name} is not a struct"),
     };
 
-    let gen = quote! {
+    quote! {
         impl #impl_generics snarkvm_utilities::CanonicalSerialize for #name #ty_generics #where_clause {
-            fn serialize_with_mode<W: snarkvm_utilities::io::Write>(&self, mut writer: W, compress: snarkvm_utilities::serialize::Compress) -> Result<(), snarkvm_utilities::serialize::SerializationError> {
+            fn serialize_with_mode<W: std::io::Write>(&self, mut writer: W, compress: snarkvm_utilities::serialize::Compress) -> Result<(), snarkvm_utilities::serialize::SerializationError> {
                 #(#serialize_body)*
                 Ok(())
             }
@@ -105,6 +105,5 @@ pub(super) fn impl_canonical_serialize(ast: &syn::DeriveInput) -> TokenStream {
                 size
             }
         }
-    };
-    gen
+    }
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -112,7 +112,7 @@ impl<E: Environment> BitXorAssign<&Boolean<E>> for Boolean<E> {
                 // 2a * b = a + b - c
                 // (a + a) * b = a + b - c
                 //
-                E::enforce(|| ((&self.0 + &self.0), other, (&self.0 + &other.0 - &output.0)));
+                E::enforce(|| ((&self.0 + &self.0), other, (&self.0 + &other.0 - &output.0))).expect("Boolean XOR constraint unsatisfied");
 
                 output
             }

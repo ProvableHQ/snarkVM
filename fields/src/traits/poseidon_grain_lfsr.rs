@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 #![allow(dead_code)]
 
 use crate::{FieldParameters, PrimeField};
-use snarkvm_utilities::{FromBits, vec::Vec};
+use snarkvm_utilities::FromBits;
 
 use anyhow::{Result, bail};
 
@@ -125,7 +125,7 @@ impl PoseidonGrainLFSR {
 
         // Prepare reusable vectors for the intermediate bits and bytes.
         let mut bits = Vec::with_capacity(num_bits as usize);
-        let mut bytes = Vec::with_capacity((num_bits as usize + 7) / 8);
+        let mut bytes = Vec::with_capacity((num_bits as usize).div_ceil(8));
 
         let mut output = Vec::with_capacity(num_elems);
         for _ in 0..num_elems {

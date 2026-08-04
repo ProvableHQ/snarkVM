@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,13 +38,13 @@ impl<const VARIANT: usize> Default for BooleanHash<VARIANT> {
     }
 }
 
-impl<const VARIANT: usize> Distribution<BooleanHash<VARIANT>> for Standard {
+impl<const VARIANT: usize> Distribution<BooleanHash<VARIANT>> for StandardUniform {
     /// Returns a random boolean hash.
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> BooleanHash<VARIANT> {
         let mut array = [false; VARIANT];
         for entry in array.iter_mut() {
-            *entry = rng.gen();
+            *entry = rng.random();
         }
         BooleanHash(array)
     }

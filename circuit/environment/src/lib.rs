@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::type_complexity)]
 
-extern crate snarkvm_circuit_environment_witness;
+extern crate snarkvm_console_network as console;
 
 pub use snarkvm_circuit_environment_witness::rename_selfs;
 
@@ -28,6 +28,9 @@ pub use circuit::*;
 
 pub mod environment;
 pub use environment::*;
+
+pub mod error;
+pub use error::*;
 
 pub mod helpers;
 pub use helpers::*;
@@ -45,6 +48,7 @@ pub use traits::*;
 pub mod prelude {
     pub use crate::{
         CircuitType,
+        ConstraintUnsatisfied,
         Count,
         Environment,
         LinearCombination,
@@ -85,6 +89,7 @@ pub mod prelude {
             Square as _,
             SquareRoot as _,
             ToBits as _,
+            ToBitsRaw as _,
             string_parser,
             types::{
                 integer_magnitude::Magnitude,
@@ -133,5 +138,4 @@ pub mod prelude {
         sequence::{pair, terminated},
     };
     pub use num_traits::{self, Inv, One as NumOne, Pow, Unsigned};
-    pub use once_cell::unsync::OnceCell;
 }

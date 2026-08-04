@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,28 +36,31 @@ pub struct CircuitSpecificState<F: PrimeField> {
     /// The number of instances being proved in this batch.
     pub(in crate::snark) batch_size: usize,
 
-    /// The list of public inputs for each instance in the batch.
-    /// The length of this list must be equal to the batch size.
+    /// The list of public inputs for each instance in the batch (`x_{i, j}` in
+    /// the Varuna spec). The length of this list must be equal to the batch
+    /// size.
     pub(super) padded_public_variables: Vec<Vec<F>>,
 
-    /// The list of private variables for each instance in the batch.
-    /// The length of this list must be equal to the batch size.
+    /// The list of private variables for each instance in the batch (after
+    /// padding: `w` in the Varuna spec). The length of this list must be equal
+    /// to the batch size.
     pub(super) private_variables: Vec<Vec<F>>,
 
-    /// The list of Az vectors for each instance in the batch.
+    /// The list of `A_i * z_i_j` vectors for each instance `j` in the batch.
     /// The length of this list must be equal to the batch size.
     pub(super) z_a: Option<Vec<Vec<F>>>,
 
-    /// The list of Bz vectors for each instance in the batch.
+    /// The list of `B_i * z_i_j` vectors for each instance `j` in the batch.
     /// The length of this list must be equal to the batch size.
     pub(super) z_b: Option<Vec<Vec<F>>>,
 
-    /// The list of Cz vectors for each instance in the batch.
+    /// The list of `C_i * z_i_j` vectors for each instance `j` in the batch.
     /// The length of this list must be equal to the batch size.
     pub(super) z_c: Option<Vec<Vec<F>>>,
 
-    /// A list of polynomials corresponding to the interpolation of the public
-    /// input. The length of this list must be equal to the batch size.
+    /// A list of polynomials (`\tilde{x}_{i, j}(X)` in the Varuna spec)
+    /// corresponding to the interpolation of the public input `x_{i, j}`. The
+    /// length of this list must be equal to the batch size.
     pub(super) x_polys: Vec<DensePolynomial<F>>,
 
     /// Intermediary polynomials of the row sumcheck.
@@ -94,12 +97,13 @@ pub struct State<'a, F: PrimeField, SM: SNARKMode> {
 type PaddedPubInputs<F> = Vec<F>;
 /// The private inputs for a single instance.
 type PrivateInputs<F> = Vec<F>;
-/// The z_i_j*A_i vector for a single instance.
+/// The vector `z_i_j * A_i` for a single instance.
 type Za<F> = Vec<F>;
-/// The z_i_j*B_i vector for a single instance.
+/// The vector `z_i_j * B_i` for a single instance.
 type Zb<F> = Vec<F>;
-/// The z_i_j*C_i vector for a single instance.
+/// The vector `z_i_j * C_i` for a single instance.
 type Zc<F> = Vec<F>;
+
 /// Assignments for a single instance.
 pub(super) struct Assignments<F>(
     pub(super) PaddedPubInputs<F>,

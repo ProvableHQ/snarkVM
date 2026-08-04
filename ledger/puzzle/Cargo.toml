@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-puzzle"
-version = "3.8.0"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Puzzle for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -21,7 +21,7 @@ categories = [
 ]
 include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [[bench]]
 name = "puzzle"
@@ -33,69 +33,68 @@ required-features = [ "setup" ]
 default = [ "indexmap/rayon", "rayon" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 locktick = [ "dep:locktick", "snarkvm-algorithms/locktick" ]
-serial = [ "console/serial", "snarkvm-algorithms/serial" ]
+serial = [ "snarkvm-console/serial", "snarkvm-algorithms/serial" ]
 setup = [ ]
 timer = [ "aleo-std/timer" ]
-wasm = [ "console/wasm", "snarkvm-algorithms/wasm" ]
+wasm = [ "snarkvm-console/wasm" ]
 
-[dependencies.console]
-package = "snarkvm-console"
-path = "../../console"
-version = "=3.8.0"
+[dependencies.snarkvm-console]
+workspace = true
+features = [ "account", "network", "types" ]
 
 [dependencies.snarkvm-algorithms]
-path = "../../algorithms"
-version = "=3.8.0"
+workspace = true
+
+[dependencies.snarkvm-utilities]
+workspace = true
 
 [dependencies.aleo-std]
-version = "1.0.1"
-default-features = false
+workspace = true
 
 [dependencies.anyhow]
-version = "1.0.73"
+workspace = true
 
 [dependencies.bincode]
-version = "1"
+workspace = true
 
 [dependencies.indexmap]
-version = "2.0"
+workspace = true
 features = [ "serde", "rayon" ]
 
 [dependencies.locktick]
-version = "0.3"
+workspace = true
 features = [ "parking_lot" ]
 optional = true
 
 [dependencies.lru]
-version = "0.12"
+workspace = true
 
 [dependencies.parking_lot]
-version = "0.12"
+workspace = true
 
 [dependencies.rand]
-version = "0.8"
+workspace = true
 
 [dependencies.rand_chacha]
-version = "0.3.1"
+workspace = true
 
 [dependencies.rayon]
-version = "1"
+workspace = true
 optional = true
 
 [dependencies.serde_json]
-version = "1.0"
+workspace = true
 features = [ "preserve_order" ]
 
-[dev-dependencies.console]
-package = "snarkvm-console"
-path = "../../console"
-features = [ "test" ]
+[dev-dependencies.snarkvm-console]
+workspace = true
+features = [ "test", "default" ]
 
 [dev-dependencies.criterion]
-version = "0.5.1"
+workspace = true
 
 [dev-dependencies.rand]
-version = "0.8"
+workspace = true
 
 [dev-dependencies.snarkvm-ledger-puzzle-epoch]
 path = "epoch"

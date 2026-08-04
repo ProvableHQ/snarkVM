@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,7 +32,7 @@ impl<E: Environment, const RATE: usize> PRF for Poseidon<E, RATE> {
     }
 }
 
-#[cfg(all(test, feature = "console"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use snarkvm_circuit_types::environment::Circuit;

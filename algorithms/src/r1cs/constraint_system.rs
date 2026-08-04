@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -96,7 +96,8 @@ pub trait ConstraintSystem<F: Field>: Sized {
     /// Output the number of constraints in the system.
     fn num_constraints(&self) -> usize;
 
-    /// Output the number of public input variables to the system.
+    /// Output the number of public input variables to the system including the
+    /// constant 1, if present.
     fn num_public_variables(&self) -> usize;
 
     /// Output the number of private input variables to the system.

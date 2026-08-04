@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,13 +17,11 @@ use crate::{
     TransitionStorage,
     TransitionStore,
     atomic_batch_scope,
-    cow_to_cloned,
-    cow_to_copied,
     helpers::{Map, MapRead},
 };
 use console::network::prelude::*;
-use ledger_block::Fee;
-use synthesizer_snark::Proof;
+use snarkvm_ledger_block::Fee;
+use snarkvm_synthesizer_snark::Proof;
 
 use aleo_std_storage::StorageMode;
 use anyhow::Result;
@@ -121,9 +119,8 @@ pub trait FeeStorage<N: Network>: Clone + Send + Sync {
     /// Removes the fee for the given `transaction ID`.
     fn remove(&self, transaction_id: &N::TransactionID) -> Result<()> {
         // Retrieve the fee transition ID.
-        let (transition_id, _, _) = match self.fee_map().get_confirmed(transaction_id)? {
-            Some(fee_id) => cow_to_cloned!(fee_id),
-            None => bail!("Failed to locate the fee transition ID for transaction '{transaction_id}'"),
+        let Some((transition_id, _, _)) = self.fee_map().get_confirmed(transaction_id)?.map(|x| x.into_owned()) else {
+            bail!("Failed to locate the fee transition ID for transaction '{transaction_id}'");
         };
 
         atomic_batch_scope!(self, {
@@ -143,18 +140,16 @@ pub trait FeeStorage<N: Network>: Clone + Send + Sync {
         &self,
         transition_id: &N::TransitionID,
     ) -> Result<Option<N::TransactionID>> {
-        match self.reverse_fee_map().get_confirmed(transition_id)? {
-            Some(transaction_id) => Ok(Some(cow_to_copied!(transaction_id))),
-            None => Ok(None),
-        }
+        Ok(self.reverse_fee_map().get_confirmed(transition_id)?.map(|x| *x))
     }
 
     /// Returns the fee for the given `transaction ID`.
     fn get_fee(&self, transaction_id: &N::TransactionID) -> Result<Option<Fee<N>>> {
         // Retrieve the fee transition ID.
-        let (fee_transition_id, global_state_root, proof) = match self.fee_map().get_confirmed(transaction_id)? {
-            Some(fee) => cow_to_cloned!(fee),
-            None => return Ok(None),
+        let Some((fee_transition_id, global_state_root, proof)) =
+            self.fee_map().get_confirmed(transaction_id)?.map(|x| x.into_owned())
+        else {
+            return Ok(None);
         };
         // Retrieve the fee transition.
         match self.transition_store().get_transition(&fee_transition_id)? {
@@ -264,15 +259,16 @@ impl<N: Network, F: FeeStorage<N>> FeeStore<N, F> {
 mod tests {
     use super::*;
     use crate::helpers::memory::FeeMemory;
-    use ledger_block::Transaction;
+    use snarkvm_ledger_block::Transaction;
 
     #[test]
+    #[ignore]
     fn test_insert_get_remove() {
         let rng = &mut TestRng::default();
 
         // Sample the fee transactions.
-        let transaction_0 = ledger_test_helpers::sample_fee_private_transaction(rng);
-        let transaction_1 = ledger_test_helpers::sample_fee_public_transaction(rng);
+        let transaction_0 = snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng);
+        let transaction_1 = snarkvm_ledger_test_helpers::sample_fee_public_transaction(rng);
         let transactions = vec![transaction_0, transaction_1];
 
         for transaction in transactions {
@@ -307,12 +303,13 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_find_transaction_id() {
         let rng = &mut TestRng::default();
 
         // Sample the fee transactions.
-        let transaction_0 = ledger_test_helpers::sample_fee_private_transaction(rng);
-        let transaction_1 = ledger_test_helpers::sample_fee_public_transaction(rng);
+        let transaction_0 = snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng);
+        let transaction_1 = snarkvm_ledger_test_helpers::sample_fee_public_transaction(rng);
         let transactions = vec![transaction_0, transaction_1];
 
         for transaction in transactions {

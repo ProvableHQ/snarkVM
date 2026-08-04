@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,9 +15,7 @@
 
 use super::*;
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Parser
-    for FunctionCore<N, Instruction, Command>
-{
+impl<N: Network> Parser for FunctionCore<N> {
     /// Parses a string into a function.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
@@ -72,9 +70,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Par
     }
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> FromStr
-    for FunctionCore<N, Instruction, Command>
-{
+impl<N: Network> FromStr for FunctionCore<N> {
     type Err = Error;
 
     /// Returns a function from a string literal.
@@ -91,18 +87,14 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Fro
     }
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Debug
-    for FunctionCore<N, Instruction, Command>
-{
+impl<N: Network> Debug for FunctionCore<N> {
     /// Prints the function as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Display
-    for FunctionCore<N, Instruction, Command>
-{
+impl<N: Network> Display for FunctionCore<N> {
     /// Prints the function as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Write the function to a string.

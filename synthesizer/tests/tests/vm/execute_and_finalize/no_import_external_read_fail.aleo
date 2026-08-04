@@ -15,6 +15,9 @@ function register:
 finalize register:
     input r0 as address.public;
     set true into users[r0];
+    
+constructor:
+    assert.eq edition 0u16;
 
 
 /////////////////////////////////////////////////
@@ -30,3 +33,6 @@ finalize send:
     input r0 as address.public;
     get registry.aleo/users[r0] into r1;
     assert.eq r1 true;
+    
+constructor:
+    assert.eq edition 0u16;

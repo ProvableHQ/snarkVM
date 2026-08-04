@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -66,7 +66,7 @@ pub fn check_iterators_match(map: impl for<'a> NestedMap<'a, usize, usize, Strin
     const NUM_TOTAL_ITEMS: usize = 20;
 
     for i in 0..NUM_ITEMS {
-        println!("i: {}", i);
+        println!("i: {i}");
 
         // Insert an item into the map.
         map.insert(i, i, i.to_string()).unwrap();
@@ -81,7 +81,7 @@ pub fn check_iterators_match(map: impl for<'a> NestedMap<'a, usize, usize, Strin
         map.start_atomic();
 
         for i in NUM_ITEMS..NUM_TOTAL_ITEMS {
-            println!("i: {}", i);
+            println!("i: {i}");
 
             // Insert an item into the map.
             map.insert(i, i, i.to_string()).unwrap();

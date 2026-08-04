@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +26,7 @@ use snarkvm_utilities::{
     Valid,
     Validate,
     Write,
+    dev_println,
 };
 
 use anyhow::{Result, anyhow, bail, ensure};
@@ -58,7 +59,7 @@ const NUM_POWERS_27: usize = 1 << 27;
 const NUM_POWERS_28: usize = 1 << 28;
 
 /// The maximum degree supported by the SRS.
-const MAX_NUM_POWERS: usize = NUM_POWERS_28;
+pub const MAX_NUM_POWERS: usize = NUM_POWERS_28;
 
 lazy_static::lazy_static! {
     static ref POWERS_OF_BETA_G_15: Vec<u8> = Degree15::load_bytes().expect("Failed to load powers of beta in universal SRS");
@@ -176,11 +177,7 @@ impl<E: PairingEngine> CanonicalSerialize for PowersOfG<E> {
 }
 
 impl<E: PairingEngine> CanonicalDeserialize for PowersOfG<E> {
-    fn deserialize_with_mode<R: Read>(
-        mut reader: R,
-        compress: Compress,
-        validate: Validate,
-    ) -> Result<Self, SerializationError> {
+    fn deserialize_with_mode<R: Read>(mut reader: R, compress: Compress, validate: Validate) -> Result<Self, SerializationError> {
         let powers_of_beta_g = RwLock::new(PowersOfBetaG::deserialize_with_mode(&mut reader, compress, Validate::No)?);
 
         // Reconstruct powers of beta_times_gamma_g.
@@ -305,10 +302,7 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
 
     /// Assumes that we have the requisite powers.
     fn shifted_powers(&self, range: Range<usize>) -> Result<&[E::G1Affine]> {
-        ensure!(
-            self.contains_in_shifted_powers(&range),
-            "Requested range is not contained in the available shifted powers"
-        );
+        ensure!(self.contains_in_shifted_powers(&range), "Requested range is not contained in the available shifted powers");
 
         if range.start < MAX_NUM_POWERS / 2 {
             ensure!(self.shifted_powers_of_beta_g.is_empty());
@@ -375,17 +369,13 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
     /// and updates `Self` in place with the new powers.
     fn download_powers_up_to(&mut self, end: usize) -> Result<()> {
         // Determine the new power of two.
-        let final_power_of_two =
-            end.checked_next_power_of_two().ok_or_else(|| anyhow!("Requesting too many powers"))?;
+        let final_power_of_two = end.checked_next_power_of_two().ok_or_else(|| anyhow!("Requesting too many powers"))?;
         // Ensure the total number of powers is less than the maximum number of powers.
         ensure!(final_power_of_two <= MAX_NUM_POWERS, "Requesting more powers than exist in the SRS");
 
         // Retrieve the current power of two.
-        let current_power_of_two = self
-            .powers_of_beta_g
-            .len()
-            .checked_next_power_of_two()
-            .ok_or_else(|| anyhow!("The current degree is too large"))?;
+        let current_power_of_two =
+            self.powers_of_beta_g.len().checked_next_power_of_two().ok_or_else(|| anyhow!("The current degree is too large"))?;
 
         // Initialize a vector for the powers of two to be downloaded.
         let mut download_queue = Vec::with_capacity(14);
@@ -395,8 +385,7 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
         // Determine the powers of two to download.
         while accumulator <= final_power_of_two {
             download_queue.push(accumulator);
-            accumulator =
-                accumulator.checked_mul(2).ok_or_else(|| anyhow!("Overflowed while requesting a larger degree"))?;
+            accumulator = accumulator.checked_mul(2).ok_or_else(|| anyhow!("Overflowed while requesting a larger degree"))?;
         }
         ensure!(final_power_of_two * 2 == accumulator, "Ensure the loop terminates at the right power of two");
 
@@ -408,8 +397,7 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
 
         // Download the powers of two.
         for num_powers in &download_queue {
-            #[cfg(debug_assertions)]
-            println!("Loading {num_powers} powers");
+            dev_println!("Loading {num_powers} powers");
 
             // Download the universal SRS powers if they're not already on disk.
             let additional_bytes = match *num_powers {
@@ -471,18 +459,15 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
         // Then, we have to download the powers 2^s..k.next_power_of_two().
         let final_num_powers = MAX_NUM_POWERS
             .checked_sub(start)
-            .ok_or_else(|| {
-                anyhow!("Requesting too many powers: `start ({start}) > MAX_NUM_POWERS ({MAX_NUM_POWERS})`")
-            })?
+            .ok_or_else(|| anyhow!("Requesting too many powers: `start ({start}) > MAX_NUM_POWERS ({MAX_NUM_POWERS})`"))?
             .checked_next_power_of_two()
             .ok_or_else(|| anyhow!("Requesting too many powers"))?; // Calculated k.next_power_of_two().
 
         let mut download_queue = Vec::with_capacity(14);
         let mut existing_num_powers = self.shifted_powers_of_beta_g.len();
         while existing_num_powers < final_num_powers {
-            existing_num_powers = existing_num_powers
-                .checked_mul(2)
-                .ok_or_else(|| anyhow!("Overflowed while requesting additional powers"))?;
+            existing_num_powers =
+                existing_num_powers.checked_mul(2).ok_or_else(|| anyhow!("Overflowed while requesting additional powers"))?;
             download_queue.push(existing_num_powers);
         }
         download_queue.reverse(); // We want to download starting from the smallest power.
@@ -490,8 +475,7 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
         let mut final_powers = Vec::with_capacity(final_num_powers);
         // If the `target_degree` exceeds the current `degree`, proceed to download the new powers.
         for num_powers in &download_queue {
-            #[cfg(debug_assertions)]
-            println!("Loading {num_powers} shifted powers");
+            dev_println!("Loading {num_powers} shifted powers");
 
             // Download the universal SRS powers if they're not already on disk.
             let additional_bytes = match *num_powers {
@@ -521,10 +505,7 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
         final_powers.extend(self.shifted_powers_of_beta_g.iter());
         self.shifted_powers_of_beta_g = final_powers;
 
-        ensure!(
-            self.shifted_powers_of_beta_g.len() == final_num_powers,
-            "Loaded an incorrect number of shifted powers"
-        );
+        ensure!(self.shifted_powers_of_beta_g.len() == final_num_powers, "Loaded an incorrect number of shifted powers");
         Ok(())
     }
 }

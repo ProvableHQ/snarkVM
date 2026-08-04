@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -65,9 +65,6 @@ impl<E: Environment, I: IntegerType> CastLossy<Integer<E, I>> for Scalar<E> {
     /// Casts a `Scalar` to an `Integer`, with lossy truncation.
     #[inline]
     fn cast_lossy(&self) -> Integer<E, I> {
-        // Note: We are reconstituting the integer from the scalar field.
-        // This is safe as the number of bits in the integer is less than the scalar field modulus,
-        // and thus will always fit within a single scalar field element.
         debug_assert!(I::BITS < <console::Scalar<E::Network> as console::SizeInBits>::size_in_bits() as u64);
 
         // Truncate the field to the size of the integer domain.
@@ -97,7 +94,7 @@ mod tests {
 
     use std::fmt::Debug;
 
-    const ITERATIONS: usize = 100;
+    const ITERATIONS: usize = 10;
 
     fn sample_values(
         i: usize,

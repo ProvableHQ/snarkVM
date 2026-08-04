@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,8 +14,9 @@
 // limitations under the License.
 
 use super::*;
+use crate::Command;
 
-impl<N: Network, Command: CommandTrait<N>> Parser for FinalizeCore<N, Command> {
+impl<N: Network> Parser for FinalizeCore<N> {
     /// Parses a string into finalize.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
@@ -35,7 +36,7 @@ impl<N: Network, Command: CommandTrait<N>> Parser for FinalizeCore<N, Command> {
         // Parse the inputs from the string.
         let (string, inputs) = many0(Input::parse)(string)?;
         // Parse the commands from the string.
-        let (string, commands) = many1(Command::parse)(string)?;
+        let (string, commands) = many1(Command::<N>::parse)(string)?;
 
         map_res(take(0usize), move |_| {
             // Initialize a new finalize.
@@ -53,7 +54,7 @@ impl<N: Network, Command: CommandTrait<N>> Parser for FinalizeCore<N, Command> {
     }
 }
 
-impl<N: Network, Command: CommandTrait<N>> FromStr for FinalizeCore<N, Command> {
+impl<N: Network> FromStr for FinalizeCore<N> {
     type Err = Error;
 
     /// Returns a finalize from a string literal.
@@ -70,14 +71,14 @@ impl<N: Network, Command: CommandTrait<N>> FromStr for FinalizeCore<N, Command> 
     }
 }
 
-impl<N: Network, Command: CommandTrait<N>> Debug for FinalizeCore<N, Command> {
+impl<N: Network> Debug for FinalizeCore<N> {
     /// Prints the finalize as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl<N: Network, Command: CommandTrait<N>> Display for FinalizeCore<N, Command> {
+impl<N: Network> Display for FinalizeCore<N> {
     /// Prints the finalize as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Write the finalize to a string.

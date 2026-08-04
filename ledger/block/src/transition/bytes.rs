@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,9 +20,9 @@ impl<N: Network> FromBytes for Transition<N> {
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
-        // Ensure the version is valid.
+        // Validate the version.
         if version != 1 {
-            return Err(error("Invalid transition version"));
+            return Err(error(format!("Invalid transition version: {version}")));
         }
 
         // Read the transition ID.
@@ -34,6 +34,14 @@ impl<N: Network> FromBytes for Transition<N> {
 
         // Read the number of inputs.
         let num_inputs: u8 = FromBytes::read_le(&mut reader)?;
+        // Ensure the number of inputs is within bounds.
+        if num_inputs as usize > N::MAX_INPUTS {
+            return Err(error(format!(
+                "Transition (from 'read_le') has too many inputs ({} > {})",
+                num_inputs,
+                N::MAX_INPUTS
+            )));
+        }
         // Read the inputs.
         let mut inputs = Vec::with_capacity(num_inputs as usize);
         for _ in 0..num_inputs {
@@ -43,6 +51,14 @@ impl<N: Network> FromBytes for Transition<N> {
 
         // Read the number of outputs.
         let num_outputs: u8 = FromBytes::read_le(&mut reader)?;
+        // Ensure the number of outputs is within bounds.
+        if num_outputs as usize > N::MAX_OUTPUTS {
+            return Err(error(format!(
+                "Transition (from 'read_le') has too many outputs ({} > {})",
+                num_outputs,
+                N::MAX_OUTPUTS
+            )));
+        }
         // Read the outputs.
         let mut outputs = Vec::with_capacity(num_outputs as usize);
         for _ in 0..num_outputs {
@@ -96,7 +112,9 @@ impl<N: Network> ToBytes for Transition<N> {
         // Write the transition commitment.
         self.tcm.write_le(&mut writer)?;
         // Write the signer commitment.
-        self.scm.write_le(&mut writer)
+        self.scm.write_le(&mut writer)?;
+
+        Ok(())
     }
 }
 

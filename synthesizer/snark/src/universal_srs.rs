@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,28 +18,31 @@ use super::*;
 #[derive(Clone)]
 pub struct UniversalSRS<N: Network> {
     /// The universal SRS parameter.
-    srs: Arc<OnceCell<varuna::UniversalSRS<N::PairingCurve>>>,
+    srs: Arc<OnceLock<varuna::UniversalSRS<N::PairingCurve>>>,
 }
 
 impl<N: Network> UniversalSRS<N> {
     /// Initializes the universal SRS.
     pub fn load() -> Result<Self> {
-        Ok(Self { srs: Arc::new(OnceCell::new()) })
+        Ok(Self { srs: Arc::new(OnceLock::new()) })
     }
 
     /// Returns the circuit proving and verifying key.
     pub fn to_circuit_key(
         &self,
-        function_name: &str,
+        _function_name: &str,
         assignment: &circuit::Assignment<N::Field>,
     ) -> Result<(ProvingKey<N>, VerifyingKey<N>)> {
-        #[cfg(feature = "aleo-cli")]
+        #[cfg(feature = "dev-print")]
         let timer = std::time::Instant::now();
 
         let (proving_key, verifying_key) = Varuna::<N>::circuit_setup(self, assignment)?;
 
-        #[cfg(feature = "aleo-cli")]
-        println!("{}", format!(" • Built '{function_name}' (in {} ms)", timer.elapsed().as_millis()).dimmed());
+        #[cfg(feature = "dev-print")]
+        {
+            let _elapsed = timer.elapsed().as_millis();
+            dev_println!(" • Built '{_function_name}' (in {_elapsed} ms)");
+        }
 
         Ok((
             ProvingKey::new(Arc::new(proving_key)),
@@ -51,7 +54,9 @@ impl<N: Network> UniversalSRS<N> {
 impl<N: Network> FromBytes for UniversalSRS<N> {
     /// Reads the universal SRS from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        Ok(Self { srs: Arc::new(OnceCell::with_value(FromBytes::read_le(&mut reader)?)) })
+        let lock = OnceLock::new();
+        lock.set(FromBytes::read_le(&mut reader)?).unwrap();
+        Ok(Self { srs: Arc::new(lock) })
     }
 }
 
@@ -68,14 +73,17 @@ impl<N: Network> Deref for UniversalSRS<N> {
     #[allow(clippy::let_and_return)]
     fn deref(&self) -> &Self::Target {
         self.srs.get_or_init(|| {
-            #[cfg(feature = "aleo-cli")]
+            #[cfg(feature = "dev-print")]
             let timer = std::time::Instant::now();
 
             // Load the universal SRS.
             let universal_srs = varuna::UniversalSRS::load().expect("Failed to load the universal SRS");
 
-            #[cfg(feature = "aleo-cli")]
-            println!("{}", format!(" • Loaded universal setup (in {} ms)", timer.elapsed().as_millis()).dimmed());
+            #[cfg(feature = "dev-print")]
+            {
+                let _elapsed = timer.elapsed().as_millis();
+                dev_println!(" • Loaded universal setup (in {_elapsed} ms)");
+            }
 
             universal_srs
         })

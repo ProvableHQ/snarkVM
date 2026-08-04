@@ -1,18 +1,8 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    mint_and_split.aleo/mint:
-      outputs:
-      - '{"type":"record","id":"5362233052560846238226654677312070784713895947130881249083843529510916944031field","checksum":"7816912889670526743054988042995440028407660195896606816511174108297987149569field","value":"record1qyqsqh5ywrvf42cljl67xcgzp39wdhlygqmkjkuwgaj827945h9wgfcgqyxx66trwfhkxun9v35hguerqqpqzqzu388z96mn6rf76798hkmwp9753jyjz72qhr8xxqkxv6smct5upj9v8v5krsdhxk3hculcusw7mj54de50d5g9seqdey800qseawz3y2tgsyg"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - execute: Commitment '1266307482263846358970326041806201638141701138269282465033372005968041137990field' does not exist
-- execute: Input record for 'mint_and_split.aleo' must belong to the signer
-additional:
-- child_outputs:
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"2562090260329031660713384309168507515341431313675137173177615123065204014729field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo19e6k5ferx3k8a9k79xtj4uuaztt2jl4eza7k43pygsu977yazypqqwdmw6,\n    1446u64\n  ]\n}"}'
-- {}
-- {}
+- execute: 'Authorization failed: Process authorization failed: Stack authorization failed: Input record ''mint_and_split.aleo/credits'' must belong to the signer'
+- execute: Commitment '5664701406562067552828344114098303767897965604026128467062564698122653063423field' does not exist

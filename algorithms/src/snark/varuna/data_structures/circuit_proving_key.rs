@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,12 +18,8 @@ use crate::{
     snark::varuna::{CircuitVerifyingKey, SNARKMode, ahp::indexer::*},
 };
 use snarkvm_curves::PairingEngine;
-use snarkvm_utilities::{
-    FromBytes,
-    ToBytes,
-    io::{self, Read, Write},
-    serialize::*,
-};
+use snarkvm_utilities::{FromBytes, ToBytes, serialize::*};
+use std::io::{self, Read, Write};
 
 use std::{cmp::Ordering, sync::Arc};
 

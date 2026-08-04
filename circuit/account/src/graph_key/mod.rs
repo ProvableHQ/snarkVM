@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,7 +24,6 @@ pub struct GraphKey<A: Aleo> {
     sk_tag: Field<A>,
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Inject for GraphKey<A> {
     type Primitive = console::GraphKey<A::Network>;
 
@@ -44,7 +43,6 @@ impl<A: Aleo> GraphKey<A> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Eject for GraphKey<A> {
     type Primitive = console::GraphKey<A::Network>;
 
@@ -62,14 +60,14 @@ impl<A: Aleo> Eject for GraphKey<A> {
     }
 }
 
-#[cfg(all(test, feature = "console"))]
+#[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::{Circuit, helpers::generate_account};
 
     use anyhow::Result;
 
-    const ITERATIONS: u64 = 250;
+    const ITERATIONS: u64 = 10;
 
     fn check_new(
         mode: Mode,

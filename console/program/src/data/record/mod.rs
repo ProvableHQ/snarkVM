@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,7 +38,7 @@ mod to_fields;
 use crate::{Access, Ciphertext, Identifier, Literal, Plaintext, ProgramID};
 use snarkvm_console_account::{Address, PrivateKey, ViewKey};
 use snarkvm_console_network::prelude::*;
-use snarkvm_console_types::{Boolean, Field, Group, Scalar};
+use snarkvm_console_types::{Boolean, Field, Group, Scalar, U8};
 
 use indexmap::IndexMap;
 
@@ -51,6 +51,10 @@ pub struct Record<N: Network, Private: Visibility> {
     data: IndexMap<Identifier<N>, Entry<N, Private>>,
     /// The nonce of the program record.
     nonce: Group<N>,
+    /// The version of the program record.
+    ///   - Version 0 uses a BHP hash to derive the record commitment.
+    ///   - Version 1 uses a BHP commitment to derive the record commitment.
+    version: U8<N>,
 }
 
 impl<N: Network, Private: Visibility> Record<N, Private> {
@@ -59,6 +63,7 @@ impl<N: Network, Private: Visibility> Record<N, Private> {
         owner: Owner<N, Plaintext<N>>,
         data: IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>,
         nonce: Group<N>,
+        version: U8<N>,
     ) -> Result<Record<N, Plaintext<N>>> {
         let reserved = [Identifier::from_str("owner")?];
         // Ensure the members has no duplicate names.
@@ -66,7 +71,7 @@ impl<N: Network, Private: Visibility> Record<N, Private> {
         // Ensure the number of entries is within the maximum limit.
         ensure!(data.len() <= N::MAX_DATA_ENTRIES, "Found a record that exceeds size ({})", data.len());
         // Return the record.
-        Ok(Record { owner, data, nonce })
+        Ok(Record { owner, data, nonce, version })
     }
 
     /// Initializes a new record ciphertext.
@@ -74,6 +79,7 @@ impl<N: Network, Private: Visibility> Record<N, Private> {
         owner: Owner<N, Ciphertext<N>>,
         data: IndexMap<Identifier<N>, Entry<N, Ciphertext<N>>>,
         nonce: Group<N>,
+        version: U8<N>,
     ) -> Result<Record<N, Ciphertext<N>>> {
         let reserved = [Identifier::from_str("owner")?];
         // Ensure the members has no duplicate names.
@@ -81,7 +87,7 @@ impl<N: Network, Private: Visibility> Record<N, Private> {
         // Ensure the number of entries is within the maximum limit.
         ensure!(data.len() <= N::MAX_DATA_ENTRIES, "Found a record that exceeds size ({})", data.len());
         // Return the record.
-        Ok(Record { owner, data, nonce })
+        Ok(Record { owner, data, nonce, version })
     }
 }
 
@@ -99,6 +105,16 @@ impl<N: Network, Private: Visibility> Record<N, Private> {
     /// Returns the nonce of the program record.
     pub const fn nonce(&self) -> &Group<N> {
         &self.nonce
+    }
+
+    /// Returns the version of the program record.
+    pub const fn version(&self) -> &U8<N> {
+        &self.version
+    }
+
+    /// Returns `true` if the program record is a hiding variant.
+    pub fn is_hiding(&self) -> bool {
+        !self.version.is_zero()
     }
 }
 

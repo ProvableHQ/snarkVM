@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-wasm"
-version = "3.8.0"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "WASM for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -21,7 +21,7 @@ categories = [
 ]
 include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 crate-type = [ "cdylib", "rlib" ]
@@ -30,7 +30,6 @@ crate-type = [ "cdylib", "rlib" ]
 default = [ "full" ]
 full = [
   "circuit",
-  "console",
   "curves",
   "fields",
   "ledger",
@@ -38,7 +37,6 @@ full = [
   "utilities"
 ]
 circuit = [ ]
-console = [ "snarkvm-console" ]
 curves = [ "snarkvm-curves" ]
 fields = [ "snarkvm-fields" ]
 ledger = [
@@ -48,60 +46,55 @@ ledger = [
 ]
 synthesizer = [ "snarkvm-synthesizer" ]
 utilities = [ "snarkvm-utilities" ]
+dev-print = [ "snarkvm-utilities/dev-print" ]
 
 [dependencies.snarkvm-console]
-path = "../console"
-version = "=3.8.0"
+workspace = true
 features = [ "wasm" ]
-optional = true
 
 [dependencies.snarkvm-curves]
-path = "../curves"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [dependencies.snarkvm-fields]
-path = "../fields"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [dependencies.snarkvm-ledger-block]
-path = "../ledger/block"
-version = "=3.8.0"
+workspace = true
 features = [ "wasm" ]
 optional = true
 
 [dependencies.snarkvm-ledger-query]
-path = "../ledger/query"
-version = "=3.8.0"
+workspace = true
 features = [ "async", "wasm" ]
 optional = true
 
 [dependencies.snarkvm-ledger-store]
-path = "../ledger/store"
-version = "=3.8.0"
+workspace = true
 features = [ "wasm" ]
 optional = true
 
 [dependencies.snarkvm-synthesizer]
-path = "../synthesizer"
-version = "=3.8.0"
-default-features = false
+workspace = true
 features = [ "async", "wasm" ]
 optional = true
 
 [dependencies.snarkvm-utilities]
-path = "../utilities"
-version = "=3.8.0"
+workspace = true
 features = [ "wasm" ]
 optional = true
 
 [dependencies.getrandom]
-version = "0.2"
-features = [ "js" ]
+version = "0.4.2"
+features = [ "wasm_js" ]
 
 [dev-dependencies.wasm-bindgen-test]
 version = "0.3.37"
+
+[dev-dependencies.snarkvm-utilities]
+workspace = true
+features = [ "wasm" ]
 
 [package.metadata.cargo-machete]
 ignored = [

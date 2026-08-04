@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,13 +16,13 @@
 mod utilities;
 
 use aleo_std::StorageMode;
-use console::{
+use snarkvm_console::{
     account::{PrivateKey, ViewKey},
     network::prelude::*,
     program::{Entry, Identifier, Literal, Plaintext, ProgramID, Record, U64, Value},
     types::{Boolean, Field},
 };
-use ledger_block::{
+use snarkvm_ledger_block::{
     Block,
     ConfirmedTransaction,
     Header,
@@ -32,29 +32,29 @@ use ledger_block::{
     Transactions,
     Transition,
 };
-use ledger_store::{ConsensusStorage, ConsensusStore};
-use snarkvm_synthesizer::{VM, program::FinalizeOperation};
-use synthesizer_program::FinalizeGlobalState;
+use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore};
+use snarkvm_synthesizer::{Authorization, VM, program::FinalizeOperation};
+use snarkvm_synthesizer_process::{execution_cost, execution_cost_for_authorization, execution_cost_for_call};
+use snarkvm_synthesizer_program::FinalizeGlobalState;
 
 use anyhow::Result;
-use console::account::Address;
 use indexmap::IndexMap;
-use rayon::prelude::*;
+use snarkvm_console::account::Address;
 use utilities::*;
 
 #[cfg(not(feature = "rocks"))]
-type LedgerType = ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
+type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
 #[cfg(feature = "rocks")]
-type LedgerType = ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
+type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
-#[test]
+#[test_log::test]
 fn test_vm_execute_and_finalize() {
     // Load the tests.
     let tests =
         load_tests::<_, ProgramTest>("./tests/vm/execute_and_finalize", "./expectations/vm/execute_and_finalize");
 
     // Run each test and compare it against its corresponding expectation.
-    tests.par_iter().for_each(|test| {
+    tests.iter().for_each(|test| {
         // Run the test.
         let output = run_test(test);
         // Check against the expected output.
@@ -72,11 +72,14 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
         Some(randomness) => TestRng::fixed(randomness),
     };
 
+    // RNG used only in `execution_cost_for_call`
+    let cost_rng = &mut TestRng::default();
+
     // Initialize a private key.
     let genesis_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
     // Initialize the VM.
-    let (vm, _) = initialize_vm(&genesis_private_key, rng);
+    let (vm, _) = initialize_vm(&genesis_private_key, test.start_height(), rng);
 
     // Fund the additional keys.
     for key in test.keys() {
@@ -99,7 +102,7 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
         let time_since_last_block = CurrentNetwork::BLOCK_TIME as i64;
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm
             .speculate(
-                construct_finalize_global_state(&vm),
+                construct_finalize_global_state(&vm, time_since_last_block),
                 time_since_last_block,
                 Some(0u64),
                 vec![],
@@ -146,7 +149,7 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
         let time_since_last_block = CurrentNetwork::BLOCK_TIME as i64;
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm
             .speculate(
-                construct_finalize_global_state(&vm),
+                construct_finalize_global_state(&vm, time_since_last_block),
                 time_since_last_block,
                 Some(0u64),
                 vec![],
@@ -155,7 +158,11 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
                 rng,
             )
             .unwrap();
-        assert!(aborted_transaction_ids.is_empty());
+        if !aborted_transaction_ids.is_empty() {
+            // Print the program ID that was aborted.
+            println!("Aborted program deployment: {:?}", program.id());
+            assert!(aborted_transaction_ids.is_empty());
+        }
 
         let block = construct_next_block(
             &vm,
@@ -216,6 +223,8 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
             None => genesis_private_key,
         };
 
+        let address = Address::try_from(&private_key).unwrap();
+
         // A helper function to run the test and extract the outputs as YAML, to be compared against the expectation.
         let mut run_test = || -> (serde_yaml::Value, serde_yaml::Value) {
             // Create a mapping to store the result of the test.
@@ -236,6 +245,32 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
                         return (serde_yaml::Value::Mapping(result), serde_yaml::Value::Mapping(Default::default()));
                     }
                 };
+
+            let consensus_version = CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
+            let execution = transaction.execution().unwrap();
+
+            // Test cost computation given the Authorization and the request
+            if consensus_version >= ConsensusVersion::V4 {
+                let actual_cost = execution_cost(vm.process(), execution, consensus_version).unwrap();
+
+                let authorization = Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
+                let expected_cost_given_authorization =
+                    execution_cost_for_authorization(vm.process(), &authorization, consensus_version).unwrap();
+                assert_eq!(actual_cost, expected_cost_given_authorization);
+
+                let expected_cost_given_call = execution_cost_for_call::<CurrentAleo, _>(
+                    vm.process(),
+                    address,
+                    program_id,
+                    function_name,
+                    inputs.iter(),
+                    consensus_version,
+                    cost_rng,
+                )
+                .unwrap();
+
+                assert_eq!(actual_cost, expected_cost_given_call);
+            }
 
             // Attempt to verify the transaction.
             let verified = vm.check_transaction(&transaction, None, rng).is_ok();
@@ -283,8 +318,11 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
                 }
             }
 
-            // Add the `execute` mapping to `result` mapping.
-            result.insert(serde_yaml::Value::String("execute".to_string()), serde_yaml::Value::Mapping(execute));
+            // Add the `execute` mapping to the `other` mapping so that it is stored in `additional` but not
+            // compared against the expected output. Transition outputs (ciphertexts, field IDs) are tied to
+            // the RNG state at a specific block height and change whenever the default `start_height` shifts
+            // due to a new ConsensusVersion, even when no semantic behavior changes.
+            other.insert(serde_yaml::Value::String("execute".to_string()), serde_yaml::Value::Mapping(execute));
             // Add the child outputs to the `other` mapping.
             other.insert(
                 serde_yaml::Value::String("child_outputs".to_string()),
@@ -295,7 +333,7 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
             let time_since_last_block = CurrentNetwork::BLOCK_TIME as i64;
             let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = match vm
                 .speculate(
-                    construct_finalize_global_state(&vm),
+                    construct_finalize_global_state(&vm, time_since_last_block),
                     time_since_last_block,
                     Some(0u64),
                     vec![],
@@ -327,7 +365,11 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
                     return (serde_yaml::Value::Mapping(result), serde_yaml::Value::Mapping(Default::default()));
                 }
             };
-            assert!(aborted_transaction_ids.is_empty());
+            if !aborted_transaction_ids.is_empty() {
+                // Print the function that was aborted.
+                println!("Aborted call to {program_id}/{function_name}");
+                assert!(aborted_transaction_ids.is_empty());
+            }
 
             // Construct the next block.
             let block = construct_next_block(
@@ -370,6 +412,7 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
 #[allow(clippy::type_complexity)]
 fn initialize_vm<R: Rng + CryptoRng>(
     private_key: &PrivateKey<CurrentNetwork>,
+    height: u32,
     rng: &mut R,
 ) -> (VM<CurrentNetwork, LedgerType>, Vec<Record<CurrentNetwork, Plaintext<CurrentNetwork>>>) {
     // Initialize a VM.
@@ -386,6 +429,36 @@ fn initialize_vm<R: Rng + CryptoRng>(
 
     // Add the genesis block to the VM.
     vm.add_next_block(&genesis).unwrap();
+
+    // If the desired height is greater than zero, add additional blocks to the VM.
+    for _ in 0..height {
+        let time_since_last_block = CurrentNetwork::BLOCK_TIME as i64;
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm
+            .speculate(
+                construct_finalize_global_state(&vm, time_since_last_block),
+                time_since_last_block,
+                Some(0u64),
+                vec![],
+                &None.into(),
+                [].into_iter(),
+                rng,
+            )
+            .unwrap();
+        assert!(aborted_transaction_ids.is_empty());
+
+        let block = construct_next_block(
+            &vm,
+            time_since_last_block,
+            private_key,
+            ratifications,
+            transactions,
+            aborted_transaction_ids,
+            ratified_finalize_operations,
+            rng,
+        )
+        .unwrap();
+        vm.add_next_block(&block).unwrap();
+    }
 
     (vm, records)
 }
@@ -407,7 +480,7 @@ fn construct_fee_records<C: ConsensusStorage<CurrentNetwork>, R: Rng + CryptoRng
         }
     };
 
-    println!("Splitting the initial fee record into {} fee records.", num_fee_records);
+    println!("Splitting the initial fee record into {num_fee_records} fee records.");
 
     // Construct fee records for the tests.
     let mut fee_records = records
@@ -440,7 +513,7 @@ fn construct_fee_records<C: ConsensusStorage<CurrentNetwork>, R: Rng + CryptoRng
         let time_since_last_block = CurrentNetwork::BLOCK_TIME as i64;
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm
             .speculate(
-                construct_finalize_global_state(vm),
+                construct_finalize_global_state(vm, time_since_last_block),
                 time_since_last_block,
                 Some(0u64),
                 vec![],
@@ -547,6 +620,7 @@ fn split<C: ConsensusStorage<CurrentNetwork>, R: Rng + CryptoRng>(
 // Construct `FinalizeGlobalState` from the current `VM` state.
 fn construct_finalize_global_state<C: ConsensusStorage<CurrentNetwork>>(
     vm: &VM<CurrentNetwork, C>,
+    time_since_last_block: i64,
 ) -> FinalizeGlobalState {
     // Retrieve the latest block.
     let block_height = vm.block_store().max_height().unwrap();
@@ -564,13 +638,22 @@ fn construct_finalize_global_state<C: ConsensusStorage<CurrentNetwork>>(
     // Compute the next height.
     let next_height = latest_height.saturating_add(1);
 
+    // Determine the block timestamp based on the consensus version.
+    let block_timestamp =
+        match next_height >= CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default() {
+            true => Some(latest_block.timestamp().saturating_add(time_since_last_block)),
+            false => None,
+        };
     // Construct the finalize state.
     FinalizeGlobalState::new::<CurrentNetwork>(
         next_round,
         next_height,
+        block_timestamp,
         latest_cumulative_weight,
         0u128,
         latest_block.hash(),
+        None,
+        None,
     )
     .unwrap()
 }

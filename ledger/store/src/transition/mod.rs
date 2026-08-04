@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,8 +21,6 @@ pub use output::*;
 
 use crate::{
     atomic_batch_scope,
-    cow_to_cloned,
-    cow_to_copied,
     helpers::{Map, MapRead},
 };
 use console::{
@@ -30,7 +28,7 @@ use console::{
     program::{Ciphertext, Identifier, Plaintext, ProgramID, Record},
     types::{Field, Group},
 };
-use ledger_block::{Input, Output, Transition};
+use snarkvm_ledger_block::{Input, Output, Transition};
 
 use aleo_std_storage::StorageMode;
 use anyhow::Result;
@@ -186,7 +184,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
             self.reverse_tcm_map().insert(*transition.tcm(), transition_id)?;
             // Store `scm`.
             self.scm_map().insert(transition_id, *transition.scm())?;
-
             Ok(())
         })
     }
@@ -194,14 +191,12 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
     /// Removes the input for the given `transition ID`.
     fn remove(&self, transition_id: &N::TransitionID) -> Result<()> {
         // Retrieve the `tpk`.
-        let tpk = match self.tpk_map().get_confirmed(transition_id)? {
-            Some(tpk) => cow_to_copied!(tpk),
-            None => return Ok(()),
+        let Some(tpk) = self.tpk_map().get_confirmed(transition_id)?.map(|x| *x) else {
+            return Ok(());
         };
         // Retrieve the `tcm`.
-        let tcm = match self.tcm_map().get_confirmed(transition_id)? {
-            Some(tcm) => cow_to_copied!(tcm),
-            None => return Ok(()),
+        let Some(tcm) = self.tcm_map().get_confirmed(transition_id)?.map(|x| *x) else {
+            return Ok(());
         };
 
         atomic_batch_scope!(self, {
@@ -229,9 +224,10 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
     /// Returns the transition for the given `transition ID`.
     fn get(&self, transition_id: &N::TransitionID) -> Result<Option<Transition<N>>> {
         // Retrieve the program ID and function name.
-        let (program_id, function_name) = match self.locator_map().get_confirmed(transition_id)? {
-            Some(locator) => cow_to_cloned!(locator),
-            None => return Ok(None),
+        let Some((program_id, function_name)) =
+            self.locator_map().get_confirmed(transition_id)?.map(|x| x.into_owned())
+        else {
+            return Ok(None);
         };
         // Retrieve the inputs.
         let inputs = self.input_store().get_inputs(transition_id)?;
@@ -252,9 +248,9 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
                     function_name,
                     inputs,
                     outputs,
-                    cow_to_cloned!(tpk),
-                    cow_to_cloned!(tcm),
-                    cow_to_cloned!(scm),
+                    tpk.into_owned(),
+                    tcm.into_owned(),
+                    scm.into_owned(),
                 )?;
                 // Ensure the transition ID matches.
                 match transition.id() == transition_id {
@@ -656,8 +652,8 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Sample the transactions.
-        let transaction_0 = ledger_test_helpers::sample_execution_transaction_with_fee(true, rng);
-        let transaction_1 = ledger_test_helpers::sample_execution_transaction_with_fee(false, rng);
+        let transaction_0 = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0);
+        let transaction_1 = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng, 0);
         let transactions = vec![transaction_0, transaction_1];
 
         for transaction in transactions {

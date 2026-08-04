@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +19,7 @@ mod hash_to_group;
 mod hash_to_scalar;
 mod prf;
 
-#[cfg(all(test, feature = "console"))]
+#[cfg(test)]
 use snarkvm_circuit_types::environment::assert_scope;
 #[cfg(test)]
 use snarkvm_utilities::{TestRng, Uniform};
@@ -68,7 +68,6 @@ pub struct Poseidon<E: Environment, const RATE: usize> {
     mds: Vec<Vec<Field<E>>>,
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment, const RATE: usize> Inject for Poseidon<E, RATE> {
     type Primitive = console::Poseidon<E::Network, RATE>;
 

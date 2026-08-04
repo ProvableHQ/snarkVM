@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,7 @@ mod serialize;
 mod string;
 
 use console::{network::prelude::*, types::Address};
-use ledger_committee::Committee;
+use snarkvm_ledger_committee::Committee;
 
 use indexmap::IndexMap;
 
@@ -55,10 +55,10 @@ pub(crate) mod test_helpers {
     type CurrentNetwork = MainnetV0;
 
     pub(crate) fn sample_ratifications(rng: &mut TestRng) -> Vec<Ratify<CurrentNetwork>> {
-        let committee = ledger_committee::test_helpers::sample_committee(rng);
+        let committee = snarkvm_ledger_committee::test_helpers::sample_committee(rng);
         let mut public_balances = PublicBalances::new();
         for (address, _) in committee.members().iter() {
-            public_balances.insert(*address, rng.gen());
+            public_balances.insert(*address, rng.random());
         }
         let bonded_balances = committee
             .members()
@@ -68,8 +68,8 @@ pub(crate) mod test_helpers {
 
         vec![
             Ratify::Genesis(Box::new(committee), Box::new(public_balances), Box::new(bonded_balances)),
-            Ratify::BlockReward(rng.gen()),
-            Ratify::PuzzleReward(rng.gen()),
+            Ratify::BlockReward(rng.random()),
+            Ratify::PuzzleReward(rng.random()),
         ]
     }
 }

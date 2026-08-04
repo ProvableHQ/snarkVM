@@ -1,5 +1,5 @@
 [hooks]
-pre-commit = "cargo +nightly fmt --all -- --check && cargo clippy --workspace --all-targets --all-features"
+pre-commit = "cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo +nightly fmt --all -- --check"
 
 [logging]
 verbose = true

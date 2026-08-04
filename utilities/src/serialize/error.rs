@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,7 +28,7 @@ pub enum SerializationError {
     InvalidData,
     /// During serialization, we countered an I/O error.
     #[error("IoError: {0}")]
-    IoError(#[from] crate::io::Error),
+    IoError(#[from] std::io::Error),
     /// During serialization, we didn't have enough space to write extra info.
     #[error("the last byte does not have enough space to encode the extra info bits")]
     NotEnoughSpace,
@@ -41,8 +41,8 @@ pub enum SerializationError {
     IncompatibleTarget,
 }
 
-impl From<SerializationError> for crate::io::Error {
+impl From<SerializationError> for std::io::Error {
     fn from(error: SerializationError) -> Self {
-        crate::io::Error::new(crate::io::ErrorKind::Other, format!("{error}"))
+        std::io::Error::other(format!("{error}"))
     }
 }

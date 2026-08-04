@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,13 +18,11 @@ use crate::{
     FeeStore,
     TransitionStore,
     atomic_batch_scope,
-    cow_to_cloned,
-    cow_to_copied,
     helpers::{Map, MapRead},
 };
 use console::network::prelude::*;
-use ledger_block::{Execution, Transaction, Transition};
-use synthesizer_snark::Proof;
+use snarkvm_ledger_block::{Execution, Transaction, Transition};
+use snarkvm_synthesizer_snark::Proof;
 
 use aleo_std_storage::StorageMode;
 use anyhow::Result;
@@ -165,9 +163,9 @@ pub trait ExecutionStorage<N: Network>: Clone + Send + Sync {
     /// Removes the execution transaction for the given `transaction ID`.
     fn remove(&self, transaction_id: &N::TransactionID) -> Result<()> {
         // Retrieve the transition IDs and fee boolean.
-        let (transition_ids, has_fee) = match self.id_map().get_confirmed(transaction_id)? {
-            Some(ids) => cow_to_cloned!(ids),
-            None => bail!("Failed to get the transition IDs for the transaction '{transaction_id}'"),
+        let Some((transition_ids, has_fee)) = self.id_map().get_confirmed(transaction_id)?.map(|x| x.into_owned())
+        else {
+            bail!("Failed to get the transition IDs for the transaction '{transaction_id}'");
         };
 
         atomic_batch_scope!(self, {
@@ -205,24 +203,21 @@ pub trait ExecutionStorage<N: Network>: Clone + Send + Sync {
             return Ok(Some(transaction_id));
         }
         // Otherwise, check if the transition ID is in the reverse ID map.
-        match self.reverse_id_map().get_confirmed(transition_id)? {
-            Some(transaction_id) => Ok(Some(cow_to_copied!(transaction_id))),
-            None => Ok(None),
-        }
+        Ok(self.reverse_id_map().get_confirmed(transition_id)?.map(|x| *x))
     }
 
     /// Returns the execution for the given `transaction ID`.
     fn get_execution(&self, transaction_id: &N::TransactionID) -> Result<Option<Execution<N>>> {
         // Retrieve the transition IDs.
-        let (transition_ids, _) = match self.id_map().get_confirmed(transaction_id)? {
-            Some(ids) => cow_to_cloned!(ids),
-            None => return Ok(None),
+        let Some((transition_ids, _)) = self.id_map().get_confirmed(transaction_id)?.map(|x| x.into_owned()) else {
+            return Ok(None);
         };
 
         // Retrieve the global state root and proof.
-        let (global_state_root, proof) = match self.inclusion_map().get_confirmed(transaction_id)? {
-            Some(inclusion) => cow_to_cloned!(inclusion),
-            None => bail!("Failed to get the proof for the transaction '{transaction_id}'"),
+        let Some((global_state_root, proof)) =
+            self.inclusion_map().get_confirmed(transaction_id)?.map(|x| x.into_owned())
+        else {
+            bail!("Failed to get the proof for the transaction '{transaction_id}'");
         };
 
         // Initialize a vector for the transitions.
@@ -243,15 +238,16 @@ pub trait ExecutionStorage<N: Network>: Clone + Send + Sync {
     /// Returns the transaction for the given `transaction ID`.
     fn get_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
         // Retrieve the transition IDs and fee boolean.
-        let (transition_ids, has_fee) = match self.id_map().get_confirmed(transaction_id)? {
-            Some(ids) => cow_to_cloned!(ids),
-            None => return Ok(None),
+        let Some((transition_ids, has_fee)) = self.id_map().get_confirmed(transaction_id)?.map(|x| x.into_owned())
+        else {
+            return Ok(None);
         };
 
         // Retrieve the global state root and proof.
-        let (global_state_root, proof) = match self.inclusion_map().get_confirmed(transaction_id)? {
-            Some(inclusion) => cow_to_cloned!(inclusion),
-            None => bail!("Failed to get the proof for the transaction '{transaction_id}'"),
+        let Some((global_state_root, proof)) =
+            self.inclusion_map().get_confirmed(transaction_id)?.map(|x| x.into_owned())
+        else {
+            bail!("Failed to get the proof for the transaction '{transaction_id}'");
         };
 
         // Initialize a vector for the transitions.
@@ -475,11 +471,11 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Sample the execution transaction.
-        let transaction = ledger_test_helpers::sample_execution_transaction_with_fee(true, rng);
+        let transaction = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0);
         insert_get_remove(transaction).unwrap();
 
         // Sample the execution transaction.
-        let transaction = ledger_test_helpers::sample_execution_transaction_with_fee(false, rng);
+        let transaction = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng, 0);
         insert_get_remove(transaction).unwrap();
     }
 
@@ -488,11 +484,11 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Sample the execution transaction.
-        let transaction = ledger_test_helpers::sample_execution_transaction_with_fee(true, rng);
+        let transaction = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0);
         find_transaction_id(transaction).unwrap();
 
         // Sample the execution transaction.
-        let transaction = ledger_test_helpers::sample_execution_transaction_with_fee(false, rng);
+        let transaction = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng, 0);
         find_transaction_id(transaction).unwrap();
     }
 }

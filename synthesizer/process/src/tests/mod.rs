@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod test_call_graph;
 pub mod test_credits;
 pub mod test_execute;
 pub mod test_random;
+pub mod test_serializers;
+pub mod test_upgrade;
 pub mod test_utils;

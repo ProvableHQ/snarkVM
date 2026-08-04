@@ -1,31 +1,23 @@
 [package]
 name = "snarkvm-circuit-types-boolean"
-version = "3.8.0"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Boolean circuit for a decentralized virtual machine"
 homepage = "https://aleo.org"
 repository = "https://github.com/ProvableHQ/snarkVM"
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [[bench]]
 name = "and"
 path = "benches/and.rs"
 harness = false
 
-[dependencies.console]
-package = "snarkvm-console-types-boolean"
-path = "../../../console/types/boolean"
-version = "=3.8.0"
-optional = true
+[dependencies.snarkvm-console-types-boolean]
+workspace = true
 
 [dependencies.snarkvm-circuit-environment]
-path = "../../environment"
-version = "=3.8.0"
+workspace = true
 
 [dev-dependencies.criterion]
-version = "0.5"
-
-[features]
-default = [ "enable_console" ]
-enable_console = [ "console" ]
+workspace = true

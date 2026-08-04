@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +19,9 @@ pub use confirmed::*;
 pub mod rejected;
 pub use rejected::*;
 
+pub mod rejected_reason;
+pub use rejected_reason::*;
+
 mod bytes;
 mod merkle;
 mod serialize;
@@ -31,6 +34,8 @@ use console::{
         Ciphertext,
         FINALIZE_ID_DEPTH,
         FINALIZE_OPERATIONS_DEPTH,
+        Identifier,
+        ProgramID,
         ProgramOwner,
         Record,
         TRANSACTIONS_DEPTH,
@@ -39,9 +44,10 @@ use console::{
     },
     types::{Field, Group, U64},
 };
-use ledger_committee::Committee;
-use ledger_narwhal_batch_header::BatchHeader;
-use synthesizer_program::FinalizeOperation;
+use snarkvm_ledger_committee::Committee;
+use snarkvm_ledger_narwhal_batch_header::BatchHeader;
+use snarkvm_synthesizer_error::IndexedFinalizeError;
+use snarkvm_synthesizer_program::{Command, FinalizeOperation};
 
 use indexmap::IndexMap;
 
@@ -105,6 +111,11 @@ impl<N: Network> Transactions<N> {
     /// Returns the number of finalize operations.
     pub fn num_finalize(&self) -> usize {
         cfg_values!(self.transactions).map(|tx| tx.num_finalize()).sum()
+    }
+
+    /// Returns the index of the transaction with the given ID, if it exists.
+    pub fn index_of(&self, transaction_id: &N::TransactionID) -> Option<usize> {
+        self.transactions.get_index_of(transaction_id)
     }
 }
 
@@ -194,10 +205,10 @@ impl<N: Network> Transactions<N> {
     pub const MAX_TRANSACTIONS: usize = usize::pow(2, TRANSACTIONS_DEPTH as u32).saturating_sub(1);
 
     /// The maximum number of aborted transactions allowed in a block.
-    pub fn max_aborted_transactions() -> Result<usize> {
-        Ok(BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH
+    pub fn max_aborted_transactions() -> usize {
+        BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH
             * BatchHeader::<N>::MAX_GC_ROUNDS
-            * Committee::<N>::max_committee_size()? as usize)
+            * Committee::<N>::max_committee_size() as usize
     }
 
     /// Returns an iterator over all transactions, for all transactions in `self`.
@@ -374,7 +385,7 @@ pub mod test_helpers {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ledger_narwhal_batch_header::BatchHeader;
+    use snarkvm_ledger_narwhal_batch_header::BatchHeader;
 
     type CurrentNetwork = console::network::MainnetV0;
 
@@ -383,7 +394,7 @@ mod tests {
         // Determine the maximum number of transmissions in a block.
         let max_transmissions_per_block = BatchHeader::<CurrentNetwork>::MAX_TRANSMISSIONS_PER_BATCH
             * BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS
-            * CurrentNetwork::LATEST_MAX_CERTIFICATES().unwrap() as usize;
+            * CurrentNetwork::LATEST_MAX_CERTIFICATES() as usize;
 
         // Note: The maximum number of *transmissions* in a block cannot exceed the maximum number of *transactions* in a block.
         // If you intended to change the number of 'MAX_TRANSACTIONS', note that this will break the inclusion proof,

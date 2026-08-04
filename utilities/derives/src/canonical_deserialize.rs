@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -79,7 +79,7 @@ fn impl_valid(ast: &syn::DeriveInput) -> TokenStream {
         _ => panic!("`Valid` can only be derived for structs, {name} is not a struct"),
     };
 
-    let gen = quote! {
+    quote! {
         impl #impl_generics snarkvm_utilities::Valid for #name #ty_generics #where_clause {
             #[allow(unused_variables)]
             fn check(&self) -> Result<(), snarkvm_utilities::serialize::SerializationError> {
@@ -96,8 +96,7 @@ fn impl_valid(ast: &syn::DeriveInput) -> TokenStream {
                 Ok(())
             }
         }
-    };
-    gen
+    }
 }
 
 /// Returns a `TokenStream` for `deserialize_with_mode`.
@@ -157,9 +156,9 @@ pub(super) fn impl_canonical_deserialize(ast: &syn::DeriveInput) -> TokenStream 
         _ => panic!("`CanonicalDeserialize` can only be derived for structs, {name} is not a Struct"),
     };
 
-    let mut gen = quote! {
+    let mut result = quote! {
         impl #impl_generics CanonicalDeserialize for #name #ty_generics #where_clause {
-            fn deserialize_with_mode<R: snarkvm_utilities::io::Read>(
+            fn deserialize_with_mode<R: std::io::Read>(
                 mut reader: R,
                 compress: snarkvm_utilities::serialize::Compress,
                 validate: snarkvm_utilities::serialize::Validate,
@@ -168,6 +167,6 @@ pub(super) fn impl_canonical_deserialize(ast: &syn::DeriveInput) -> TokenStream 
             }
         }
     };
-    gen.extend(valid_impl);
-    gen
+    result.extend(valid_impl);
+    result
 }

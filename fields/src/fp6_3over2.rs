@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,7 +24,7 @@ use snarkvm_utilities::{
 
 use rand::{
     Rng,
-    distributions::{Distribution, Standard},
+    distr::{Distribution, StandardUniform},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -300,7 +300,7 @@ impl<P: Fp6Parameters> std::fmt::Display for Fp6<P> {
     }
 }
 
-impl<P: Fp6Parameters> Distribution<Fp6<P>> for Standard {
+impl<P: Fp6Parameters> Distribution<Fp6<P>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Fp6<P> {
         Fp6::new(Uniform::rand(rng), Uniform::rand(rng), Uniform::rand(rng))
@@ -311,7 +311,6 @@ impl<P: Fp6Parameters> Neg for Fp6<P> {
     type Output = Self;
 
     #[inline]
-    #[must_use]
     fn neg(self) -> Self {
         let mut copy = Self::zero();
         copy.c0 = self.c0.neg();

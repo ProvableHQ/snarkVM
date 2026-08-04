@@ -1,17 +1,17 @@
 [package]
 name = "snarkvm-console-network"
-version = "3.8.0"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Network console library for a decentralized virtual machine"
 homepage = "https://aleo.org"
 repository = "https://github.com/ProvableHQ/snarkVM"
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
-default = [ "snarkvm-algorithms/polycommit_full" ]
+dev-print = [ "snarkvm-console-algorithms/dev-print", "snarkvm-console-network-environment/dev-print" ]
+filesystem = [ "snarkvm-parameters/filesystem" ]
 wasm = [
-  "snarkvm-algorithms/polycommit_wasm",
   "snarkvm-parameters/wasm"
 ]
 test = [ ]
@@ -19,55 +19,44 @@ test_targets = [ ]
 test_consensus_heights = [ ]
 
 [dependencies.snarkvm-algorithms]
-path = "../../algorithms"
-version = "=3.8.0"
-default-features = false
-features = [ "snark" ]
+workspace = true
 
 [dependencies.snarkvm-console-algorithms]
-path = "../algorithms"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm-console-collections]
-path = "../collections"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm-console-network-environment]
-path = "./environment"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm-console-types]
-path = "../types"
-version = "=3.8.0"
-default-features = false
+workspace = true
 features = [ "field", "group", "scalar" ]
 
 [dependencies.snarkvm-curves]
-path = "../../curves"
-version = "=3.8.0"
-default-features = false
+workspace = true
 
 [dependencies.snarkvm-parameters]
-path = "../../parameters"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.anyhow]
-version = "1.0.73"
+workspace = true
+
+[dependencies.enum-iterator]
+workspace = true
 
 [dependencies.indexmap]
-version = "2"
+workspace = true
 
 [dependencies.lazy_static]
-version = "1.4"
-
-[dependencies.once_cell]
-version = "1.18"
+workspace = true
 
 [dependencies.serde]
-version = "1.0"
+workspace = true
 
 [dependencies.paste]
-version = "1.0"
+workspace = true
 
 [package.metadata.cargo-machete]
 ignored = ["paste"]

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,13 +15,8 @@
 
 use crate::polycommit::sonic_pc;
 use snarkvm_curves::PairingEngine;
-use snarkvm_utilities::{
-    FromBytes,
-    ToBytes,
-    error,
-    io::{self, Read, Write},
-    serialize::*,
-};
+use snarkvm_utilities::{FromBytes, ToBytes, into_io_error, serialize::*};
+use std::io::{self, Read, Write};
 
 /// A certificate for the verifying key.
 #[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
@@ -39,12 +34,19 @@ impl<E: PairingEngine> Certificate<E> {
 
 impl<E: PairingEngine> ToBytes for Certificate<E> {
     fn write_le<W: Write>(&self, mut w: W) -> io::Result<()> {
-        Self::serialize_compressed(self, &mut w).map_err(|_| error("Failed to serialize certificate"))
+        Self::serialize_compressed(self, &mut w)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("Failed to serialize certificate")))
     }
 }
 
 impl<E: PairingEngine> FromBytes for Certificate<E> {
     fn read_le<R: Read>(mut r: R) -> io::Result<Self> {
-        Self::deserialize_compressed(&mut r).map_err(|_| error("Failed to deserialize certificate"))
+        Self::deserialize_compressed(&mut r)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("Failed to deserialize certificate")))
+    }
+
+    fn read_le_unchecked<R: Read>(mut r: R) -> io::Result<Self> {
+        Self::deserialize_compressed_unchecked(&mut r)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("Failed to deserialize certificate")))
     }
 }

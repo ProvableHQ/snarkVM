@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +24,18 @@ impl<N: Network> FromBytes for Authority<N> {
         match variant {
             0 => Ok(Self::Beacon(FromBytes::read_le(&mut reader)?)),
             1 => Ok(Self::Quorum(FromBytes::read_le(&mut reader)?)),
+            2.. => Err(error("Invalid authority variant")),
+        }
+    }
+
+    /// Reads the authority from the buffer without performing any checks on the data.
+    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the variant.
+        let variant = u8::read_le(&mut reader)?;
+        // Match the variant.
+        match variant {
+            0 => Ok(Self::Beacon(FromBytes::read_le_unchecked(&mut reader)?)),
+            1 => Ok(Self::Quorum(FromBytes::read_le_unchecked(&mut reader)?)),
             2.. => Err(error("Invalid authority variant")),
         }
     }
@@ -63,6 +75,7 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le().unwrap();
             assert_eq!(expected, Authority::read_le(&expected_bytes[..]).unwrap());
+            assert_eq!(expected, Authority::read_le_unchecked(&expected_bytes[..]).unwrap());
         }
     }
 }

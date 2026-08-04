@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,7 +37,7 @@ impl<N: Network> ProgramOwner<N> {
         // Sign the transaction ID.
         let signature = private_key.sign(&[deployment_id], rng)?;
         // Return the program owner.
-        Ok(Self { signature, address })
+        Ok(Self { address, signature })
     }
 
     /// Initializes a new program owner from an address and signature.
@@ -66,12 +66,12 @@ pub(crate) mod test_helpers {
     use super::*;
     use snarkvm_console_network::MainnetV0;
 
-    use once_cell::sync::OnceCell;
+    use std::sync::OnceLock;
 
     type CurrentNetwork = MainnetV0;
 
     pub(crate) fn sample_program_owner() -> ProgramOwner<CurrentNetwork> {
-        static INSTANCE: OnceCell<ProgramOwner<CurrentNetwork>> = OnceCell::new();
+        static INSTANCE: OnceLock<ProgramOwner<CurrentNetwork>> = OnceLock::new();
         *INSTANCE.get_or_init(|| {
             // Initialize the RNG.
             let rng = &mut TestRng::default();
@@ -80,7 +80,7 @@ pub(crate) mod test_helpers {
             let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
             // Initialize a deployment ID.
-            let deployment_id: Field<CurrentNetwork> = rng.gen();
+            let deployment_id: Field<CurrentNetwork> = rng.random();
 
             // Return the program owner.
             ProgramOwner::new(&private_key, deployment_id, rng).unwrap()
@@ -96,7 +96,7 @@ pub(crate) mod test_helpers {
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
         // Initialize a deployment ID.
-        let deployment_id: Field<CurrentNetwork> = rng.gen();
+        let deployment_id: Field<CurrentNetwork> = rng.random();
 
         // Construct the program owner.
         let owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
@@ -104,7 +104,7 @@ pub(crate) mod test_helpers {
         assert!(owner.verify(deployment_id));
 
         // Ensure that the program owner is not verified for a different deployment ID.
-        let incorrect_deployment_id: Field<CurrentNetwork> = rng.gen();
+        let incorrect_deployment_id: Field<CurrentNetwork> = rng.random();
         assert!(!owner.verify(incorrect_deployment_id));
     }
 }

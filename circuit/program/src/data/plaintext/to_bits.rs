@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +15,8 @@
 
 use super::*;
 
+use console::PlaintextType;
+
 impl<A: Aleo> ToBits for Plaintext<A> {
     type Boolean = Boolean<A>;
 
@@ -25,7 +27,7 @@ impl<A: Aleo> ToBits for Plaintext<A> {
                 // Compute the bits of the literal.
                 let bits = bits_le.get_or_init(|| {
                     let mut bits_le = Vec::new();
-                    bits_le.extend([Boolean::constant(false), Boolean::constant(false)]); // Variant bit.
+                    bits_le.extend(PlaintextType::<A::Network>::LITERAL_PREFIX_BITS.map(Boolean::constant)); // Variant bit.
                     literal.variant().write_bits_le(&mut bits_le);
                     literal.size_in_bits().write_bits_le(&mut bits_le);
                     literal.write_bits_le(&mut bits_le);
@@ -39,7 +41,7 @@ impl<A: Aleo> ToBits for Plaintext<A> {
                 // Compute the bits of the struct.
                 let bits = bits_le.get_or_init(|| {
                     let mut bits_le = Vec::new();
-                    bits_le.extend([Boolean::constant(false), Boolean::constant(true)]); // Variant bit.
+                    bits_le.extend(PlaintextType::<A::Network>::STRUCT_PREFIX_BITS.map(Boolean::constant)); // Variant bit.
                     U8::constant(console::U8::new(members.len() as u8)).write_bits_le(&mut bits_le);
                     for (identifier, value) in members {
                         let value_bits = value.to_bits_le();
@@ -58,7 +60,7 @@ impl<A: Aleo> ToBits for Plaintext<A> {
                 // Compute the bits of the array.
                 let bits = bits_le.get_or_init(|| {
                     let mut bits_le = Vec::new();
-                    bits_le.extend([Boolean::constant(true), Boolean::constant(false)]); // Variant bit.
+                    bits_le.extend(PlaintextType::<A::Network>::ARRAY_PREFIX_BITS.map(Boolean::constant)); // Variant bit.
                     U32::constant(console::U32::new(elements.len() as u32)).write_bits_le(&mut bits_le);
                     for value in elements {
                         let value_bits = value.to_bits_le();
@@ -81,7 +83,7 @@ impl<A: Aleo> ToBits for Plaintext<A> {
                 // Compute the bits of the literal.
                 let bits = bits_be.get_or_init(|| {
                     let mut bits_be = Vec::new();
-                    bits_be.extend([Boolean::constant(false), Boolean::constant(false)]); // Variant bit.
+                    bits_be.extend(PlaintextType::<A::Network>::LITERAL_PREFIX_BITS.map(Boolean::constant)); // Variant bit.
                     literal.variant().write_bits_be(&mut bits_be);
                     literal.size_in_bits().write_bits_be(&mut bits_be);
                     literal.write_bits_be(&mut bits_be);
@@ -95,7 +97,7 @@ impl<A: Aleo> ToBits for Plaintext<A> {
                 // Compute the bits of the struct.
                 let bits = bits_be.get_or_init(|| {
                     let mut bits_be = Vec::new();
-                    bits_be.extend([Boolean::constant(false), Boolean::constant(true)]); // Variant bit.
+                    bits_be.extend(PlaintextType::<A::Network>::STRUCT_PREFIX_BITS.map(Boolean::constant)); // Variant bit.
                     U8::constant(console::U8::new(members.len() as u8)).write_bits_be(&mut bits_be);
                     for (identifier, value) in members {
                         let value_bits = value.to_bits_be();
@@ -114,7 +116,7 @@ impl<A: Aleo> ToBits for Plaintext<A> {
                 // Compute the bits of the array.
                 let bits = bits_be.get_or_init(|| {
                     let mut bits_be = Vec::new();
-                    bits_be.extend([Boolean::constant(true), Boolean::constant(false)]); // Variant bit.
+                    bits_be.extend(PlaintextType::<A::Network>::ARRAY_PREFIX_BITS.map(Boolean::constant)); // Variant bit.
                     U32::constant(console::U32::new(elements.len() as u32)).write_bits_be(&mut bits_be);
                     for value in elements {
                         let value_bits = value.to_bits_be();

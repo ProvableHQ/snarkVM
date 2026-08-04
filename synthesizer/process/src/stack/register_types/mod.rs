@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,14 +16,18 @@
 mod initialize;
 mod matches;
 
+use crate::Stack;
+
 use console::{
     network::prelude::*,
     program::{
         Access,
         ArrayType,
         EntryType,
+        FinalizeType,
         Identifier,
         LiteralType,
+        Locator,
         PlaintextType,
         RecordType,
         Register,
@@ -31,25 +35,26 @@ use console::{
         StructType,
         ValueType,
     },
+    types::U32,
 };
-use synthesizer_program::{
+use snarkvm_synthesizer_program::{
     CallOperator,
     CastType,
     Closure,
     Function,
     Instruction,
-    InstructionTrait,
     Opcode,
     Operand,
     Program,
-    StackMatches,
-    StackProgram,
+    StackTrait,
+    register_types_equivalent,
+    types_equivalent,
 };
+use snarkvm_utilities::dev_eprintln;
 
-use console::program::{FinalizeType, Locator};
 use indexmap::{IndexMap, IndexSet};
 
-#[derive(Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RegisterTypes<N: Network> {
     /// The mapping of all input registers to their defined types.
     inputs: IndexMap<u64, RegisterType<N>>,
@@ -61,14 +66,14 @@ impl<N: Network> RegisterTypes<N> {
     /// Initializes a new instance of `RegisterTypes` for the given closure.
     /// Checks that the given closure is well-formed for the given stack.
     #[inline]
-    pub fn from_closure(stack: &(impl StackMatches<N> + StackProgram<N>), closure: &Closure<N>) -> Result<Self> {
+    pub fn from_closure(stack: &Stack<N>, closure: &Closure<N>) -> Result<Self> {
         Self::initialize_closure_types(stack, closure)
     }
 
     /// Initializes a new instance of `RegisterTypes` for the given function.
     /// Checks that the given function is well-formed for the given stack.
     #[inline]
-    pub fn from_function(stack: &(impl StackMatches<N> + StackProgram<N>), function: &Function<N>) -> Result<Self> {
+    pub fn from_function(stack: &Stack<N>, function: &Function<N>) -> Result<Self> {
         Self::initialize_function_types(stack, function)
     }
 
@@ -87,28 +92,37 @@ impl<N: Network> RegisterTypes<N> {
     }
 
     /// Returns the register type of the given operand.
-    pub fn get_type_from_operand(
-        &self,
-        stack: &(impl StackMatches<N> + StackProgram<N>),
-        operand: &Operand<N>,
-    ) -> Result<RegisterType<N>> {
+    pub fn get_type_from_operand(&self, stack: &impl StackTrait<N>, operand: &Operand<N>) -> Result<RegisterType<N>> {
         Ok(match operand {
             Operand::Literal(literal) => RegisterType::Plaintext(PlaintextType::from(literal.to_type())),
             Operand::Register(register) => self.get_type(stack, register)?,
             Operand::ProgramID(_) | Operand::Signer | Operand::Caller => {
                 RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Address))
             }
+            Operand::AleoGenerator => RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Group)),
+            Operand::AleoGeneratorPowers(index) => match index {
+                None => RegisterType::Plaintext(PlaintextType::Array(ArrayType::new(
+                    PlaintextType::Literal(LiteralType::Group),
+                    vec![U32::new(N::Scalar::SIZE_IN_BITS as u32)],
+                )?)),
+                Some(_) => RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Group)),
+            },
             Operand::BlockHeight => bail!("'block.height' is not a valid operand in a non-finalize context."),
+            Operand::BlockTimestamp => {
+                bail!("'block.timestamp' is not a valid operand in a non-finalize context.")
+            }
             Operand::NetworkID => bail!("'network.id' is not a valid operand in a non-finalize context."),
+            Operand::Checksum(_) => bail!("'checksum' is not a valid operand in a non-finalize context."),
+            Operand::Edition(_) => bail!("'edition' is not a valid operand in a non-finalize context."),
+            Operand::ProgramOwner(_) => bail!("'program_owner' is not a valid operand in a non-finalize context."),
+            Operand::ComponentChecksum(..) => {
+                bail!("a component checksum is not a valid operand in a non-finalize context.")
+            }
         })
     }
 
     /// Returns the register type of the given register.
-    pub fn get_type(
-        &self,
-        stack: &(impl StackMatches<N> + StackProgram<N>),
-        register: &Register<N>,
-    ) -> Result<RegisterType<N>> {
+    pub fn get_type(&self, stack: &impl StackTrait<N>, register: &Register<N>) -> Result<RegisterType<N>> {
         // Initialize a tracker for the register type.
         let register_type = if self.is_input(register) {
             // Retrieve the input value type as a register type.
@@ -138,6 +152,8 @@ impl<N: Network> RegisterTypes<N> {
             Plaintext(PlaintextType<N>),
             /// A future.
             Future(Locator<N>),
+            // A dynamic future.
+            DynamicFuture,
         }
 
         // A literal address type.
@@ -195,13 +211,33 @@ impl<N: Network> RegisterTypes<N> {
                     };
                     // Retrieve the entry type from the external record.
                     match external_record.entries().get(path_name) {
-                        // Retrieve the plaintext type.
-                        Some(entry_type) => RegisterAccessType::Plaintext(entry_type.plaintext_type().clone()),
+                        // Qualify local struct references so subsequent accesses use the correct stack.
+                        Some(entry_type) => {
+                            let qualified = entry_type.plaintext_type().clone().qualify(*locator.program_id());
+                            RegisterAccessType::Plaintext(qualified)
+                        }
                         None => bail!("'{path_name}' does not exist in external record '{locator}'"),
                     }
                 }
             }
             RegisterType::Future(locator) => RegisterAccessType::Future(*locator),
+            // A dynamic record cannot be accessed directly.
+            RegisterType::DynamicRecord => {
+                // Retrieve the first access.
+                // Note: this unwrap is safe since the path is checked to be non-empty above.
+                let access = path_iter.next().unwrap();
+                // Retrieve the member type from the external record.
+                if access == &Access::Member(Identifier::from_str("owner")?) {
+                    // If the member is the owner, then output the address type.
+                    RegisterAccessType::Plaintext(literal_address_type)
+                } else {
+                    bail!(
+                        "Only the 'owner' of a dynamic record can be accessed directly, use 'get.record.dynamic' instead."
+                    )
+                }
+            }
+            // A dynamic future cannot be accessed directly.
+            RegisterType::DynamicFuture => bail!("Cannot access a dynamic future value directly"),
         };
 
         // Traverse the path to find the register type.
@@ -219,6 +255,18 @@ impl<N: Network> RegisterTypes<N> {
                         // Update the member type.
                         Some(member_type) => register_type = RegisterAccessType::Plaintext(member_type.clone()),
                         None => bail!("'{identifier}' does not exist in struct '{struct_name}'"),
+                    }
+                }
+                (RegisterAccessType::Plaintext(PlaintextType::ExternalStruct(locator)), Access::Member(identifier)) => {
+                    let external_stack = stack.get_external_stack(locator.program_id())?;
+                    // Retrieve the member type from the external struct.
+                    match external_stack.program().get_struct(locator.resource())?.members().get(identifier) {
+                        // Qualify local struct references so subsequent accesses use the correct stack.
+                        Some(member_type) => {
+                            let qualified = member_type.clone().qualify(*locator.program_id());
+                            register_type = RegisterAccessType::Plaintext(qualified);
+                        }
+                        None => bail!("'{identifier}' does not exist in struct '{locator}'"),
                     }
                 }
                 // Traverse the path to output the register type.
@@ -253,18 +301,38 @@ impl<N: Network> RegisterTypes<N> {
                         Some(input) => {
                             register_type = match input.finalize_type() {
                                 FinalizeType::Plaintext(plaintext_type) => {
-                                    RegisterAccessType::Plaintext(plaintext_type.clone())
+                                    let plaintext = match external_stack {
+                                        Some(ref external_stack) => {
+                                            // Qualify the finalize input type with the external program ID so that any
+                                            // subsequent accesses are resolved against the correct program context.
+                                            // Without this, the type would appear "local" and later lookups could
+                                            // incorrectly search the current program instead of the external one the
+                                            // struct originated from.
+                                            //
+                                            // Note: this was added in ConsensusVersion::V13 and a check was added to make
+                                            // sure this doesn't affect older consensus versions.
+                                            plaintext_type.clone().qualify(*external_stack.program_id())
+                                        }
+                                        None => plaintext_type.clone(),
+                                    };
+
+                                    RegisterAccessType::Plaintext(plaintext)
                                 }
                                 FinalizeType::Future(locator) => RegisterAccessType::Future(*locator),
+                                FinalizeType::DynamicFuture => RegisterAccessType::DynamicFuture,
                             }
                         }
                         // Halts if the index is out of bounds.
                         None => bail!("Index out of bounds"),
                     }
                 }
-                (RegisterAccessType::Plaintext(PlaintextType::Struct(..)), Access::Index(..))
+                (
+                    RegisterAccessType::Plaintext(PlaintextType::Struct(..) | PlaintextType::ExternalStruct(..)),
+                    Access::Index(..),
+                )
                 | (RegisterAccessType::Plaintext(PlaintextType::Array(..)), Access::Member(..))
-                | (RegisterAccessType::Future(..), Access::Member(..)) => {
+                | (RegisterAccessType::Future(..), Access::Member(..))
+                | (RegisterAccessType::DynamicFuture, _) => {
                     bail!("Invalid access `{access}`")
                 }
             }
@@ -274,6 +342,7 @@ impl<N: Network> RegisterTypes<N> {
         Ok(match register_type {
             RegisterAccessType::Plaintext(plaintext_type) => RegisterType::Plaintext(plaintext_type.clone()),
             RegisterAccessType::Future(locator) => RegisterType::Future(locator),
+            RegisterAccessType::DynamicFuture => RegisterType::DynamicFuture,
         })
     }
 }

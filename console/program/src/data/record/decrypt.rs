@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -81,14 +81,14 @@ impl<N: Network> Record<N, Ciphertext<N>> {
             };
             // Insert the decrypted entry.
             if decrypted_data.insert(*id, entry).is_some() {
-                bail!("Duplicate identifier in record: {}", id);
+                bail!("Duplicate identifier in record: {id}");
             }
             // Increment the index.
             index += num_randomizers;
         }
 
         // Return the decrypted record.
-        Self::from_plaintext(owner, decrypted_data, self.nonce)
+        Self::from_plaintext(owner, decrypted_data, self.nonce, self.version)
     }
 }
 
@@ -118,6 +118,7 @@ mod tests {
                 (Identifier::from_str("b")?, Entry::Private(Plaintext::from(Literal::Scalar(Scalar::rand(rng))))),
             ]),
             nonce: N::g_scalar_multiply(&randomizer),
+            version: U8::rand(rng),
         };
         // Encrypt the record.
         let ciphertext = record.encrypt(randomizer)?;

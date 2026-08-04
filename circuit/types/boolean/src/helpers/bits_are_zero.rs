@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +23,6 @@ impl<E: Environment> Boolean<E> {
         for bit in bits_le {
             sum += &**bit;
         }
-        E::assert_eq(sum, E::zero());
+        E::assert_eq(sum, E::zero()).expect("bits_are_zero assertion failed");
     }
 }

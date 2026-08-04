@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -87,8 +87,7 @@ impl PartialOrd for Index {
 impl Ord for Index {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
-            (Index::Public(ref idx1), Index::Public(ref idx2))
-            | (Index::Private(ref idx1), Index::Private(ref idx2)) => idx1.cmp(idx2),
+            (Index::Public(idx1), Index::Public(idx2)) | (Index::Private(idx1), Index::Private(idx2)) => idx1.cmp(idx2),
             (Index::Public(_), Index::Private(_)) => Ordering::Less,
             (Index::Private(_), Index::Public(_)) => Ordering::Greater,
         }

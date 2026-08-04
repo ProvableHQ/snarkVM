@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use crate::Process;
-use algorithms::snark::varuna::VarunaVersion;
 use circuit::network::AleoV0;
 use console::{
     account::{Address, PrivateKey},
@@ -22,9 +21,10 @@ use console::{
     program::{Identifier, Literal, Plaintext, ProgramID, Value},
     types::U64,
 };
-use ledger_query::Query;
-use ledger_store::{BlockStore, FinalizeStorage, FinalizeStore, helpers::memory::BlockMemory};
-use synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program};
+use snarkvm_algorithms::snark::varuna::VarunaVersion;
+use snarkvm_ledger_query::Query;
+use snarkvm_ledger_store::{BlockStore, FinalizeStorage, FinalizeStore, helpers::memory::BlockMemory};
+use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program};
 
 use indexmap::IndexMap;
 
@@ -40,7 +40,7 @@ macro_rules! sample_finalize_store {
         let temp_dir = ();
 
         #[cfg(feature = "rocks")]
-        let store = FinalizeStore::<CurrentNetwork, ledger_store::helpers::rocksdb::FinalizeDB<_>>::open(
+        let store = FinalizeStore::<CurrentNetwork, snarkvm_ledger_store::helpers::rocksdb::FinalizeDB<_>>::open(
             temp_dir.path().to_owned(),
         )
         .unwrap();
@@ -64,7 +64,7 @@ pub(super) use test_atomic_finalize;
 
 /// Samples a new finalize state.
 fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
-    FinalizeGlobalState::from(block_height as u64, block_height, [0u8; 32])
+    FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32], None, None)
 }
 
 /// Returns the `value` for the given `key` in the `mapping` for the given `program_id`.
@@ -254,7 +254,7 @@ fn execute_function<F: FinalizeStorage<CurrentNetwork>>(
     let block_height = block_height.unwrap_or(1);
 
     // Add an atomic finalize wrapper around the finalize function.
-    process.finalize_execution(sample_finalize_state(block_height), finalize_store, &execution, None)?;
+    process.lock().finalize_execution(sample_finalize_state(block_height), finalize_store, &execution, None)?;
 
     Ok(())
 }

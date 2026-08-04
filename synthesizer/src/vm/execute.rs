@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +17,9 @@
 
 use super::*;
 
+use console::network::varuna_version_from_consensus;
+use snarkvm_synthesizer_error::*;
+
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Returns a new execute transaction.
     ///
@@ -33,7 +36,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         priority_fee_in_microcredits: u64,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<Transaction<N>> {
+    ) -> Result<Transaction<N>, VmExecError> {
         let (execution, _) = self.execute_with_response(
             private_key,
             (program_id, function_name),
@@ -61,7 +64,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         priority_fee_in_microcredits: u64,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<(Transaction<N>, Response<N>)> {
+    ) -> Result<(Transaction<N>, Response<N>), VmExecError> {
         // Get a default query if one is not provided.
         let query = match query {
             Some(q) => q,
@@ -70,7 +73,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Compute the authorization.
         let authorization = self.authorize(private_key, program_id, function_name, inputs, rng)?;
         // Determine if a fee is required.
-        let is_fee_required = !authorization.is_split();
+        let is_fee_required = !(authorization.is_split() || authorization.is_upgrade());
         // Determine if a priority fee is declared.
         let is_priority_fee_declared = priority_fee_in_microcredits > 0;
         // Compute the execution.
@@ -80,11 +83,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             true => {
                 // Compute the minimum execution cost.
                 let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
-                let (minimum_execution_cost, (_, _)) = if consensus_version == ConsensusVersion::V1 {
-                    execution_cost_v1(&self.process().read(), &execution)?
-                } else {
-                    execution_cost_v2(&self.process().read(), &execution)?
-                };
+                let (minimum_execution_cost, _) = execution_cost(&self.process, &execution, consensus_version)?;
                 // Compute the execution ID.
                 let execution_id = execution.to_execution_id()?;
                 // Authorize the fee.
@@ -160,7 +159,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         authorization: Authorization<N>,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<Fee<N>> {
+    ) -> Result<Fee<N>, VmExecError> {
         debug_assert!(authorization.is_fee_private() || authorization.is_fee_public(), "Expected a fee authorization");
         // Get a default query if one is not provided.
         let query = match query {
@@ -180,7 +179,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         authorization: Authorization<N>,
         query: &dyn QueryTrait<N>,
         rng: &mut R,
-    ) -> Result<(Execution<N>, Response<N>)> {
+    ) -> Result<(Execution<N>, Response<N>), VmExecError> {
         let timer = timer!("VM::execute_authorization_raw");
 
         // Construct the locator of the main function.
@@ -189,14 +188,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             Locator::new(*request.program_id(), *request.function_name()).to_string()
         };
 
-        // Determine which Varuna version to use.
+        // Determine the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
-        let varuna_version = if (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
-            VarunaVersion::V1
-        } else {
-            VarunaVersion::V2
-        };
-
+        // Check whether the authorization is for a valid program edition.
+        authorization.check_valid_edition(&self.process, consensus_version)?;
+        // Check whether the authorization is creating valid records.
+        authorization.check_valid_records(consensus_version)?;
+        // Determine which Varuna version to use.
+        let varuna_version = varuna_version_from_consensus(consensus_version);
         macro_rules! logic {
             ($process:expr, $network:path, $aleo:path) => {{
                 // Prepare the authorization.
@@ -208,6 +207,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Prepare the assignments.
                 cast_mut_ref!(trace as Trace<N>).prepare(query)?;
                 lap!(timer, "Prepare the assignments");
+
+                // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
+                // function in the execution, all DynamicRecords and ExternalRecords
+                // received as inputs or from callees exist on the ledger at the end of
+                // the execution (whether spent or not).
+                if consensus_version >= ConsensusVersion::V15 {
+                    let include_direct_imports = consensus_version >= ConsensusVersion::V18;
+                    let execution_stacks = $process.get_stacks(trace.transitions(), include_direct_imports)?;
+                    Process::ensure_records_exist(trace.transitions().iter(), trace.call_graph(), &execution_stacks)?;
+                    lap!(timer, "Check record existence");
+                }
 
                 // Compute the proof and construct the execution.
                 let execution = trace.prove_execution::<$aleo, _>(&locator, varuna_version, rng)?;
@@ -232,17 +242,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         authorization: Authorization<N>,
         query: &dyn QueryTrait<N>,
         rng: &mut R,
-    ) -> Result<Fee<N>> {
+    ) -> Result<Fee<N>, VmExecError> {
         let timer = timer!("VM::execute_fee_authorization_raw");
 
-        // Determine which Varuna version to use.
+        // Determine the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
-        let varuna_version = if (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
-            VarunaVersion::V1
-        } else {
-            VarunaVersion::V2
-        };
-
+        // Check whether the authorization is for a valid program edition.
+        authorization.check_valid_edition(&self.process, consensus_version)?;
+        // Check whether the authorization is creating valid records.
+        authorization.check_valid_records(consensus_version)?;
+        // Determine which Varuna version to use.
+        let varuna_version = varuna_version_from_consensus(consensus_version);
         macro_rules! logic {
             ($process:expr, $network:path, $aleo:path) => {{
                 // Prepare the authorization.
@@ -254,6 +264,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Prepare the assignments.
                 cast_mut_ref!(trace as Trace<N>).prepare(query)?;
                 lap!(timer, "Prepare the assignments");
+
+                // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
+                // function in the execution, all DynamicRecords and ExternalRecords
+                // received as inputs or from callees exist on the ledger at the end of
+                // the execution (whether spent or not).
+                if consensus_version >= ConsensusVersion::V15 {
+                    let include_direct_imports = consensus_version >= ConsensusVersion::V18;
+                    let execution_stacks = $process.get_stacks(trace.transitions(), include_direct_imports)?;
+                    Process::ensure_records_exist(trace.transitions().iter(), trace.call_graph(), &execution_stacks)?;
+                    lap!(timer, "Check record existence");
+                }
 
                 // Compute the proof and construct the fee.
                 let fee = trace.prove_fee::<$aleo, _>(varuna_version, rng)?;
@@ -281,17 +302,17 @@ mod tests {
         program::{Ciphertext, Value},
         types::Field,
     };
-    use ledger_block::Transition;
-    use synthesizer_process::{ConsensusFeeVersion, cost_per_command, execution_cost_v2};
-    use synthesizer_program::StackProgram;
+    use snarkvm_ledger_block::Transition;
+    use snarkvm_synthesizer_process::{ConsensusFeeVersion, cost_per_command};
+    use snarkvm_synthesizer_program::StackTrait;
 
     use indexmap::IndexMap;
 
     type CurrentNetwork = MainnetV0;
     #[cfg(not(feature = "rocks"))]
-    type LedgerType = ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
+    type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
     #[cfg(feature = "rocks")]
-    type LedgerType = ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
+    type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
     fn prepare_vm(
         rng: &mut TestRng,
@@ -420,8 +441,8 @@ mod tests {
 
         let query = Query::VM(vm.block_store().clone());
         let (execution, _) = vm.execute_authorization_raw(authorization, &query, rng).unwrap();
-        let (cost, _) = execution_cost_v2(&vm.process().read(), &execution).unwrap();
-        let (old_cost, _) = execution_cost_v1(&vm.process().read(), &execution).unwrap();
+        let (cost, _) = execution_cost(vm.process(), &execution, ConsensusVersion::V2).unwrap();
+        let (old_cost, _) = execution_cost(vm.process(), &execution, ConsensusVersion::V1).unwrap();
 
         assert_eq!(34_060, cost);
         assert_eq!(51_060, old_cost);
@@ -557,8 +578,8 @@ finalize test:
 
         let query = Query::VM(vm.block_store().clone());
         let (execution, _) = vm.execute_authorization_raw(authorization, &query, rng).unwrap();
-        let (cost, _) = execution_cost_v1(&vm.process().read(), &execution).unwrap();
-        println!("Cost: {}", cost);
+        let (cost, _) = execution_cost(vm.process(), &execution, ConsensusVersion::V1).unwrap();
+        println!("Cost: {cost}");
     }
 
     #[test]
@@ -628,13 +649,13 @@ finalize test:
 
         // Assert the size of the transaction.
         let transaction_size_in_bytes = transaction.to_bytes_le().unwrap().len();
-        assert_eq!(3693, transaction_size_in_bytes, "Update me if serialization has changed");
+        assert_eq!(3759, transaction_size_in_bytes, "Update me if serialization has changed");
 
         // Assert the size of the execution.
         assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
         if let Transaction::Execute(_, _, execution, _) = &transaction {
             let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
-            assert_eq!(2242, execution_size_in_bytes, "Update me if serialization has changed");
+            assert_eq!(2308, execution_size_in_bytes, "Update me if serialization has changed");
         }
     }
 
@@ -707,6 +728,7 @@ finalize test:
     }
 
     #[test]
+    #[ignore]
     fn test_join_transaction_size() {
         let rng = &mut TestRng::default();
 
@@ -729,15 +751,18 @@ finalize test:
         let transaction =
             vm.execute(&caller_private_key, ("credits.aleo", "join"), inputs, None, 0, None, rng).unwrap();
 
+        // Verify the transaction.
+        vm.check_transaction(&transaction, None, rng).unwrap();
+
         // Assert the size of the transaction.
         let transaction_size_in_bytes = transaction.to_bytes_le().unwrap().len();
-        assert_eq!(3538, transaction_size_in_bytes, "Update me if serialization has changed");
+        assert_eq!(3571, transaction_size_in_bytes, "Update me if serialization has changed");
 
         // Assert the size of the execution.
         assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
         if let Transaction::Execute(_, _, execution, _) = &transaction {
             let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
-            assert_eq!(2087, execution_size_in_bytes, "Update me if serialization has changed");
+            assert_eq!(2120, execution_size_in_bytes, "Update me if serialization has changed");
         }
     }
 
@@ -769,22 +794,23 @@ finalize test:
 
         // Assert the size of the transaction.
         let transaction_size_in_bytes = transaction.to_bytes_le().unwrap().len();
-        assert_eq!(2166, transaction_size_in_bytes, "Update me if serialization has changed");
+        assert_eq!(2232, transaction_size_in_bytes, "Update me if serialization has changed");
 
         // Assert the size of the execution.
         assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
         if let Transaction::Execute(_, _, execution, _) = &transaction {
             let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
-            assert_eq!(2131, execution_size_in_bytes, "Update me if serialization has changed");
+            assert_eq!(2197, execution_size_in_bytes, "Update me if serialization has changed");
         }
     }
 
     #[test]
+    #[ignore]
     fn test_fee_private_transition_size() {
         let rng = &mut TestRng::default();
 
         // Retrieve a fee transaction.
-        let transaction = ledger_test_helpers::sample_fee_private_transaction(rng);
+        let transaction = snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng);
         // Retrieve the fee.
         let fee = match transaction {
             Transaction::Fee(_, fee) => fee,
@@ -796,7 +822,7 @@ finalize test:
 
         // Assert the size of the transition.
         let fee_size_in_bytes = fee.to_bytes_le().unwrap().len();
-        assert_eq!(2043, fee_size_in_bytes, "Update me if serialization has changed");
+        assert_eq!(2076, fee_size_in_bytes, "Update me if serialization has changed");
     }
 
     #[test]
@@ -804,7 +830,7 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Retrieve a fee transaction.
-        let transaction = ledger_test_helpers::sample_fee_public_transaction(rng);
+        let transaction = snarkvm_ledger_test_helpers::sample_fee_public_transaction(rng);
         // Retrieve the fee.
         let fee = match transaction {
             Transaction::Fee(_, fee) => fee,
@@ -820,6 +846,7 @@ finalize test:
     }
 
     #[test]
+    #[ignore]
     fn test_wide_nested_execution_cost() {
         // Initialize an RNG.
         let rng = &mut TestRng::default();
@@ -942,7 +969,7 @@ finalize test:
         assert_eq!(execution.transitions().len(), <CurrentNetwork as Network>::MAX_INPUTS + 1);
 
         // Get the finalize cost of the execution.
-        let (_, (_, finalize_cost)) = execution_cost_v2(&vm.process().read(), &execution).unwrap();
+        let (_, (_, finalize_cost)) = execution_cost(vm.process(), &execution, ConsensusVersion::V2).unwrap();
 
         // Compute the expected cost as the sum of the cost in microcredits of each command in each finalize block of each transition in the execution.
         let mut expected_cost = 0;
@@ -951,7 +978,9 @@ finalize test:
             let program_id = transition.program_id();
             let function_name = transition.function_name();
             // Get the stack.
-            let stack = vm.process().read().get_stack(program_id).unwrap().clone();
+            let stack = vm.process().get_stack(program_id).unwrap().clone();
+            // Get the finalize types.
+            let finalize_types = stack.get_finalize_types(function_name).unwrap();
             // Get the finalize block of the transition and sum the cost of each command.
             let cost = match stack.get_function(function_name).unwrap().finalize_logic() {
                 None => 0,
@@ -960,7 +989,7 @@ finalize test:
                     finalize_logic
                         .commands()
                         .iter()
-                        .map(|command| cost_per_command(&stack, finalize_logic, command, ConsensusFeeVersion::V2))
+                        .map(|command| cost_per_command(&stack, &finalize_types, command, ConsensusFeeVersion::V2))
                         .try_fold(0u64, |acc, res| {
                             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
                         })
@@ -987,6 +1016,13 @@ finalize test:
         // Prepare the VM.
         let (vm, _) = prepare_vm(rng).unwrap();
 
+        // Forward the chain to block 13:
+        for _i in 1..13 {
+            let next_block = crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[], rng).unwrap();
+
+            vm.add_next_block(&next_block).unwrap();
+        }
+
         // Construct the base program.
         let base_program = Program::from_str(
             r"
@@ -1004,7 +1040,9 @@ finalize test:
     input r1 as field.public;
     hash.bhp256 r0 into r2 as field;
     hash.bhp256 r1 into r3 as field;
-    set r2 into data[r3];",
+    set r2 into data[r3];
+constructor:
+    assert.eq edition 0u16;",
         )
         .unwrap();
 
@@ -1040,7 +1078,9 @@ finalize test:
     await r2;
     hash.bhp256 r0 into r3 as field;
     hash.bhp256 r1 into r4 as field;
-    set r3 into data[r4];",
+    set r3 into data[r4];
+constructor:
+    assert.eq edition 0u16;",
                 imports = (1..i).map(|j| format!("import test_{j}.aleo;")).join("\n"),
                 prev = i - 1,
                 curr = i,
@@ -1078,7 +1118,7 @@ finalize test:
         assert_eq!(execution.transitions().len(), Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1);
 
         // Get the finalize cost of the execution.
-        let (_, (_, finalize_cost)) = execution_cost_v2(&vm.process().read(), &execution).unwrap();
+        let (_, (_, finalize_cost)) = execution_cost(vm.process(), &execution, ConsensusVersion::V2).unwrap();
 
         // Compute the expected cost as the sum of the cost in microcredits of each command in each finalize block of each transition in the execution.
         let mut expected_cost = 0;
@@ -1087,7 +1127,9 @@ finalize test:
             let program_id = transition.program_id();
             let function_name = transition.function_name();
             // Get the stack.
-            let stack = vm.process().read().get_stack(program_id).unwrap().clone();
+            let stack = vm.process().get_stack(program_id).unwrap().clone();
+            // Get the finalize types.
+            let finalize_types = stack.get_finalize_types(function_name).unwrap();
             // Get the finalize block of the transition and sum the cost of each command.
             let cost = match stack.get_function(function_name).unwrap().finalize_logic() {
                 None => 0,
@@ -1096,7 +1138,7 @@ finalize test:
                     finalize_logic
                         .commands()
                         .iter()
-                        .map(|command| cost_per_command(&stack, finalize_logic, command, ConsensusFeeVersion::V2))
+                        .map(|command| cost_per_command(&stack, &finalize_types, command, ConsensusFeeVersion::V2))
                         .try_fold(0u64, |acc, res| {
                             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
                         })

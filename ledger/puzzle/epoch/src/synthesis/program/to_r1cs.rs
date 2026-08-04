@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,7 +33,7 @@ impl<N: Network> EpochProgram<N> {
         ensure!(num_inputs == console_inputs.len(), "Expected {num_inputs} inputs, found {}", console_inputs.len());
 
         // Initialize the registers.
-        let call_stack = CallStack::PackageRun(vec![], PrivateKey::new(&mut rand::thread_rng())?, Default::default());
+        let call_stack = CallStack::PackageRun(vec![], PrivateKey::new(&mut rand::rng())?, Default::default());
         let mut registers = Registers::<N, A>::new(call_stack, register_types);
         lap!(timer, "Initialize the registers");
 
@@ -66,29 +66,25 @@ impl<N: Network> EpochProgram<N> {
             }
 
             #[cfg(debug_assertions)]
+            #[allow(unused_variables)]
             {
                 use circuit::Eject;
-                use snarkvm_synthesizer_program::RegistersLoadCircuit;
-
-                use colored::Colorize;
+                use snarkvm_synthesizer_program::RegistersCircuit;
+                use snarkvm_utilities::dev_println;
 
                 let is_satisfied = A::is_satisfied();
-                println!(
-                    "Executing instruction ({instruction}) ({})",
-                    if is_satisfied { "✅".green() } else { "❌".red() }
-                );
+                dev_println!("Executing instruction ({instruction}) ({})", if is_satisfied { "✅" } else { "❌" });
                 if !is_satisfied {
                     for operand in instruction.operands() {
-                        let value = registers.load_circuit(&self.stack, operand)?;
-                        println!("    {operand} = {}", value.eject_value());
+                        let value = registers.load_circuit(&self.stack, operand)?.eject_value();
+                        dev_println!("    {operand} = {}", value);
                     }
                 }
             }
         }
         lap!(timer, "Execute the instructions");
 
-        #[cfg(debug_assertions)]
-        log_circuit::<N, A, _>(function_name.to_string());
+        log_circuit::<N, A>(function_name);
 
         // If the circuit is empty or not satisfied, then throw an error.
         ensure!(
@@ -107,19 +103,25 @@ impl<N: Network> EpochProgram<N> {
 }
 
 /// Prints the current state of the circuit.
-#[cfg(debug_assertions)]
-pub(crate) fn log_circuit<N: Network, A: circuit::Aleo<Network = N>, S: Into<String>>(scope: S) {
-    use colored::Colorize;
+#[allow(unused_variables)]
+pub(crate) fn log_circuit<N: Network, A: circuit::Aleo<Network = N>>(scope: impl std::fmt::Display) {
+    #[cfg(debug_assertions)]
+    {
+        use snarkvm_utilities::dev_println;
 
-    // Determine if the circuit is satisfied.
-    let is_satisfied = if A::is_satisfied() { "✅".green() } else { "❌".red() };
-    // Determine the count.
-    let (num_constant, num_public, num_private, num_constraints, num_nonzeros) = A::count();
+        use colored::Colorize as _;
 
-    // Print the log.
-    println!(
-        "{is_satisfied} {:width$} (Constant: {num_constant}, Public: {num_public}, Private: {num_private}, Constraints: {num_constraints}, NonZeros: {num_nonzeros:?})",
-        scope.into().bold(),
-        width = 20
-    );
+        // Determine if the circuit is satisfied.
+        let is_satisfied = if A::is_satisfied() { "✅" } else { "❌" };
+        // Determine the count.
+        let (num_constant, num_public, num_private, num_constraints, num_nonzeros) = A::count();
+
+        let scope = scope.to_string().bold();
+
+        // Print the log.
+        dev_println!(
+            "{is_satisfied} {scope:width$} (Constant: {num_constant}, Public: {num_public}, Private: {num_private}, Constraints: {num_constraints}, NonZeros: {num_nonzeros:?})",
+            width = 20
+        );
+    }
 }

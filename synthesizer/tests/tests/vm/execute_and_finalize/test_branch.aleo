@@ -29,4 +29,7 @@ finalize run_test:
     branch.neq r1 1u8 to exit_two;
     assert.eq true false;
     position exit_two;
+    
+constructor:
+    assert.eq edition 0u16;
 

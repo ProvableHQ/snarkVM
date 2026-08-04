@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -40,31 +40,30 @@ impl<N: Network> Serialize for Block<N> {
 impl<'de, N: Network> Deserialize<'de> for Block<N> {
     /// Deserializes the block from a JSON-string or buffer.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        match deserializer.is_human_readable() {
-            true => {
-                let mut block = serde_json::Value::deserialize(deserializer)?;
-                let block_hash: N::BlockHash = DeserializeExt::take_from_value::<D>(&mut block, "block_hash")?;
+        if deserializer.is_human_readable() {
+            let mut block = serde_json::Value::deserialize(deserializer)?;
+            let block_hash: N::BlockHash = DeserializeExt::take_from_value::<D>(&mut block, "block_hash")?;
 
-                // Recover the block.
-                let block = Self::from(
-                    DeserializeExt::take_from_value::<D>(&mut block, "previous_hash")?,
-                    DeserializeExt::take_from_value::<D>(&mut block, "header")?,
-                    DeserializeExt::take_from_value::<D>(&mut block, "authority")?,
-                    DeserializeExt::take_from_value::<D>(&mut block, "ratifications")?,
-                    DeserializeExt::take_from_value::<D>(&mut block, "solutions")?,
-                    DeserializeExt::take_from_value::<D>(&mut block, "aborted_solution_ids")?,
-                    DeserializeExt::take_from_value::<D>(&mut block, "transactions")?,
-                    DeserializeExt::take_from_value::<D>(&mut block, "aborted_transaction_ids")?,
-                )
-                .map_err(de::Error::custom)?;
+            // Recover the block.
+            let block = Self::from(
+                DeserializeExt::take_from_value::<D>(&mut block, "previous_hash")?,
+                DeserializeExt::take_from_value::<D>(&mut block, "header")?,
+                DeserializeExt::take_from_value::<D>(&mut block, "authority")?,
+                DeserializeExt::take_from_value::<D>(&mut block, "ratifications")?,
+                DeserializeExt::take_from_value::<D>(&mut block, "solutions")?,
+                DeserializeExt::take_from_value::<D>(&mut block, "aborted_solution_ids")?,
+                DeserializeExt::take_from_value::<D>(&mut block, "transactions")?,
+                DeserializeExt::take_from_value::<D>(&mut block, "aborted_transaction_ids")?,
+            )
+            .map_err(de::Error::custom)?;
 
-                // Ensure the block hash matches.
-                match block_hash == block.hash() {
-                    true => Ok(block),
-                    false => Err(de::Error::custom(error("Mismatching block hash, possible data corruption"))),
-                }
+            // Ensure the block hash matches.
+            match block_hash == block.hash() {
+                true => Ok(block),
+                false => Err(de::Error::custom(error("Mismatching block hash, possible data corruption"))),
             }
-            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "block"),
+        } else {
+            FromBytesUncheckedDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "block")
         }
     }
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +15,8 @@
 
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
+
+extern crate snarkvm_console_account as console;
 
 #[cfg(test)]
 use snarkvm_circuit_network::AleoV0 as Circuit;
@@ -34,7 +36,7 @@ pub use signature::*;
 pub mod view_key;
 pub use view_key::*;
 
-#[cfg(all(test, feature = "console"))]
+#[cfg(test)]
 pub(crate) mod helpers {
     use snarkvm_circuit_network::AleoV0;
     use snarkvm_circuit_types::environment::Environment;

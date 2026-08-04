@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,12 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub use crate::{
-    FromBytes,
-    ToBytes,
-    Vec,
-    io::{self, Read, Write},
-};
+use std::io::{Read, Write};
+
+pub use crate::{FromBytes, ToBytes};
 use crate::{SerializationError, serialize::traits::*};
 
 /// Serialize a Vector's elements without serializing the Vector's length

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,10 +14,14 @@
 // limitations under the License.
 
 use crate::{
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
     Opcode,
     Operand,
     Operation,
-    traits::{RegistersLoad, RegistersLoadCircuit, RegistersStore, RegistersStoreCircuit, StackMatches, StackProgram},
+    RegistersCircuit,
+    RegistersTrait,
+    StackTrait,
 };
 use console::{
     network::prelude::*,
@@ -63,18 +67,19 @@ impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const N
     pub fn destinations(&self) -> Vec<Register<N>> {
         vec![self.destination.clone()]
     }
+
+    /// Returns whether this instruction refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
+    }
 }
 
 impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const NUM_OPERANDS: usize>
     Literals<N, O, NUM_OPERANDS>
 {
     /// Evaluates the instruction.
-    #[inline]
-    pub fn evaluate(
-        &self,
-        stack: &(impl StackMatches<N> + StackProgram<N>),
-        registers: &mut (impl RegistersLoad<N> + RegistersStore<N>),
-    ) -> Result<()> {
+    pub fn evaluate(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
         // Ensure the number of operands is correct.
         if self.operands.len() != NUM_OPERANDS {
             bail!("Instruction '{}' expects {NUM_OPERANDS} operands, found {} operands", O::OPCODE, self.operands.len())
@@ -109,11 +114,10 @@ impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const N
     }
 
     /// Executes the instruction.
-    #[inline]
     pub fn execute<A: circuit::Aleo<Network = N>>(
         &self,
-        stack: &(impl StackMatches<N> + StackProgram<N>),
-        registers: &mut (impl RegistersLoadCircuit<N, A> + RegistersStoreCircuit<N, A>),
+        stack: &impl StackTrait<N>,
+        registers: &mut impl RegistersCircuit<N, A>,
     ) -> Result<()> {
         // Ensure the number of operands is correct.
         if self.operands.len() != NUM_OPERANDS {
@@ -128,7 +132,7 @@ impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const N
             inputs.iter().map(|input| RegisterType::Plaintext(PlaintextType::from(input.to_type()))).collect();
 
         // Compute the operation.
-        let output = O::execute(&inputs.try_into().map_err(|_| anyhow!("Failed to prepare operands in evaluate"))?)?;
+        let output = O::execute(&inputs.try_into().map_err(|_| anyhow!("Failed to prepare operands in execute"))?)?;
         // Compute the output type.
         let output_type = RegisterType::Plaintext(PlaintextType::from(output.to_type()));
 
@@ -147,17 +151,17 @@ impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const N
     #[inline]
     pub fn finalize(
         &self,
-        stack: &(impl StackMatches<N> + StackProgram<N>),
-        registers: &mut (impl RegistersLoad<N> + RegistersStore<N>),
+        stack: &impl StackTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
+        registers: &mut impl FinalizeRegistersState<N>,
     ) -> Result<()> {
         self.evaluate(stack, registers)
     }
 
     /// Returns the output type from the given program and input types.
-    #[inline]
     pub fn output_types(
         &self,
-        _stack: &impl StackProgram<N>,
+        _stack: &impl StackTrait<N>,
         input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
         // Ensure the number of input types is correct.
@@ -175,10 +179,13 @@ impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const N
             .map(|input_type| match input_type {
                 RegisterType::Plaintext(PlaintextType::Literal(literal_type)) => Ok(*literal_type),
                 RegisterType::Plaintext(PlaintextType::Struct(..))
+                | RegisterType::Plaintext(PlaintextType::ExternalStruct(..))
                 | RegisterType::Plaintext(PlaintextType::Array(..))
                 | RegisterType::Record(..)
                 | RegisterType::ExternalRecord(..)
-                | RegisterType::Future(..) => bail!("Expected literal type, found '{input_type}'"),
+                | RegisterType::Future(..)
+                | RegisterType::DynamicRecord
+                | RegisterType::DynamicFuture => bail!("Expected literal type, found '{input_type}'"),
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -194,7 +201,6 @@ impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const N
     for Literals<N, O, NUM_OPERANDS>
 {
     /// Parses a string into an operation.
-    #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
         // Parse the opcode from the string.
         let (string, _) = tag(*O::OPCODE)(string)?;
@@ -243,7 +249,6 @@ impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const N
     type Err = Error;
 
     /// Parses a string into an operation.
-    #[inline]
     fn from_str(string: &str) -> Result<Self> {
         match Self::parse(string) {
             Ok((remainder, object)) => {

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use crate::SerializationError;
-pub use crate::io::{Read, Write};
+pub use std::io::{Read, Write};
 
 use serde::de::{self, DeserializeOwned, Deserializer};
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,7 +25,7 @@ pub fn check_contains_key(map: impl for<'a> NestedMap<'a, usize, usize, String>)
     const MAP: usize = 0;
 
     for i in 0..NUM_ITEMS {
-        println!("i: {}", i);
+        println!("i: {i}");
 
         assert!(!map.contains_key_confirmed(&MAP, &i).unwrap());
         assert!(!map.contains_key_speculative(&MAP, &i).unwrap());
@@ -44,7 +44,7 @@ pub fn check_contains_key(map: impl for<'a> NestedMap<'a, usize, usize, String>)
         map.start_atomic();
 
         for i in NUM_ITEMS..NUM_TOTAL_ITEMS {
-            println!("i: {}", i);
+            println!("i: {i}");
 
             assert!(!map.contains_key_confirmed(&MAP, &i).unwrap());
             assert!(!map.contains_key_speculative(&MAP, &i).unwrap());

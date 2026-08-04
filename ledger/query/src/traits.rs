@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,9 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use console::{network::Network, prelude::Result, program::StatePath, types::Field};
+use snarkvm_console::{network::Network, prelude::Result, program::StatePath, types::Field};
 
-#[cfg_attr(feature = "async", async_trait(?Send))]
+#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
 pub trait QueryTrait<N: Network> {
     /// Returns the current state root.
     fn current_state_root(&self) -> Result<N::StateRoot>;
@@ -30,6 +30,13 @@ pub trait QueryTrait<N: Network> {
     /// Returns a state path for the given `commitment`.
     #[cfg(feature = "async")]
     async fn get_state_path_for_commitment_async(&self, commitment: &Field<N>) -> Result<StatePath<N>>;
+
+    /// Returns a list of state paths for the given list of `commitment`s.
+    fn get_state_paths_for_commitments(&self, commitments: &[Field<N>]) -> Result<Vec<StatePath<N>>>;
+
+    /// Returns a list of state paths for the given list of `commitment`s.
+    #[cfg(feature = "async")]
+    async fn get_state_paths_for_commitments_async(&self, commitments: &[Field<N>]) -> Result<Vec<StatePath<N>>>;
 
     /// Returns the current block height
     fn current_block_height(&self) -> Result<u32>;

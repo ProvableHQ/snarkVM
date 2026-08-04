@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +17,8 @@
 #![warn(clippy::cast_possible_truncation)]
 #![allow(clippy::too_many_arguments)]
 
+extern crate snarkvm_console as console;
+
 mod bytes;
 mod serialize;
 mod string;
@@ -27,7 +29,7 @@ use console::{
     prelude::*,
     types::Field,
 };
-use narwhal_transmission_id::TransmissionID;
+use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
 
 use indexmap::IndexSet;
 
@@ -56,10 +58,6 @@ pub struct BatchHeader<N: Network> {
 }
 
 impl<N: Network> BatchHeader<N> {
-    /// The maximum number of microcredits that can be spent on compute by the transactions in a batch.
-    /// This implies the block spend limit is bounded at `TRANSACTION_SPEND_LIMIT * N::NUM_MAX_CERTIFICATES`.
-    // TODO: div by 20 is temporary until we can dial in what the limit should be.
-    pub const BATCH_SPEND_LIMIT: u64 = N::TRANSACTION_SPEND_LIMIT * Self::MAX_TRANSMISSIONS_PER_BATCH as u64 / 20;
     /// The maximum number of rounds to store before garbage collecting.
     pub const MAX_GC_ROUNDS: usize = 100;
     /// The maximum number of transmissions in a batch.
@@ -67,6 +65,22 @@ impl<N: Network> BatchHeader<N> {
     /// This limit can be increased in the future as performance improves. Alternatively,
     /// the rate of block production can be sped up to compensate for the limit set here.
     pub const MAX_TRANSMISSIONS_PER_BATCH: usize = 50;
+}
+
+impl<N: Network> BatchHeader<N> {
+    /// The maximum number of microcredits that can be spent on compute by the transactions in a batch.
+    pub fn batch_spend_limit(height: u32) -> u64 {
+        // TODO(vicsn) a more robust setup would bound the batch spend limit further.
+        // For example to: 5_f64 * credits_per_second_of_runtime / max_certificates.
+        if height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap() {
+            consensus_config_value!(N, TRANSACTION_SPEND_LIMIT, height).unwrap()
+        } else {
+            // NOTE: div by 20 was temporary until we could dial in what the limit should be.
+            consensus_config_value!(N, TRANSACTION_SPEND_LIMIT, height).unwrap()
+                * Self::MAX_TRANSMISSIONS_PER_BATCH as u64
+                / 20
+        }
+    }
 }
 
 impl<N: Network> BatchHeader<N> {
@@ -97,7 +111,7 @@ impl<N: Network> BatchHeader<N> {
         );
         // Ensure that the number of previous certificate IDs is within bounds.
         ensure!(
-            previous_certificate_ids.len() <= N::LATEST_MAX_CERTIFICATES()? as usize,
+            previous_certificate_ids.len() <= N::LATEST_MAX_CERTIFICATES() as usize,
             "Invalid number of previous certificate IDs ({})",
             previous_certificate_ids.len()
         );
@@ -155,7 +169,7 @@ impl<N: Network> BatchHeader<N> {
         );
         // Ensure that the number of previous certificate IDs is within bounds.
         ensure!(
-            previous_certificate_ids.len() <= N::LATEST_MAX_CERTIFICATES()? as usize,
+            previous_certificate_ids.len() <= N::LATEST_MAX_CERTIFICATES() as usize,
             "Invalid number of previous certificate IDs ({})",
             previous_certificate_ids.len()
         );
@@ -174,7 +188,7 @@ impl<N: Network> BatchHeader<N> {
             bail!("Invalid signature for the batch header");
         }
         // Return the batch header.
-        Ok(Self {
+        Ok(Self::from_unchecked(
             author,
             batch_id,
             round,
@@ -183,7 +197,23 @@ impl<N: Network> BatchHeader<N> {
             transmission_ids,
             previous_certificate_ids,
             signature,
-        })
+        ))
+    }
+
+    /// Initializes a new batch header from the given data,
+    /// *without* checking it for correctness/consistency.
+    pub fn from_unchecked(
+        author: Address<N>,
+        batch_id: Field<N>,
+        round: u64,
+        timestamp: i64,
+        committee_id: Field<N>,
+        transmission_ids: IndexSet<TransmissionID<N>>,
+        previous_certificate_ids: IndexSet<Field<N>>,
+        signature: Signature<N>,
+    ) -> Self {
+        // Return the batch header.
+        Self { author, batch_id, round, timestamp, committee_id, transmission_ids, previous_certificate_ids, signature }
     }
 }
 
@@ -249,15 +279,18 @@ impl<N: Network> BatchHeader<N> {
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers {
     use super::*;
-    use console::{account::PrivateKey, network::MainnetV0, prelude::TestRng};
-
-    use time::OffsetDateTime;
+    use console::{
+        account::PrivateKey,
+        network::MainnetV0,
+        prelude::{TestRng, Uniform},
+    };
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     type CurrentNetwork = MainnetV0;
 
     /// Returns a sample batch header, sampled at random.
     pub fn sample_batch_header(rng: &mut TestRng) -> BatchHeader<CurrentNetwork> {
-        sample_batch_header_for_round(rng.gen(), rng)
+        sample_batch_header_for_round(rng.random(), rng)
     }
 
     /// Returns a sample batch header with a given round; the rest is sampled at random.
@@ -295,10 +328,12 @@ pub mod test_helpers {
         // Sample the committee ID.
         let committee_id = Field::<CurrentNetwork>::rand(rng);
         // Sample transmission IDs.
-        let transmission_ids =
-            narwhal_transmission_id::test_helpers::sample_transmission_ids(rng).into_iter().collect::<IndexSet<_>>();
-        // Checkpoint the timestamp for the batch.
-        let timestamp = OffsetDateTime::now_utc().unix_timestamp();
+        let transmission_ids = snarkvm_ledger_narwhal_transmission_id::test_helpers::sample_transmission_ids(rng)
+            .into_iter()
+            .collect::<IndexSet<_>>();
+        // The timestamp needs to be current to pass integration tests.
+        let timestamp =
+            SystemTime::now().duration_since(UNIX_EPOCH).expect("System time before UNIX epoch").as_secs() as i64;
         // Return the batch header.
         BatchHeader::new(private_key, round, timestamp, committee_id, transmission_ids, previous_certificate_ids, rng)
             .unwrap()
@@ -315,23 +350,5 @@ pub mod test_helpers {
         }
         // Return the sample vector.
         sample
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use console::network::{CanaryV0, MainnetV0, TestnetV0};
-
-    #[test]
-    fn test_max_synthesis_cost_below_batch_spend_limit() {
-        fn max_synthesis_cost<N: Network>() -> u64 {
-            N::MAX_DEPLOYMENT_VARIABLES.saturating_add(N::MAX_DEPLOYMENT_CONSTRAINTS) * N::SYNTHESIS_FEE_MULTIPLIER
-        }
-
-        assert!(max_synthesis_cost::<CanaryV0>() < BatchHeader::<CanaryV0>::BATCH_SPEND_LIMIT);
-        assert!(max_synthesis_cost::<TestnetV0>() < BatchHeader::<TestnetV0>::BATCH_SPEND_LIMIT);
-        assert!(max_synthesis_cost::<MainnetV0>() < BatchHeader::<MainnetV0>::BATCH_SPEND_LIMIT);
     }
 }

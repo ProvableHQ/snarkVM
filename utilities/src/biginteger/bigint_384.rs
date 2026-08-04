@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,6 +13,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::{
+    cmp,
+    fmt::{Debug, Display},
+    io::{Read, Result as IoResult, Write},
+};
+
 use crate::{
     FromBits,
     FromBytes,
@@ -20,15 +26,14 @@ use crate::{
     ToBytes,
     biginteger::BigInteger,
     bititerator::{BitIteratorBE, BitIteratorLE},
-    io::{Read, Result as IoResult, Write},
 };
 
 use anyhow::Result;
-use core::fmt::{Debug, Display};
 use num_bigint::BigUint;
 use rand::{
     Rng,
-    distributions::{Distribution, Standard},
+    RngExt,
+    distr::{Distribution, StandardUniform},
 };
 use zeroize::Zeroize;
 
@@ -213,7 +218,7 @@ impl BigInteger for BigInteger384 {
 
     #[inline]
     fn find_wnaf(&self) -> Vec<i64> {
-        let mut res = crate::vec::Vec::new();
+        let mut res = Vec::new();
         let mut e = *self;
         while !e.is_zero() {
             let z: i64;
@@ -306,16 +311,15 @@ impl Display for BigInteger384 {
 }
 impl Ord for BigInteger384 {
     #[inline]
-    #[allow(clippy::comparison_chain)]
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
         for (a, b) in self.0.iter().rev().zip(other.0.iter().rev()) {
-            if a < b {
-                return std::cmp::Ordering::Less;
-            } else if a > b {
-                return std::cmp::Ordering::Greater;
+            match a.cmp(b) {
+                cmp::Ordering::Less => return cmp::Ordering::Less,
+                cmp::Ordering::Greater => return cmp::Ordering::Greater,
+                _ => continue,
             }
         }
-        std::cmp::Ordering::Equal
+        cmp::Ordering::Equal
     }
 }
 impl PartialOrd for BigInteger384 {
@@ -324,9 +328,9 @@ impl PartialOrd for BigInteger384 {
         Some(self.cmp(other))
     }
 }
-impl Distribution<BigInteger384> for Standard {
+impl Distribution<BigInteger384> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> BigInteger384 {
-        BigInteger384(rng.gen())
+        BigInteger384(rng.random())
     }
 }
 impl AsMut<[u64]> for BigInteger384 {

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,7 +23,6 @@ mod run;
 pub use deploy::{DeployRequest, DeployResponse};
 
 use crate::{
-    algorithms::snark::varuna::VarunaVersion,
     console::{
         account::PrivateKey,
         network::{ConsensusVersion, Network},
@@ -37,18 +36,16 @@ use crate::{
     },
     prelude::{Deserialize, Deserializer, Serialize, SerializeStruct, Serializer},
     synthesizer::{
-        process::{Assignments, CallMetrics, CallStack, Process, StackExecute},
-        program::{CallOperator, Instruction, Program, StackProgram},
+        process::{Assignments, CallMetrics, CallStack, Process},
+        program::{CallOperator, Instruction, Program, StackTrait},
     },
+    utilities::dev_println,
 };
 
-use anyhow::{Error, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 use core::str::FromStr;
 use rand::{CryptoRng, Rng};
 use std::path::{Path, PathBuf};
-
-#[cfg(feature = "aleo-cli")]
-use colored::Colorize;
 
 pub struct Package<N: Network> {
     /// The program ID.
@@ -153,29 +150,50 @@ impl<N: Network> Package<N> {
 
     /// Returns a new process for the package.
     pub fn get_process(&self) -> Result<Process<N>> {
-        // Create the process.
-        let mut process = Process::load()?;
-
-        // Prepare the imports directory.
+        // Load the default process.
+        let process = Process::load()?;
+        // Get the imported programs.
         let imports_directory = self.imports_directory();
-
-        // Initialize the 'credits.aleo' program ID.
-        let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
-
-        // Add all import programs (in order) to the process.
-        self.program().imports().keys().try_for_each(|program_id| {
-            // Don't add `credits.aleo` as the process is already loaded with it.
-            if program_id != &credits_program_id {
+        let mut programs = self
+            .program()
+            .imports()
+            .keys()
+            .map(|program_id| {
+                // TODO (howardwu): Add the following checks:
+                //  1) the imported program ID exists *on-chain* (for the given network)
+                //  2) the AVM bytecode of the imported program matches the AVM bytecode of the program *on-chain*
+                //  3) consensus performs the exact same checks (in `verify_deployment`)
                 // Open the Aleo program file.
-                let import_program_file = AleoFile::open(&imports_directory, program_id, false)?;
-                // Add the import program.
-                process.add_program(import_program_file.program())?;
-            }
-            Ok::<_, Error>(())
-        })?;
+                let is_main = false;
+                let import_program_file = AleoFile::open(&imports_directory, program_id, is_main)?;
+                // Get the program.
+                Ok(import_program_file.program().clone())
+            })
+            .collect::<Result<Vec<_>>>()?;
+        // Add the main program.
+        programs.push(self.program().clone());
 
-        // Add the program to the process.
-        process.add_program(self.program())?;
+        // Get the editions for the programs, if specified in the manifest.
+        let programs_and_editions = programs
+            .into_iter()
+            .map(|program| {
+                // Get the program ID.
+                let program_id = program.id();
+                // Get the edition, if specified.
+                if let Some(edition) = self.manifest_file.editions().get(program_id) {
+                    (program, *edition)
+                } else {
+                    dev_println!(
+                        " Could not find an edition for '{}' in the manifest, using edition 0...",
+                        program_id.to_string()
+                    );
+                    (program, 0)
+                }
+            })
+            .collect::<Vec<_>>();
+
+        // Load the programs.
+        process.lock().add_programs_with_editions(&programs_and_editions)?;
 
         Ok(process)
     }
@@ -188,10 +206,48 @@ pub(crate) mod test_helpers {
 
     use std::{fs::File, io::Write};
 
+    use anyhow::anyhow;
+
     type CurrentNetwork = MainnetV0;
 
     fn temp_dir() -> PathBuf {
         tempfile::tempdir().expect("Failed to open temporary directory").keep()
+    }
+
+    fn env_template() -> String {
+        r#"
+    NETWORK=mainnet
+    PRIVATE_KEY={{PASTE_YOUR_PRIVATE_KEY_HERE}}
+    "#
+        .to_string()
+    }
+
+    /// Loads the environment variables from the .env file.
+    fn dotenv_load() -> Result<()> {
+        // Load environment variables from .env file.
+        // Fails if .env file not found, not readable or invalid.
+        dotenvy::dotenv().map_err(|_| {
+            anyhow!(
+                "Missing a '.env' file. Create the '.env' file in your package's root directory with the following:\n\n{}\n",
+                env_template()
+            )
+        })?;
+        Ok(())
+    }
+
+    /// Returns the private key from the environment.
+    fn dotenv_private_key() -> Result<PrivateKey<CurrentNetwork>> {
+        if cfg!(test) {
+            let rng = &mut crate::utilities::TestRng::fixed(123456789);
+            PrivateKey::<CurrentNetwork>::new(rng)
+        } else {
+            use std::str::FromStr;
+            dotenv_load()?;
+            // Load the private key from the environment.
+            let private_key = dotenvy::var("PRIVATE_KEY").map_err(|e| anyhow!("Missing PRIVATE_KEY - {e}"))?;
+            // Parse the private key.
+            PrivateKey::<CurrentNetwork>::from_str(&private_key)
+        }
     }
 
     /// Samples a (temporary) package containing a `token.aleo` program.
@@ -410,7 +466,7 @@ function main:
         match program_id.to_string().as_str() {
             "token.aleo" => {
                 // Sample a random private key.
-                let private_key = crate::cli::helpers::dotenv_private_key().unwrap();
+                let private_key = dotenv_private_key().unwrap();
                 let caller = Address::try_from(&private_key).unwrap();
 
                 // Initialize the function name.
@@ -424,7 +480,7 @@ function main:
             }
             "wallet.aleo" => {
                 // Initialize caller 0.
-                let caller0_private_key = crate::cli::helpers::dotenv_private_key().unwrap();
+                let caller0_private_key = dotenv_private_key().unwrap();
                 let caller0 = Address::try_from(&caller0_private_key).unwrap();
 
                 // Initialize caller 1.
@@ -446,7 +502,7 @@ function main:
             }
             "grandparent.aleo" => {
                 // Initialize caller 0.
-                let caller0_private_key = crate::cli::helpers::dotenv_private_key().unwrap();
+                let caller0_private_key = dotenv_private_key().unwrap();
 
                 // Initialize caller 1.
                 let caller1_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();

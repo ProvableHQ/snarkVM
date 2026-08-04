@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> FromBytes for PrivateKey<N> {
     /// Reads an account private key from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        Self::try_from(Field::new(FromBytes::read_le(&mut reader)?)).map_err(|e| error(format!("{e}")))
+        Self::try_from(Field::new(FromBytes::read_le(&mut reader)?)).map_err(into_io_error)
     }
 }
 

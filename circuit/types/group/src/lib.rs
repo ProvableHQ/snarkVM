@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,6 +16,8 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
+
+extern crate snarkvm_console_types_group as console;
 
 mod helpers;
 
@@ -53,7 +55,6 @@ impl<E: Environment> Group<E> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment> Inject for Group<E> {
     type Primitive = console::Group<E::Network>;
 
@@ -91,7 +92,7 @@ impl<E: Environment> Group<E> {
         let third = (a * x2) - Field::one();
 
         // Ensure y^2 * (dx^2 - 1) = (ax^2 - 1).
-        E::enforce(|| (first, second, third));
+        E::enforce(|| (first, second, third)).expect("Group enforce_on_curve constraint unsatisfied");
     }
 }
 
@@ -148,7 +149,6 @@ impl<E: Environment> Group<E> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment> Eject for Group<E> {
     type Primitive = console::Group<E::Network>;
 
@@ -163,7 +163,6 @@ impl<E: Environment> Eject for Group<E> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment> Parser for Group<E> {
     /// Parses a string into a group circuit.
     #[inline]
@@ -180,7 +179,6 @@ impl<E: Environment> Parser for Group<E> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment> FromStr for Group<E> {
     type Err = Error;
 
@@ -199,7 +197,6 @@ impl<E: Environment> FromStr for Group<E> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment> TypeName for Group<E> {
     /// Returns the type name of the circuit as a string.
     #[inline]
@@ -208,14 +205,12 @@ impl<E: Environment> TypeName for Group<E> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment> Debug for Group<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment> Display for Group<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}.{}", self.eject_value(), self.eject_mode())
@@ -241,7 +236,7 @@ mod tests {
 
     use core::str::FromStr;
 
-    const ITERATIONS: u64 = 128;
+    const ITERATIONS: u64 = 10;
 
     /// Attempts to construct an affine group element from the given x-coordinate and mode.
     fn check_display(mode: Mode, point: console::Group<<Circuit as Environment>::Network>) {

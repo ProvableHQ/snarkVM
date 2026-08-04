@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,4 +31,10 @@ pub trait ToFields {
 
     /// Returns the object as a list of base field elements.
     fn to_fields(&self) -> Result<Vec<Self::Field>>;
+}
+
+/// Unary operator for converting to a list of base fields.
+pub trait ToFieldsRaw: ToFields {
+    /// Returns the object as a list of base field elements using the raw bits.
+    fn to_fields_raw(&self) -> Result<Vec<Self::Field>>;
 }

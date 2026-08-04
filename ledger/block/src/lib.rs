@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +17,8 @@
 #![allow(clippy::too_many_arguments)]
 // #![warn(clippy::cast_possible_truncation)]
 #![cfg_attr(test, allow(clippy::single_element_loop))]
+
+extern crate snarkvm_console as console;
 
 pub mod header;
 pub use header::*;
@@ -54,12 +56,12 @@ use console::{
     program::{Ciphertext, Record},
     types::{Field, Group, U64},
 };
-use ledger_authority::Authority;
-use ledger_committee::Committee;
-use ledger_narwhal_data::Data;
-use ledger_narwhal_subdag::Subdag;
-use ledger_narwhal_transmission_id::TransmissionID;
-use ledger_puzzle::{PuzzleSolutions, Solution, SolutionID};
+use snarkvm_ledger_authority::Authority;
+use snarkvm_ledger_committee::Committee;
+use snarkvm_ledger_narwhal_data::Data;
+use snarkvm_ledger_narwhal_subdag::Subdag;
+use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
+use snarkvm_ledger_puzzle::{PuzzleSolutions, Solution, SolutionID};
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Block<N: Network> {
@@ -143,7 +145,7 @@ impl<N: Network> Block<N> {
 
     /// Initializes a new block from the given previous block hash, block header, authority,
     /// ratifications, solutions, aborted solution IDs, transactions, and aborted transaction IDs.
-    pub fn from(
+    fn from(
         previous_hash: N::BlockHash,
         header: Header<N>,
         authority: Authority<N>,
@@ -154,11 +156,11 @@ impl<N: Network> Block<N> {
         aborted_transaction_ids: Vec<N::TransactionID>,
     ) -> Result<Self> {
         // Ensure the number of aborted solutions IDs is within the allowed range.
-        if aborted_solution_ids.len() > Solutions::<N>::max_aborted_solutions()? {
+        if aborted_solution_ids.len() > Solutions::<N>::max_aborted_solutions() {
             bail!(
                 "Cannot initialize a block with {} aborted solutions IDs which exceed the maximum {}",
                 aborted_solution_ids.len(),
-                Solutions::<N>::max_aborted_solutions()?
+                Solutions::<N>::max_aborted_solutions()
             );
         }
 
@@ -176,11 +178,11 @@ impl<N: Network> Block<N> {
         // specifically in [`PuzzleSolutions::new()`].
 
         // Ensure the number of aborted transaction IDs is within the allowed range.
-        if aborted_transaction_ids.len() > Transactions::<N>::max_aborted_transactions()? {
+        if aborted_transaction_ids.len() > Transactions::<N>::max_aborted_transactions() {
             bail!(
                 "Cannot initialize a block with {} aborted transaction IDs which exceed the maximum {}",
                 aborted_transaction_ids.len(),
-                Transactions::<N>::max_aborted_transactions()?
+                Transactions::<N>::max_aborted_transactions()
             );
         }
 
@@ -196,6 +198,8 @@ impl<N: Network> Block<N> {
                 ensure!(signature.verify(&address, &[block_hash]), "Invalid signature for block {}", header.height());
             }
             Authority::Quorum(subdag) => {
+                // Ensure the certificates follow the canonical order for this consensus version.
+                subdag.check_certificate_order(header.height())?;
                 // Ensure the transmission IDs from the subdag correspond to the block.
                 Self::check_subdag_transmissions(
                     subdag,
@@ -237,8 +241,10 @@ impl<N: Network> Block<N> {
 
     /// Initializes a new block from the given block hash, previous block hash, block header,
     /// authority, ratifications, solutions, transactions, and aborted transaction IDs.
-    /// This is only called by [`Block::from`], which validates the block components.
-    fn from_unchecked(
+    ///
+    /// This function does *not* perform any checks on the given data, and should only be called
+    /// if the inputs are trusted.
+    pub fn from_unchecked(
         block_hash: N::BlockHash,
         previous_hash: N::BlockHash,
         header: Header<N>,
@@ -611,17 +617,19 @@ impl<N: Network> Block<N> {
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;
-    use algorithms::snark::varuna::VarunaVersion;
-    use console::account::{Address, PrivateKey};
-    use ledger_query::Query;
-    use ledger_store::{BlockStore, helpers::memory::BlockMemory};
-    use synthesizer_process::Process;
+
+    use snarkvm_algorithms::snark::varuna::VarunaVersion;
+    use snarkvm_console::account::{Address, PrivateKey};
+    use snarkvm_ledger_query::Query;
+    use snarkvm_ledger_store::{BlockStore, helpers::memory::BlockMemory};
+    use snarkvm_synthesizer_process::Process;
+    use snarkvm_utilities::PrettyUnwrap;
 
     use aleo_std::StorageMode;
-    use once_cell::sync::OnceCell;
+    use std::sync::OnceLock;
 
     type CurrentNetwork = console::network::MainnetV0;
-    type CurrentAleo = circuit::network::AleoV0;
+    type CurrentAleo = snarkvm_circuit::network::AleoV0;
 
     /// Samples a random genesis block.
     pub(crate) fn sample_genesis_block(rng: &mut TestRng) -> Block<CurrentNetwork> {
@@ -645,8 +653,8 @@ pub mod test_helpers {
     pub(crate) fn sample_genesis_block_and_components(
         rng: &mut TestRng,
     ) -> (Block<CurrentNetwork>, Transaction<CurrentNetwork>, PrivateKey<CurrentNetwork>) {
-        static INSTANCE: OnceCell<(Block<CurrentNetwork>, Transaction<CurrentNetwork>, PrivateKey<CurrentNetwork>)> =
-            OnceCell::new();
+        static INSTANCE: OnceLock<(Block<CurrentNetwork>, Transaction<CurrentNetwork>, PrivateKey<CurrentNetwork>)> =
+            OnceLock::new();
         INSTANCE.get_or_init(|| sample_genesis_block_and_components_raw(rng)).clone()
     }
 
@@ -712,7 +720,7 @@ pub mod test_helpers {
             rng,
         )
         .unwrap();
-        assert!(block.header().is_genesis(), "Failed to initialize a genesis block");
+        assert!(block.header().is_genesis().pretty_unwrap(), "Failed to initialize a genesis block");
         // Return the block, transaction, and private key.
         (block, transaction, private_key)
     }
@@ -728,6 +736,7 @@ pub mod test_helpers {
         let last_coinbase_target = u64::MAX;
         let timestamp = i64::MAX - 1;
         let last_coinbase_timestamp = timestamp - 1;
+
         Metadata::new(
             network,
             round,
@@ -740,7 +749,7 @@ pub mod test_helpers {
             last_coinbase_timestamp,
             timestamp,
         )
-        .unwrap()
+        .pretty_unwrap()
     }
 }
 
@@ -771,7 +780,7 @@ mod tests {
 
         // Ensure the transaction is not found.
         for _ in 0..10 {
-            let transition_id = &rng.gen();
+            let transition_id = &rng.random();
             assert_eq!(block.find_transaction_for_transition_id(transition_id), None);
             assert_eq!(transactions.find_transaction_for_transition_id(transition_id), None);
         }
@@ -796,7 +805,7 @@ mod tests {
 
         // Ensure the commitments are not found.
         for _ in 0..10 {
-            let commitment = &rng.gen();
+            let commitment = &rng.random();
             assert_eq!(block.find_transaction_for_commitment(commitment), None);
             assert_eq!(transactions.find_transaction_for_commitment(commitment), None);
         }
@@ -822,7 +831,7 @@ mod tests {
 
         // Ensure the transitions are not found.
         for _ in 0..10 {
-            let transition_id = &rng.gen();
+            let transition_id = &rng.random();
             assert_eq!(block.find_transition(transition_id), None);
             assert_eq!(transactions.find_transition(transition_id), None);
             assert_eq!(transaction.find_transition(transition_id), None);
@@ -855,7 +864,7 @@ mod tests {
 
         // Ensure the commitments are not found.
         for _ in 0..10 {
-            let commitment = &rng.gen();
+            let commitment = &rng.random();
             assert_eq!(block.find_transition_for_commitment(commitment), None);
             assert_eq!(transactions.find_transition_for_commitment(commitment), None);
             assert_eq!(transaction.find_transition_for_commitment(commitment), None);
@@ -882,7 +891,7 @@ mod tests {
 
         // Ensure the records are not found.
         for _ in 0..10 {
-            let commitment = &rng.gen();
+            let commitment = &rng.random();
             assert_eq!(block.find_record(commitment), None);
             assert_eq!(transactions.find_record(commitment), None);
             assert_eq!(transaction.find_record(commitment), None);

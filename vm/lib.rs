@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,12 +17,6 @@
 #![allow(clippy::module_inception)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 
-#[cfg(feature = "cli")]
-#[macro_use]
-extern crate thiserror;
-
-#[cfg(feature = "cli")]
-pub mod cli;
 #[cfg(feature = "file")]
 pub mod file;
 #[cfg(feature = "package")]
@@ -44,6 +38,10 @@ pub use snarkvm_ledger as ledger;
 pub use snarkvm_metrics as metrics;
 #[cfg(feature = "parameters")]
 pub use snarkvm_parameters as parameters;
+#[cfg(feature = "slipstream-plugins")]
+pub use snarkvm_slipstream_plugin_interface as slipstream_plugin_interface;
+#[cfg(feature = "slipstream-plugins")]
+pub use snarkvm_slipstream_plugin_manager as slipstream_plugin_manager;
 #[cfg(feature = "synthesizer")]
 pub use snarkvm_synthesizer as synthesizer;
 #[cfg(feature = "utilities")]
@@ -53,9 +51,9 @@ pub use snarkvm_wasm as wasm;
 
 pub mod prelude {
     #[cfg(feature = "console")]
-    pub use crate::console::{account::*, network::*, program::*};
+    pub use crate::console::{account::*, network::prelude::*, program::*};
     #[cfg(feature = "ledger")]
-    pub use crate::ledger::*;
+    pub use crate::ledger::prelude::*;
     #[cfg(feature = "synthesizer")]
     pub use crate::synthesizer::prelude::*;
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -56,7 +56,9 @@ mod tests {
             // Check the byte representation.
             let signature_bytes = signature.to_bytes_le()?;
             assert_eq!(signature, Signature::read_le(&signature_bytes[..])?);
+            assert_eq!(signature, Signature::read_le_unchecked(&signature_bytes[..])?);
             assert!(Signature::<CurrentNetwork>::read_le(&signature_bytes[1..]).is_err());
+            assert!(Signature::<CurrentNetwork>::read_le_unchecked(&signature_bytes[1..]).is_err());
         }
         Ok(())
     }

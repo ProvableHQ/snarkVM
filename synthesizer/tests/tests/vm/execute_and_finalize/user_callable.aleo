@@ -1,4 +1,5 @@
 /*
+start_height: 0
 randomness: 45791624
 cases:
   - program: child.aleo

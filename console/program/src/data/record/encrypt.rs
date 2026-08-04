@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,12 +18,22 @@ use super::*;
 impl<N: Network> Record<N, Plaintext<N>> {
     /// Encrypts `self` for the record owner under the given randomizer.
     pub fn encrypt(&self, randomizer: Scalar<N>) -> Result<Record<N, Ciphertext<N>>> {
+        // Output the encrypted record.
+        self.encrypt_symmetric(randomizer).map(|(encrypted_record, _)| encrypted_record)
+    }
+
+    /// Encrypts `self` for the record owner under the given randomizer,
+    /// and returns the encrypted record alongside the record view key.
+    #[allow(clippy::type_complexity)]
+    pub fn encrypt_symmetric(&self, randomizer: Scalar<N>) -> Result<(Record<N, Ciphertext<N>>, Field<N>)> {
         // Ensure the randomizer corresponds to the record nonce.
         if self.nonce == N::g_scalar_multiply(&randomizer) {
             // Compute the record view key.
             let record_view_key = (**self.owner * randomizer).to_x_coordinate();
             // Encrypt the record.
-            self.encrypt_symmetric_unchecked(&record_view_key)
+            let encrypted_record = self.encrypt_symmetric_unchecked(&record_view_key)?;
+            // Return the encrypted record and the record view key.
+            Ok((encrypted_record, record_view_key))
         } else {
             bail!("Illegal operation: Record::encrypt() randomizer does not correspond to the record nonce.")
         }
@@ -82,13 +92,13 @@ impl<N: Network> Record<N, Plaintext<N>> {
             };
             // Insert the encrypted entry.
             if encrypted_data.insert(*id, entry).is_some() {
-                bail!("Duplicate identifier in record: {}", id);
+                bail!("Duplicate identifier in record: {id}");
             }
             // Increment the index.
             index += num_randomizers;
         }
 
         // Return the encrypted record.
-        Self::from_ciphertext(owner, encrypted_data, self.nonce)
+        Self::from_ciphertext(owner, encrypted_data, self.nonce, self.version)
     }
 }

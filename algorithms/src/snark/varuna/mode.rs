@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +14,8 @@
 // limitations under the License.
 
 use core::fmt::Debug;
+use snarkvm_utilities::{FromBytes, ToBytes, io_error};
+use std::io;
 
 /// A trait to specify the SNARK mode.
 pub trait SNARKMode: 'static + Copy + Clone + Debug + PartialEq + Eq + Sync + Send {
@@ -37,8 +39,26 @@ impl SNARKMode for VarunaNonHidingMode {
 }
 
 /// The different Varuna Versions.
+#[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum VarunaVersion {
     V1 = 1,
     V2 = 2,
+}
+
+impl ToBytes for VarunaVersion {
+    fn write_le<W: io::Write>(&self, writer: W) -> io::Result<()> {
+        (*self as u8).write_le(writer)
+    }
+}
+
+impl FromBytes for VarunaVersion {
+    fn read_le<R: io::Read>(reader: R) -> io::Result<Self> {
+        match u8::read_le(reader)? {
+            0 => Err(io_error("Zero is not a valid Varuna version")),
+            1 => Ok(Self::V1),
+            2 => Ok(Self::V2),
+            _ => Err(io_error("Invalid Varuna version")),
+        }
+    }
 }

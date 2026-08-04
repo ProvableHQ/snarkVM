@@ -1,17 +1,5 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    public_wallet.aleo/init:
-      outputs:
-      - '{"type":"future","id":"8260497972742778111367097052162295474031012001184713805972943051311817949697field","value":"{\n  program_id: public_wallet.aleo,\n  function_name: init,\n  arguments: [\n    {\n      program_id: token.aleo,\n      function_name: mint_public,\n      arguments: [\n        aleo1sry3pke49ykrf0aeshf889tr98r4c86p5f4ms766795ssdwfdyqq9jdg0j,\n        10u64\n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
-additional:
-- child_outputs:
-    token.aleo/mint_public:
-      outputs:
-      - '{"type":"future","id":"8286939272855752797035017591517297078431849718370537735860811608893885242485field","value":"{\n  program_id: token.aleo,\n  function_name: mint_public,\n  arguments: [\n    aleo1sry3pke49ykrf0aeshf889tr98r4c86p5f4ms766795ssdwfdyqq9jdg0j,\n    10u64\n  ]\n}"}'
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"7334131816336578548207468749349798727140016102586366303966330861449690845886field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1d3e2je2m2hsxwdsvntvf4jnnlj459ywfry6ch2qwrpy6l6r6yvpq8e88h5,\n    27585u64\n  ]\n}"}'

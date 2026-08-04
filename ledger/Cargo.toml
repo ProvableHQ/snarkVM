@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger"
-version = "3.8.0"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A node ledger for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -14,12 +14,18 @@ keywords = [
 ]
 categories = [ "cryptography", "web-programming" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
+
+[[test]]
+name = "block-cache"
+path = "tests/block_cache.rs"
+required-features = [ "rocks" ]
 
 [[bench]]
 name = "block"
 path = "benches/block.rs"
 harness = false
+required-features = [ "test-helpers", "rocks" ]
 
 [[bench]]
 name = "bonded_mapping"
@@ -27,152 +33,212 @@ path = "benches/bonded_mapping.rs"
 harness = false
 
 [[bench]]
+name = "store"
+path = "benches/store.rs"
+harness = false
+required-features = [ "test-helpers", "rocks" ]
+
+[[bench]]
+name = "advance"
+path = "benches/advance.rs"
+harness = false
+required-features = [ "test-helpers", "rocks" ]
+
+[[bench]]
+name = "prepare_advance_multirecord"
+path = "benches/prepare_advance_multirecord/main.rs"
+harness = false
+required-features = [ "test-helpers", "rocks" ]
+
+[[bench]]
+name = "dag"
+path = "benches/dag.rs"
+harness = false
+required-features = ["test-helpers"]
+
+[[bench]]
 name = "transaction"
 path = "benches/transaction.rs"
 harness = false
 
 [features]
-default = [ "async", "indexmap/rayon", "rayon" ]
+default = [ "async", "indexmap/rayon", ]
 async = [
-  "ledger-narwhal/async",
-  "ledger-query/async",
-  "synthesizer/async"
+  "snarkvm-ledger-narwhal/async",
+  "snarkvm-ledger-query/async",
+  "snarkvm-synthesizer/async"
+]
+history = [
+  "snarkvm-ledger-store/history",
+  "snarkvm-synthesizer/history",
+]
+history-staking-rewards = [
+  "snarkvm-ledger-store/history-staking-rewards",
+  "snarkvm-synthesizer/history-staking-rewards",
+]
+slipstream-plugins = [
+  "snarkvm-ledger-store/slipstream-plugins",
+  "snarkvm-synthesizer/slipstream-plugins",
 ]
 locktick = [
   "dep:locktick",
-  "ledger-puzzle/locktick",
-  "ledger-store/locktick",
-  "synthesizer/locktick"
+  "snarkvm-ledger-puzzle/locktick",
+  "snarkvm-ledger-store/locktick",
+  "snarkvm-synthesizer/locktick"
 ]
-metrics = [ "ledger-committee/metrics" ]
-rocks = [ "ledger-store/rocks" ]
+metrics = [ "snarkvm-ledger-committee/metrics" ]
+prop-tests = [ "snarkvm-ledger-committee/prop-tests" ]
+rocks = [ "snarkvm-ledger-store/rocks" ]
 serial = [
-  "console/serial",
-  "ledger-authority/serial",
-  "ledger-block/serial",
-  "ledger-committee/serial",
-  "ledger-narwhal/serial",
-  "ledger-puzzle/serial",
-  "ledger-query/serial",
-  "ledger-store/serial",
-  "synthesizer/serial"
+  "snarkvm-console/serial",
+  "snarkvm-ledger-authority/serial",
+  "snarkvm-ledger-block/serial",
+  "snarkvm-ledger-committee/serial",
+  "snarkvm-ledger-narwhal/serial",
+  "snarkvm-ledger-puzzle/serial",
+  "snarkvm-ledger-query/serial",
+  "snarkvm-ledger-store/serial",
+  "snarkvm-synthesizer/serial"
 ]
-test = [ "console/test", "ledger-block/test", "ledger-store/test" ]
+test = [
+  "snarkvm-console/test",
+  "snarkvm-ledger-block/test",
+  "snarkvm-ledger-store/test",
+  "snarkvm-synthesizer/test"
+]
 test-helpers = [
-  "ledger-test-helpers",
-  "ledger-committee/test-helpers",
-  "ledger-narwhal/test-helpers"
+  "snarkvm-ledger-test-helpers",
+  "snarkvm-ledger-committee/test-helpers",
+  "snarkvm-ledger-narwhal/test-helpers",
+  "dep:snarkvm-circuit"
 ]
+test_targets = [
+  "snarkvm-console/test_targets",
+]
+dev-committee = []
+dev-print = [ "snarkvm-utilities/dev-print" ]
 timer = [ "aleo-std/timer" ]
 
-[dependencies.console]
-package = "snarkvm-console"
-path = "../console"
-version = "=3.8.0"
+[dependencies.snarkvm-console]
+workspace = true
 
-[dependencies.ledger-authority]
-package = "snarkvm-ledger-authority"
-path = "./authority"
-version = "=3.8.0"
+[dependencies.snarkvm-ledger-authority]
+workspace = true
 
-[dependencies.ledger-block]
-package = "snarkvm-ledger-block"
-path = "./block"
-version = "=3.8.0"
+[dependencies.snarkvm-ledger-block]
+workspace = true
 
-[dependencies.ledger-committee]
-package = "snarkvm-ledger-committee"
-path = "./committee"
-version = "=3.8.0"
+[dependencies.snarkvm-ledger-committee]
+workspace = true
 
-[dependencies.ledger-narwhal]
-package = "snarkvm-ledger-narwhal"
-path = "./narwhal"
-version = "=3.8.0"
-
-[dependencies.ledger-puzzle]
-package = "snarkvm-ledger-puzzle"
-path = "puzzle"
-version = "=3.8.0"
-
-[dependencies.ledger-query]
-package = "snarkvm-ledger-query"
-path = "./query"
-version = "=3.8.0"
-features = [ "query" ]
-
-[dependencies.ledger-store]
-package = "snarkvm-ledger-store"
-path = "./store"
-version = "=3.8.0"
-
-[dependencies.ledger-test-helpers]
-package = "snarkvm-ledger-test-helpers"
-path = "./test-helpers"
-version = "=3.8.0"
+[dependencies.snarkvm-circuit]
+workspace = true
 optional = true
 
-[dependencies.synthesizer]
-package = "snarkvm-synthesizer"
-path = "../synthesizer"
-version = "=3.8.0"
+[dependencies.snarkvm-ledger-narwhal]
+workspace = true
+
+[dependencies.snarkvm-ledger-puzzle]
+workspace = true
+
+[dependencies.snarkvm-ledger-query]
+workspace = true
+features = [ "query" ]
+
+[dependencies.snarkvm-ledger-store]
+workspace = true
+
+[dependencies.snarkvm-ledger-test-helpers]
+workspace = true
+optional = true
+
+[dependencies.snarkvm-synthesizer]
+workspace = true
+
+[dependencies.snarkvm-synthesizer-error]
+workspace = true
+
+[dependencies.snarkvm-utilities]
+workspace = true
 
 [dependencies.aleo-std]
-version = "1.0.1"
-default-features = false
+workspace = true
+features = [ "storage" ]
 
 [dependencies.anyhow]
-version = "1.0.73"
+workspace = true
+
+[dependencies.cfg-if]
+workspace = true
 
 [dependencies.indexmap]
-version = "2.0"
+workspace = true
 features = [ "serde" ]
 
 [dependencies.locktick]
-version = "0.3"
+workspace = true
 features = [ "parking_lot" ]
 optional = true
 
 [dependencies.lru]
-version = "0.12"
+workspace = true
 
 [dependencies.parking_lot]
-version = "0.12"
+workspace = true
 
 [dependencies.rand]
-version = "0.8"
+workspace = true
+
+[dependencies.rand_chacha]
+workspace = true
 
 [dependencies.rayon]
-version = "1"
-optional = true
+workspace = true
+
+[dependencies.thiserror]
+workspace = true
 
 [dependencies.time]
-version = "0.3"
+workspace = true
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.bincode]
-version = "1.3"
+workspace = true
 
 [dev-dependencies.criterion]
-version = "0.5"
+workspace = true
 
-[dev-dependencies.ledger-block]
-package = "snarkvm-ledger-block"
-path = "./block"
+[dev-dependencies.snarkvm-console]
+workspace = true
+features = [ "filesystem" ]
+
+[dev-dependencies.snarkvm-ledger]
+path = "."
+features = [ "test-helpers" ]
+
+[dev-dependencies.snarkvm-ledger-block]
+workspace = true
 features = [ "test" ]
 
-[dev-dependencies.ledger-test-helpers]
-package = "snarkvm-ledger-test-helpers"
-path = "./test-helpers"
+[dev-dependencies.snarkvm-ledger-test-helpers]
+workspace = true
+
+[dev-dependencies.aleo-std-storage]
+workspace = true
 
 [dev-dependencies.serde_json]
-version = "1.0"
+workspace = true
 features = [ "preserve_order" ]
 
 [dev-dependencies.snarkvm-circuit]
-path = "../circuit"
+workspace = true
 
-[dev-dependencies.snarkvm-utilities]
-path = "../utilities"
+[dev-dependencies.snarkvm-synthesizer]
+workspace = true
+features = [ "test" ]
+
+[dev-dependencies.tracing-subscriber]
+version = "0.3"
+features = [ "env-filter", "std" ]

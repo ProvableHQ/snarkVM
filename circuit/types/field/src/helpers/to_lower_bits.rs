@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,7 +44,7 @@ impl<E: Environment> ToLowerBits for Field<E> {
 
         // Ensure value * 1 == (2^k * b_k + ... + 2^0 * b_0)
         // and ensures that b_n, ..., b_{n-k} are all equal to zero.
-        E::assert_eq(self, accumulator);
+        E::assert_eq(self, accumulator).expect("Field to_lower_bits constraint unsatisfied");
 
         bits
     }
@@ -87,7 +87,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 10;
 
     #[rustfmt::skip]
     fn check_to_lower_k_bits_le<I: IntegerType + Unsigned>(

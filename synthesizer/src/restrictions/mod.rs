@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,7 +24,7 @@ use console::{
     program::{Identifier, Literal, Locator, Plaintext, ProgramID},
     types::Field,
 };
-use ledger_block::{Execution, Input, Output, Transition};
+use snarkvm_ledger_block::{Execution, Input, Output, Transition};
 
 use indexmap::IndexMap;
 
@@ -220,7 +220,7 @@ impl<N: Network> Restrictions<N> {
 impl<N: Network> Restrictions<N> {
     /// Returns `true` if the given program ID is restricted from being executed.
     pub fn is_program_restricted(&self, program_id: &ProgramID<N>, block_height: u32) -> bool {
-        self.programs.get(program_id).map_or(false, |range| range.contains(block_height))
+        self.programs.get(program_id).is_some_and(|range| range.contains(block_height))
     }
 
     /// Returns `true` if the given `(program ID, function name)` pair is restricted from being executed.
@@ -230,15 +230,12 @@ impl<N: Network> Restrictions<N> {
         function_name: &Identifier<N>,
         block_height: u32,
     ) -> bool {
-        self.functions
-            .get(&Locator::new(*program_id, *function_name))
-            .map_or(false, |range| range.contains(block_height))
+        self.functions.get(&Locator::new(*program_id, *function_name)).is_some_and(|range| range.contains(block_height))
     }
 
     /// Returns `true` if the given `(program ID, function ID, argument)` triple is restricted from being executed.
     pub fn is_argument_restricted(&self, transition: &Transition<N>, block_height: u32) -> bool {
-        self.arguments.get(&Locator::new(*transition.program_id(), *transition.function_name())).map_or(
-            false,
+        self.arguments.get(&Locator::new(*transition.program_id(), *transition.function_name())).is_some_and(
             |entries| {
                 // Check if any argument is restricted and return `true` if one is found.
                 for (argument_locator, arguments) in entries {
@@ -381,7 +378,7 @@ mod tests {
     use console::types::I8;
 
     use indexmap::indexmap;
-    use ledger_block::Input;
+    use snarkvm_ledger_block::Input;
 
     type CurrentNetwork = console::network::MainnetV0;
 
@@ -428,9 +425,10 @@ mod tests {
             indexmap!( ArgumentLocator::new(true, index) => indexmap!( literal.clone() => range )),
         );
 
-        let input = Input::Public(rng.gen(), Some(literal.into()));
+        let input = Input::Public(rng.random(), Some(literal.into()));
         let transition =
-            Transition::new(program_id, function_id, vec![input], vec![], rng.gen(), rng.gen(), rng.gen()).unwrap();
+            Transition::new(program_id, function_id, vec![input], vec![], rng.random(), rng.random(), rng.random())
+                .unwrap();
         assert!(!restrictions.is_argument_restricted(&transition, 5));
         assert!(restrictions.is_argument_restricted(&transition, 10));
         assert!(restrictions.is_argument_restricted(&transition, 15));

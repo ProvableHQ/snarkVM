@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,8 +17,9 @@
 
 use crate::helpers::{NestedMap, NestedMapRead};
 use console::network::prelude::*;
+use snarkvm_utilities::bytes::unchecked_deserialize;
 
-use core::hash::Hash;
+use anyhow::Context;
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::{Mutex, RwLock};
 #[cfg(not(feature = "locktick"))]
@@ -26,6 +27,7 @@ use parking_lot::{Mutex, RwLock};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, btree_map},
+    hash::Hash,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -36,7 +38,7 @@ use std::{
 pub struct NestedMemoryMap<
     M: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
     K: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > {
     // The reason for using BTreeMap with binary keys is for the order of items to be the same as
     // the one in the RocksDB-backed DataMap; if not for that, it could be any map
@@ -51,7 +53,7 @@ pub struct NestedMemoryMap<
 impl<
     M: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
     K: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > Default for NestedMemoryMap<M, K, V>
 {
     fn default() -> Self {
@@ -68,7 +70,7 @@ impl<
 impl<
     M: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
     K: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > FromIterator<(M, K, V)> for NestedMemoryMap<M, K, V>
 {
     /// Initializes a new `NestedMemoryMap` from the given iterator.
@@ -97,7 +99,7 @@ impl<
     'a,
     M: 'a + Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
     K: 'a + Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: 'a + Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: 'a + Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > NestedMap<'a, M, K, V> for NestedMemoryMap<M, K, V>
 {
     ///
@@ -150,7 +152,10 @@ impl<
         // Set the atomic batch flag to `true`.
         self.batch_in_progress.store(true, Ordering::SeqCst);
         // Ensure that the atomic batch is empty.
-        assert!(self.atomic_batch.lock().is_empty());
+        assert!(
+            self.atomic_batch.lock().is_empty(),
+            "Cannot start an atomic operation while another one is already in progress"
+        );
     }
 
     ///
@@ -242,7 +247,7 @@ impl<
     'a,
     M: 'a + Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
     K: 'a + Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: 'a + Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: 'a + Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > NestedMapRead<'a, M, K, V> for NestedMemoryMap<M, K, V>
 {
     // type Iterator = core::iter::FlatMap<
@@ -282,9 +287,9 @@ impl<
     ///
     fn contains_key_confirmed(&self, map: &M, key: &K) -> Result<bool> {
         // Serialize 'm'.
-        let m = bincode::serialize(map)?;
+        let m = bincode::serialize(map).with_context(|| "Failed to serialize map")?;
         // Concatenate 'm' and 'k' with a 0-byte separator.
-        let mk = to_map_key(&m, &bincode::serialize(key)?);
+        let mk = to_map_key(&m, &bincode::serialize(key).with_context(|| "Failed to serialize map key")?);
         // Return whether the concatenated key exists in the map.
         Ok(self.map_inner.read().contains_key(&mk))
     }
@@ -336,7 +341,7 @@ impl<
             .into_iter()
             .map(|k| {
                 // Deserialize 'k'.
-                let key: K = bincode::deserialize(&k).unwrap();
+                let key: K = unchecked_deserialize(&k).unwrap();
                 // Concatenate 'm' and 'k' with a 0-byte separator.
                 let mk = to_map_key(&m, &k);
                 // Return the key-value pair.
@@ -464,11 +469,11 @@ impl<
                 // Acquire the read lock on 'map_inner'.
                 let map_inner = self.map_inner.read();
                 // Deserialize 'map'.
-                let m = bincode::deserialize(&map).unwrap();
+                let m = unchecked_deserialize(&map).unwrap();
                 // Return an iterator over each key.
                 keys.into_iter().map(move |k| {
                     // Deserialize 'k'.
-                    let key = bincode::deserialize(&k).unwrap();
+                    let key = unchecked_deserialize(&k).unwrap();
                     // Concatenate 'm' and 'k' with a 0-byte separator.
                     let mk = to_map_key(&map, &k);
                     // Return the map-key-value triple.
@@ -490,9 +495,9 @@ impl<
             .into_iter()
             .flat_map(|(map, keys)| {
                 // Deserialize 'map'.
-                let m: M = bincode::deserialize(&map).unwrap();
+                let m: M = unchecked_deserialize(&map).unwrap();
                 // Return an iterator over each key.
-                keys.into_iter().map(move |k| (Cow::Owned(m), Cow::Owned(bincode::deserialize(&k).unwrap())))
+                keys.into_iter().map(move |k| (Cow::Owned(m), Cow::Owned(unchecked_deserialize(&k).unwrap())))
             })
             .collect_vec()
             .into_iter()
@@ -510,7 +515,7 @@ impl<
 fn insert<
     M: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
     K: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 >(
     map: &mut BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>>,
     map_inner: &mut BTreeMap<Vec<u8>, V>,
@@ -534,7 +539,7 @@ fn insert<
 /// Removes the given map-key pair.
 fn remove_map<
     M: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 >(
     map: &mut BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>>,
     map_inner: &mut BTreeMap<Vec<u8>, V>,
@@ -560,7 +565,7 @@ fn remove_map<
 fn remove_key<
     M: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
     K: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 >(
     map: &mut BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>>,
     map_inner: &mut BTreeMap<Vec<u8>, V>,

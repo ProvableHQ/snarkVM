@@ -1,39 +1,27 @@
 [package]
 name = "snarkvm-circuit-types-address"
-version = "3.8.0"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Address circuit for a decentralized virtual machine"
 homepage = "https://aleo.org"
 repository = "https://github.com/ProvableHQ/snarkVM"
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
-[dependencies.console]
-package = "snarkvm-console-types-address"
-path = "../../../console/types/address"
-version = "=3.8.0"
-optional = true
+[dependencies.snarkvm-console-types-address]
+workspace = true
 
 [dependencies.snarkvm-circuit-environment]
-path = "../../environment"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm-circuit-types-boolean]
-path = "../boolean"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm-circuit-types-field]
-path = "../field"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm-circuit-types-group]
-path = "../group"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm-circuit-types-scalar]
-path = "../scalar"
-version = "=3.8.0"
-
-[features]
-default = [ "enable_console" ]
-enable_console = [ "console" ]
+workspace = true

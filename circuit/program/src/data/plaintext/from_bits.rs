@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -66,16 +66,18 @@ impl<A: Aleo> Plaintext<A> {
         let variant = [variant1, variant2];
 
         // Literal
-        if variant == [false, false] {
+        if variant == PlaintextType::<A::Network>::LITERAL_PREFIX_BITS {
             let literal_variant = U8::from_bits_le(next_bits(8));
             let literal_size = U16::from_bits_le(next_bits(16)).eject_value();
             let literal = Literal::from_bits_le(&literal_variant, next_bits(*literal_size as usize));
 
             // Cache the plaintext bits, and return the literal.
-            Self::Literal(literal, OnceCell::with_value(bits_le.to_vec()))
+            let cell = OnceCell::new();
+            cell.set(bits_le.to_vec()).unwrap();
+            Self::Literal(literal, cell)
         }
         // Struct
-        else if variant == [false, true] {
+        else if variant == PlaintextType::<A::Network>::STRUCT_PREFIX_BITS {
             let num_members = U8::from_bits_le(next_bits(8)).eject_value();
 
             let mut members = IndexMap::with_capacity(*num_members as usize);
@@ -90,10 +92,12 @@ impl<A: Aleo> Plaintext<A> {
             }
 
             // Cache the plaintext bits, and return the struct.
-            Self::Struct(members, OnceCell::with_value(bits_le.to_vec()))
+            let cell = OnceCell::new();
+            cell.set(bits_le.to_vec()).unwrap();
+            Self::Struct(members, cell)
         }
         // Array
-        else if variant == [true, false] {
+        else if variant == PlaintextType::<A::Network>::ARRAY_PREFIX_BITS {
             let num_elements = U32::from_bits_le(next_bits(32)).eject_value();
 
             let mut elements = Vec::with_capacity(*num_elements as usize);
@@ -105,7 +109,9 @@ impl<A: Aleo> Plaintext<A> {
             }
 
             // Cache the plaintext bits, and return the array.
-            Self::Array(elements, OnceCell::with_value(bits_le.to_vec()))
+            let cell = OnceCell::new();
+            cell.set(bits_le.to_vec()).unwrap();
+            Self::Array(elements, cell)
         }
         // Unknown variant.
         else {
@@ -149,16 +155,18 @@ impl<A: Aleo> Plaintext<A> {
         let variant = [variant1, variant2];
 
         // Literal
-        if variant == [false, false] {
+        if variant == PlaintextType::<A::Network>::LITERAL_PREFIX_BITS {
             let literal_variant = U8::from_bits_be(next_bits(8));
             let literal_size = U16::from_bits_be(next_bits(16)).eject_value();
             let literal = Literal::from_bits_be(&literal_variant, next_bits(*literal_size as usize));
 
             // Cache the plaintext bits, and return the literal.
-            Self::Literal(literal, OnceCell::with_value(bits_be.to_vec()))
+            let cell = OnceCell::new();
+            cell.set(bits_be.to_vec()).unwrap();
+            Self::Literal(literal, cell)
         }
         // Struct
-        else if variant == [false, true] {
+        else if variant == PlaintextType::<A::Network>::STRUCT_PREFIX_BITS {
             let num_members = U8::from_bits_be(next_bits(8)).eject_value();
 
             let mut members = IndexMap::with_capacity(*num_members as usize);
@@ -173,10 +181,12 @@ impl<A: Aleo> Plaintext<A> {
             }
 
             // Cache the plaintext bits, and return the struct.
-            Self::Struct(members, OnceCell::with_value(bits_be.to_vec()))
+            let cell = OnceCell::new();
+            cell.set(bits_be.to_vec()).unwrap();
+            Self::Struct(members, cell)
         }
         // Array
-        else if variant == [true, false] {
+        else if variant == PlaintextType::<A::Network>::ARRAY_PREFIX_BITS {
             let num_elements = U32::from_bits_be(next_bits(32)).eject_value();
 
             let mut elements = Vec::with_capacity(*num_elements as usize);
@@ -188,7 +198,9 @@ impl<A: Aleo> Plaintext<A> {
             }
 
             // Cache the plaintext bits, and return the array.
-            Self::Array(elements, OnceCell::with_value(bits_be.to_vec()))
+            let cell = OnceCell::new();
+            cell.set(bits_be.to_vec()).unwrap();
+            Self::Array(elements, cell)
         }
         // Unknown variant.
         else {

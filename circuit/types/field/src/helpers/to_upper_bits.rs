@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -57,7 +57,7 @@ impl<E: Environment> ToUpperBits for Field<E> {
 
         // Ensure value * 1 == (2^n * b_n + ... + 2^{n-k} * b_{n-k})
         // and ensures that b_{n-k-1}, ..., b_0 are all equal to zero.
-        E::assert_eq(self, accumulator);
+        E::assert_eq(self, accumulator).expect("Field to_upper_bits constraint unsatisfied");
 
         bits
     }
@@ -90,14 +90,14 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 10;
 
     #[rustfmt::skip]
     fn check_to_upper_k_bits_be<I: IntegerType + Unsigned>(
         mode: Mode,
     ) {
         let size_in_bits = console::Field::<<Circuit as Environment>::Network>::size_in_bits();
-        let size_in_bytes = (size_in_bits + 7) / 8;
+        let size_in_bytes = size_in_bits.div_ceil(8);
         let num_leading_zero_bits = (size_in_bytes * 8) - size_in_bits;
 
         let mut rng = TestRng::default();

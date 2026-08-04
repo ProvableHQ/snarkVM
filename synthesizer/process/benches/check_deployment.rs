@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,23 +16,23 @@
 #[macro_use]
 extern crate criterion;
 
-use snarkvm_synthesizer_process::{Assignments, CallStack, Process, Stack, StackExecute};
-use synthesizer_program::{Program, StackProgram};
+use snarkvm_synthesizer_process::{Assignments, CallStack, Process, Stack};
+use snarkvm_synthesizer_program::{Program, StackTrait};
 
-use circuit::AleoV0;
-use console::{
+use criterion::Criterion;
+use snarkvm_circuit::AleoV0;
+use snarkvm_console::{
     account::{Address, PrivateKey},
     network::{MainnetV0, prelude::*},
     program::{Identifier, ProgramID, Request, Value},
 };
-use criterion::Criterion;
+use snarkvm_utilities::TestRng;
 use std::{str::FromStr, time::Duration};
-use utilities::TestRng;
 
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
 
-fn prepare_check_deployment<N: Network, A: circuit::Aleo<Network = N>>(
+fn prepare_check_deployment<N: Network, A: snarkvm_circuit::Aleo<Network = N>>(
     c: &mut Criterion,
     stack: &Stack<N>,
     private_key: &PrivateKey<N>,
@@ -46,18 +46,33 @@ fn prepare_check_deployment<N: Network, A: circuit::Aleo<Network = N>>(
     let program_id = *program.id();
     // Retrieve the input types.
     let input_types = program.get_function(&function_name).unwrap().input_types();
+    // Retrieve the 'program_checksum', if the program has a constructor.
+    let program_checksum = match program.contains_constructor() {
+        true => Some(stack.program_checksum_as_field().unwrap()),
+        false => None,
+    };
     // Sample 'root_tvk'.
     let root_tvk = None;
     // Sample 'is_root'.
     let is_root = true;
     // Compute the request.
-    let request =
-        Request::sign(private_key, program_id, function_name, inputs.iter(), &input_types, root_tvk, is_root, rng)
-            .unwrap();
+    let request = Request::sign(
+        private_key,
+        program_id,
+        function_name,
+        inputs.iter(),
+        &input_types,
+        root_tvk,
+        is_root,
+        program_checksum,
+        false,
+        rng,
+    )
+    .unwrap();
     // Initialize the assignments.
     let assignments = Assignments::<N>::default();
     // Initialize the call stack.
-    let call_stack = CallStack::CheckDeployment(vec![request], *private_key, assignments.clone(), None, None);
+    let call_stack = CallStack::CheckDeployment(vec![request], *private_key, assignments.clone(), None, None, None);
 
     // Benchmark synthesis of the circuit.
     c.bench_function(&format!("CheckDeployment for {function_name}"), |b| {
@@ -85,7 +100,7 @@ fn transfer_private(c: &mut Criterion) {
     // Declare the inputs.
     let r0 = Value::from_str(&format!(
         "{{ owner: {caller}.private, microcredits: 1_500_000_000_000_000_u64.private, _nonce: {}.public }}",
-        console::types::Group::<CurrentNetwork>::zero()
+        snarkvm_console::types::Group::<CurrentNetwork>::zero()
     ))
     .unwrap();
     let r1 = Value::<CurrentNetwork>::from_str(&format!("{caller}")).unwrap();

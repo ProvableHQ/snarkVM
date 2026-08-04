@@ -1,12 +1,12 @@
 [package]
 name = "snarkvm-console-types"
-version = "3.8.0"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Console types for a decentralized virtual machine"
 homepage = "https://aleo.org"
 repository = "https://github.com/ProvableHQ/snarkVM"
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [[bench]]
 name = "group"
@@ -14,46 +14,38 @@ path = "benches/group.rs"
 harness = false
 
 [dependencies.snarkvm-console-network-environment]
-path = "../network/environment"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm-console-types-address]
-path = "./address"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [dependencies.snarkvm-console-types-boolean]
-path = "./boolean"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [dependencies.snarkvm-console-types-field]
-path = "./field"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [dependencies.snarkvm-console-types-group]
-path = "./group"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [dependencies.snarkvm-console-types-integers]
-path = "./integers"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [dependencies.snarkvm-console-types-scalar]
-path = "./scalar"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [dependencies.snarkvm-console-types-string]
-path = "./string"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [dev-dependencies.criterion]
-version = "0.5.1"
+workspace = true
 
 [dev-dependencies.snarkvm-console-network]
 path = "../network"
@@ -90,3 +82,4 @@ string = [
   "snarkvm-console-types-field",
   "snarkvm-console-types-integers"
 ]
+serial = [ "snarkvm-console-network-environment/serial" ]

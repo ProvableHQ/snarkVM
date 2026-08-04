@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,9 +15,7 @@
 
 use super::*;
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> FromBytes
-    for FunctionCore<N, Instruction, Command>
-{
+impl<N: Network> FromBytes for FunctionCore<N> {
     /// Reads the function from a buffer.
     #[inline]
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
@@ -73,9 +71,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Fro
     }
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ToBytes
-    for FunctionCore<N, Instruction, Command>
-{
+impl<N: Network> ToBytes for FunctionCore<N> {
     /// Writes the function to a buffer.
     #[inline]
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
@@ -160,7 +156,7 @@ function main:
 
         let expected = Function::<CurrentNetwork>::from_str(function_string)?;
         let expected_bytes = expected.to_bytes_le()?;
-        println!("String size: {:?}, Bytecode size: {:?}", function_string.as_bytes().len(), expected_bytes.len());
+        println!("String size: {:?}, Bytecode size: {:?}", function_string.len(), expected_bytes.len());
 
         let candidate = Function::<CurrentNetwork>::from_bytes_le(&expected_bytes)?;
         assert_eq!(expected.to_string(), candidate.to_string());

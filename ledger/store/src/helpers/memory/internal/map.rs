@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +17,9 @@
 
 use crate::helpers::{Map, MapRead};
 use console::network::prelude::*;
+
+use snarkvm_utilities::bytes::unchecked_deserialize;
+
 use indexmap::IndexMap;
 
 use core::{borrow::Borrow, hash::Hash};
@@ -35,8 +38,8 @@ use std::{
 
 #[derive(Clone)]
 pub struct MemoryMap<
-    K: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    K: Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > {
     // The reason for using BTreeMap with binary keys is for the order of items to be the same as
     // the one in the RocksDB-backed DataMap; if not for that, it could be any map
@@ -48,8 +51,8 @@ pub struct MemoryMap<
 }
 
 impl<
-    K: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    K: Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > Default for MemoryMap<K, V>
 {
     fn default() -> Self {
@@ -63,8 +66,8 @@ impl<
 }
 
 impl<
-    K: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    K: Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > FromIterator<(K, V)> for MemoryMap<K, V>
 {
     /// Initializes a new `MemoryMap` from the given iterator.
@@ -84,8 +87,8 @@ impl<
 
 impl<
     'a,
-    K: 'a + Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: 'a + Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    K: 'a + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: 'a + Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > Map<'a, K, V> for MemoryMap<K, V>
 {
     ///
@@ -115,7 +118,7 @@ impl<
         match self.is_atomic_in_progress() {
             // If a batch is in progress, add the key-None pair to the batch.
             true => {
-                self.atomic_batch.lock().push((*key, None));
+                self.atomic_batch.lock().push((key.clone(), None));
             }
             // Otherwise, remove the key-value pair directly from the map.
             false => {
@@ -134,7 +137,10 @@ impl<
         // Set the atomic batch flag to `true`.
         self.batch_in_progress.store(true, Ordering::SeqCst);
         // Ensure that the atomic batch is empty.
-        assert!(self.atomic_batch.lock().is_empty());
+        assert!(
+            self.atomic_batch.lock().is_empty(),
+            "Cannot start an atomic batch operation while another one is already in progress"
+        );
     }
 
     ///
@@ -255,8 +261,8 @@ impl<
 
 impl<
     'a,
-    K: 'a + Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: 'a + Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    K: 'a + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: 'a + Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > MapRead<'a, K, V> for MemoryMap<K, V>
 {
     type Iterator = core::iter::Map<btree_map::IntoIter<Vec<u8>, V>, fn((Vec<u8>, V)) -> (Cow<'a, K>, Cow<'a, V>)>;
@@ -341,6 +347,27 @@ impl<
     }
 
     ///
+    /// Returns the (key, value) pair for the greatest confirmed key ≤ the given key,
+    /// or `None` if no such entry exists in this map.
+    ///
+    /// Uses `BTreeMap::range` for O(log n) performance.
+    ///
+    fn get_floor_confirmed<Q>(&'a self, key: &Q) -> Result<Option<(Cow<'a, K>, Cow<'a, V>)>>
+    where
+        K: Borrow<Q>,
+        Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+    {
+        let key_bytes = bincode::serialize(key)?;
+        // Note: The 'unwrap' is safe here, because the keys are defined by us.
+        Ok(self
+            .map
+            .read()
+            .range(..=key_bytes)
+            .next_back()
+            .map(|(k, v)| (Cow::Owned(unchecked_deserialize(k).unwrap()), Cow::Owned(v.clone()))))
+    }
+
+    ///
     /// Returns an iterator visiting each key-value pair in the atomic batch.
     ///
     fn iter_pending(&'a self) -> Self::PendingIterator {
@@ -353,7 +380,11 @@ impl<
     ///
     fn iter_confirmed(&'a self) -> Self::Iterator {
         // Note: The 'unwrap' is safe here, because the keys are defined by us.
-        self.map.read().clone().into_iter().map(|(k, v)| (Cow::Owned(bincode::deserialize(&k).unwrap()), Cow::Owned(v)))
+        self.map
+            .read()
+            .clone()
+            .into_iter()
+            .map(|(k, v)| (Cow::Owned(unchecked_deserialize(&k).unwrap()), Cow::Owned(v)))
     }
 
     ///
@@ -361,7 +392,7 @@ impl<
     ///
     fn keys_confirmed(&'a self) -> Self::Keys {
         // Note: The 'unwrap' is safe here, because the keys are defined by us.
-        self.map.read().clone().into_keys().map(|k| Cow::Owned(bincode::deserialize(&k).unwrap()))
+        self.map.read().clone().into_keys().map(|k| Cow::Owned(unchecked_deserialize(&k).unwrap()))
     }
 
     ///
@@ -370,11 +401,34 @@ impl<
     fn values_confirmed(&'a self) -> Self::Values {
         self.map.read().clone().into_values().map(Cow::Owned)
     }
+
+    ///
+    /// Returns the confirmed keys whose serialized form begins with the serialized `prefix`.
+    ///
+    fn get_keys_confirmed_with_prefix<Q>(&'a self, prefix: &Q) -> Result<Vec<K>>
+    where
+        Q: Serialize,
+    {
+        // Serialize the prefix; the BTreeMap keys are sorted by their serialized bytes.
+        let prefix = bincode::serialize(prefix)?;
+
+        // Seek to the prefix and collect every key sharing it.
+        // Note: The 'unwrap' is safe here, because the keys are defined by us.
+        let map = self.map.read();
+        let mut keys = Vec::new();
+        for (key, _) in map.range(prefix.clone()..) {
+            if !key.starts_with(&prefix) {
+                break;
+            }
+            keys.push(unchecked_deserialize(key)?);
+        }
+        Ok(keys)
+    }
 }
 
 impl<
-    K: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    K: Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > Deref for MemoryMap<K, V>
 {
     type Target = Arc<RwLock<BTreeMap<Vec<u8>, V>>>;

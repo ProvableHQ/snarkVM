@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,11 +39,13 @@ macro_rules! impl_field_to_biginteger {
 
 macro_rules! impl_primefield_standard_sample {
     ($field: ident, $params: ident) => {
-        impl<P: $params> rand::distributions::Distribution<$field<P>> for rand::distributions::Standard {
+        impl<P: $params> rand::distr::Distribution<$field<P>> for rand::distr::StandardUniform {
             #[inline]
             fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> $field<P> {
+                use rand::RngExt;
+
                 loop {
-                    let mut tmp = $field(rng.sample(rand::distributions::Standard), PhantomData);
+                    let mut tmp = $field(rng.sample(rand::distr::StandardUniform), PhantomData);
                     // Mask away the unused bits at the beginning.
                     tmp.0.as_mut().last_mut().map(|val| *val &= u64::MAX >> P::REPR_SHAVE_BITS);
 
@@ -95,7 +97,7 @@ macro_rules! sqrt_impl {
                 let v = $self.pow($P::T_MINUS_ONE_DIV_TWO);
                 let x = *$self * v.square();
 
-                let k = ((n - 1) as f64).sqrt().floor() as u64;
+                let k = (n - 1).isqrt();
                 // It's important that k_2 results in a number which makes `l_minus_one_times_k`
                 // divisible by `k`, because the native arithmetic will not match the field
                 // arithmetic otherwise (native numbers will divide and round down, but field
@@ -188,7 +190,7 @@ macro_rules! impl_primefield_serializer {
     ($field: ident, $params: ident, $byte_size: expr) => {
         impl<P: $params> CanonicalSerializeWithFlags for $field<P> {
             #[allow(unused_qualifications)]
-            fn serialize_with_flags<W: snarkvm_utilities::io::Write, F: snarkvm_utilities::Flags>(
+            fn serialize_with_flags<W: std::io::Write, F: snarkvm_utilities::Flags>(
                 &self,
                 mut writer: W,
                 flags: F,
@@ -230,7 +232,7 @@ macro_rules! impl_primefield_serializer {
         impl<P: $params> CanonicalSerialize for $field<P> {
             #[allow(unused_qualifications)]
             #[inline]
-            fn serialize_with_mode<W: snarkvm_utilities::io::Write>(
+            fn serialize_with_mode<W: std::io::Write>(
                 &self,
                 writer: W,
                 _compress: snarkvm_utilities::serialize::Compress,
@@ -252,7 +254,7 @@ macro_rules! impl_primefield_serializer {
 
         impl<P: $params> CanonicalDeserializeWithFlags for $field<P> {
             #[allow(unused_qualifications)]
-            fn deserialize_with_flags<R: snarkvm_utilities::io::Read, F: snarkvm_utilities::Flags>(
+            fn deserialize_with_flags<R: std::io::Read, F: snarkvm_utilities::Flags>(
                 mut reader: R,
             ) -> Result<(Self, F), snarkvm_utilities::serialize::SerializationError> {
                 use snarkvm_utilities::serialize::SerializationError;
@@ -293,7 +295,7 @@ macro_rules! impl_primefield_serializer {
 
         impl<P: $params> CanonicalDeserialize for $field<P> {
             #[allow(unused_qualifications)]
-            fn deserialize_with_mode<R: snarkvm_utilities::io::Read>(
+            fn deserialize_with_mode<R: std::io::Read>(
                 reader: R,
                 _compress: snarkvm_utilities::serialize::Compress,
                 _validate: snarkvm_utilities::serialize::Validate,

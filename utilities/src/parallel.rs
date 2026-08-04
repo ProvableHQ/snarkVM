@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,8 +12,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-use crate::{boxed::Box, vec::Vec};
 
 pub struct ExecutionPool<'a, T> {
     jobs: Vec<Box<dyn 'a + FnOnce() -> T + Send>>,
@@ -100,6 +98,16 @@ macro_rules! cfg_iter {
 
         result
     }};
+
+    ($e: expr, $min: expr) => {{
+        #[cfg(not(feature = "serial"))]
+        let result = $e.par_iter().with_min_len($min);
+
+        #[cfg(feature = "serial")]
+        let result = $e.iter();
+
+        result
+    }};
 }
 
 /// Creates parallel iterator over mut refs if `parallel` feature is enabled.
@@ -108,6 +116,16 @@ macro_rules! cfg_iter_mut {
     ($e: expr) => {{
         #[cfg(not(feature = "serial"))]
         let result = $e.par_iter_mut();
+
+        #[cfg(feature = "serial")]
+        let result = $e.iter_mut();
+
+        result
+    }};
+
+    ($e: expr, $min: expr) => {{
+        #[cfg(not(feature = "serial"))]
+        let result = $e.par_iter_mut().with_min_len($min);
 
         #[cfg(feature = "serial")]
         let result = $e.iter_mut();

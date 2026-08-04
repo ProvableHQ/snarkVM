@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,8 +26,7 @@ extern crate criterion;
 fn create_scalar_bases<G: AffineCurve<ScalarField = F>, F: PrimeField>(size: usize) -> (Vec<G>, Vec<F::BigInteger>) {
     let mut rng = TestRng::default();
 
-    let bases = std::iter::repeat((0..(size / 1000)).map(|_| G::rand(&mut rng)).collect::<Vec<_>>())
-        .take(1000)
+    let bases = std::iter::repeat_n((0..(size / 1000)).map(|_| G::rand(&mut rng)).collect::<Vec<_>>(), 1000)
         .flatten()
         .collect::<Vec<_>>();
     let scalars = (0..size).map(|_| F::rand(&mut rng).to_bigint()).collect::<Vec<_>>();
@@ -36,9 +35,9 @@ fn create_scalar_bases<G: AffineCurve<ScalarField = F>, F: PrimeField>(size: usi
 
 fn variable_base_bls12_377(c: &mut Criterion) {
     use snarkvm_curves::bls12_377::{Fr, G1Affine};
-    let (bases, scalars) = create_scalar_bases::<G1Affine, Fr>(2000000);
+    let (bases, scalars) = create_scalar_bases::<G1Affine, Fr>(1_000_000);
 
-    for size in [10_000, 100_000, 200_000, 300_000, 400_000, 500_000, 1_000_000, 2_000_000] {
+    for size in [10_000, 100_000, 1_000_000] {
         c.bench_function(&format!("VariableBase MSM on BLS12-377 ({size})"), |b| {
             b.iter(|| VariableBase::msm(&bases[..size], &scalars[..size]))
         });

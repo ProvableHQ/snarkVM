@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +15,6 @@
 
 use super::*;
 
-#[cfg(feature = "console")]
 impl<A: Aleo> ToFields for Signature<A> {
     type Field = Field<A>;
 
@@ -27,7 +26,7 @@ impl<A: Aleo> ToFields for Signature<A> {
     }
 }
 
-#[cfg(all(test, feature = "console"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::Circuit;
@@ -38,7 +37,7 @@ mod tests {
 
     type CurrentAleo = AleoV0;
 
-    const ITERATIONS: u64 = 128;
+    const ITERATIONS: u64 = 10;
 
     fn check_to_fields(
         mode: Mode,

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,6 +16,8 @@
 #![forbid(unsafe_code)]
 #![warn(clippy::cast_possible_truncation)]
 
+extern crate snarkvm_console as console;
+
 pub mod helpers;
 
 mod block;
@@ -32,26 +34,6 @@ pub use transaction::*;
 
 mod transition;
 pub use transition::*;
-
-#[macro_export]
-macro_rules! cow_to_copied {
-    ($cow:expr) => {
-        match $cow {
-            std::borrow::Cow::Borrowed(inner) => *inner,
-            std::borrow::Cow::Owned(inner) => inner,
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! cow_to_cloned {
-    ($cow:expr) => {
-        match $cow {
-            std::borrow::Cow::Borrowed(inner) => (*inner).clone(),
-            std::borrow::Cow::Owned(inner) => inner,
-        }
-    };
-}
 
 use console::prelude::{Result, bail};
 

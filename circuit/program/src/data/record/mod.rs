@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,10 +33,10 @@ mod to_bits;
 mod to_commitment;
 mod to_fields;
 
-use crate::{Access, Ciphertext, Identifier, Plaintext, ProgramID, Visibility};
+use crate::{Access, Ciphertext, Identifier, Literal, Plaintext, ProgramID, Visibility};
 use snarkvm_circuit_account::{PrivateKey, ViewKey};
 use snarkvm_circuit_network::Aleo;
-use snarkvm_circuit_types::{Boolean, Field, Group, Scalar, U32, environment::prelude::*};
+use snarkvm_circuit_types::{Boolean, Field, Group, Scalar, U8, U32, environment::prelude::*, prelude::ToFields};
 
 #[derive(Clone)]
 pub struct Record<A: Aleo, Private: Visibility<A>> {
@@ -46,9 +46,12 @@ pub struct Record<A: Aleo, Private: Visibility<A>> {
     data: IndexMap<Identifier<A>, Entry<A, Private>>,
     /// The nonce of the program record.
     nonce: Group<A>,
+    /// The version of the program record.
+    ///   - Version 0 uses a BHP hash to derive the record commitment.
+    ///   - Version 1 uses a BHP commitment to derive the record commitment.
+    version: U8<A>,
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Inject for Record<A, Plaintext<A>> {
     type Primitive = console::Record<A::Network, console::Plaintext<A::Network>>;
 
@@ -56,13 +59,18 @@ impl<A: Aleo> Inject for Record<A, Plaintext<A>> {
     fn new(_: Mode, record: Self::Primitive) -> Self {
         Self {
             owner: Owner::new(Mode::Private, record.owner().clone()),
-            data: Inject::new(Mode::Private, record.data().clone()),
+            data: record
+                .data()
+                .clone()
+                .into_iter()
+                .map(|(identifier, entry)| (Identifier::constant(identifier), Inject::new(Mode::Private, entry)))
+                .collect(),
             nonce: Group::new(Mode::Private, *record.nonce()),
+            version: U8::new(Mode::Private, *record.version()),
         }
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Inject for Record<A, Ciphertext<A>> {
     type Primitive = console::Record<A::Network, console::Ciphertext<A::Network>>;
 
@@ -70,19 +78,25 @@ impl<A: Aleo> Inject for Record<A, Ciphertext<A>> {
     fn new(_: Mode, record: Self::Primitive) -> Self {
         Self {
             owner: Owner::new(Mode::Private, record.owner().clone()),
-            data: Inject::new(Mode::Private, record.data().clone()),
+            data: record
+                .data()
+                .clone()
+                .into_iter()
+                .map(|(identifier, entry)| (Identifier::constant(identifier), Inject::new(Mode::Private, entry)))
+                .collect(),
             nonce: Group::new(Mode::Private, *record.nonce()),
+            version: U8::new(Mode::Private, *record.version()),
         }
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo, Private: Visibility<A>> Record<A, Private> {
     /// Initializes a new record plaintext.
     pub fn from_plaintext(
         owner: Owner<A, Plaintext<A>>,
         data: IndexMap<Identifier<A>, Entry<A, Plaintext<A>>>,
         nonce: Group<A>,
+        version: U8<A>,
     ) -> Result<Record<A, Plaintext<A>>> {
         // Ensure the members has no duplicate names.
         ensure!(!has_duplicates(data.iter().map(|(name, ..)| name)), "A duplicate entry name was found in a record");
@@ -93,7 +107,7 @@ impl<A: Aleo, Private: Visibility<A>> Record<A, Private> {
             data.len()
         );
         // Return the record.
-        Ok(Record { owner, data, nonce })
+        Ok(Record { owner, data, nonce, version })
     }
 
     /// Initializes a new record ciphertext.
@@ -101,6 +115,7 @@ impl<A: Aleo, Private: Visibility<A>> Record<A, Private> {
         owner: Owner<A, Ciphertext<A>>,
         data: IndexMap<Identifier<A>, Entry<A, Ciphertext<A>>>,
         nonce: Group<A>,
+        version: U8<A>,
     ) -> Result<Record<A, Ciphertext<A>>> {
         // Ensure the members has no duplicate names.
         ensure!(!has_duplicates(data.iter().map(|(name, ..)| name)), "A duplicate entry name was found in a record");
@@ -111,7 +126,7 @@ impl<A: Aleo, Private: Visibility<A>> Record<A, Private> {
             data.len()
         );
         // Return the record.
-        Ok(Record { owner, data, nonce })
+        Ok(Record { owner, data, nonce, version })
     }
 }
 
@@ -130,9 +145,18 @@ impl<A: Aleo, Private: Visibility<A>> Record<A, Private> {
     pub const fn nonce(&self) -> &Group<A> {
         &self.nonce
     }
+
+    /// Returns the version of the program record.
+    pub const fn version(&self) -> &U8<A> {
+        &self.version
+    }
+
+    /// Returns `true` if the program record is a hiding variant.
+    pub fn is_hiding(&self) -> Boolean<A> {
+        !self.version.is_zero()
+    }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Eject for Record<A, Plaintext<A>> {
     type Primitive = console::Record<A::Network, console::Plaintext<A::Network>>;
 
@@ -151,8 +175,9 @@ impl<A: Aleo> Eject for Record<A, Plaintext<A>> {
 
         let data = self.data.iter().map(|(_, entry)| entry.eject_mode()).collect::<Vec<_>>().eject_mode();
         let nonce = self.nonce.eject_mode();
+        let version = self.version.eject_mode();
 
-        Mode::combine(owner, [data, nonce])
+        Mode::combine(owner, [data, nonce, version])
     }
 
     /// Ejects the record.
@@ -166,6 +191,7 @@ impl<A: Aleo> Eject for Record<A, Plaintext<A>> {
             owner,
             self.data.iter().map(|(identifier, entry)| (identifier, entry).eject_value()).collect::<IndexMap<_, _>>(),
             self.nonce.eject_value(),
+            self.version.eject_value(),
         ) {
             Ok(record) => record,
             Err(error) => A::halt(format!("Record::<Plaintext>::eject_value: {error}")),
@@ -173,7 +199,6 @@ impl<A: Aleo> Eject for Record<A, Plaintext<A>> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Eject for Record<A, Ciphertext<A>> {
     type Primitive = console::Record<A::Network, console::Ciphertext<A::Network>>;
 
@@ -192,8 +217,9 @@ impl<A: Aleo> Eject for Record<A, Ciphertext<A>> {
 
         let data = self.data.iter().map(|(_, entry)| entry.eject_mode()).collect::<Vec<_>>().eject_mode();
         let nonce = self.nonce.eject_mode();
+        let version = self.version.eject_mode();
 
-        Mode::combine(owner, [data, nonce])
+        Mode::combine(owner, [data, nonce, version])
     }
 
     /// Ejects the record.
@@ -207,6 +233,7 @@ impl<A: Aleo> Eject for Record<A, Ciphertext<A>> {
             owner,
             self.data.iter().map(|(identifier, entry)| (identifier, entry).eject_value()).collect::<IndexMap<_, _>>(),
             self.nonce.eject_value(),
+            self.version.eject_value(),
         ) {
             Ok(record) => record,
             Err(error) => A::halt(format!("Record::<Ciphertext>::eject_value: {error}")),
@@ -214,7 +241,6 @@ impl<A: Aleo> Eject for Record<A, Ciphertext<A>> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo, Private: Visibility<A>> TypeName for Record<A, Private> {
     fn type_name() -> &'static str {
         "record"

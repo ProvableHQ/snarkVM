@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,11 +15,11 @@
 
 use super::*;
 
-impl<E: Environment> Distribution<StringType<E>> for Standard {
+impl<E: Environment> Distribution<StringType<E>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> StringType<E> {
         // Sample a random number up to 1/4th of the maximum bytes.
-        let num_bytes = rng.gen_range(1..(E::MAX_STRING_BYTES / 4) as usize);
+        let num_bytes = rng.random_range(1..(E::MAX_STRING_BYTES / 4) as usize);
         // Sample a random string.
         StringType::new(&rng.sample_iter(&Alphanumeric).take(num_bytes).map(char::from).collect::<String>())
     }
@@ -38,7 +38,7 @@ mod tests {
 
     #[test]
     fn test_random() {
-        // Initialize a map[string]=>occurences to store all seen random elements.
+        // Initialize a map[string]=>occurrences to store all seen random elements.
         let mut map = HashMap::with_capacity(ITERATIONS);
 
         let mut rng = TestRng::default();
@@ -51,8 +51,8 @@ mod tests {
             map.entry(string).and_modify(|count| *count += 1).or_insert(1);
         }
         for (string, count) in map {
-            let allowed_occurences = 1 + ITERATIONS / (string.len() * 10);
-            assert!(count <= allowed_occurences, "Encountered an element with a count of {}: {}", count, string);
+            let allowed_occurrences = 1 + ITERATIONS / (string.len() * 10);
+            assert!(count <= allowed_occurrences, "Encountered an element with a count of {count}: {string}");
         }
     }
 }

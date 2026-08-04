@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,34 +36,42 @@ pub mod test_helpers {
     use super::*;
     use console::network::MainnetV0;
 
-    type CurrentNetwork = MainnetV0;
+    pub(crate) type CurrentNetwork = MainnetV0;
 
     /// Samples an accepted deploy.
     pub(crate) fn sample_accepted_deploy(rng: &mut TestRng) -> ConfirmedTxType<CurrentNetwork> {
         // Return the accepted deploy.
-        ConfirmedTxType::AcceptedDeploy(rng.gen())
+        ConfirmedTxType::AcceptedDeploy(rng.random())
     }
 
     /// Samples an accepted execution.
     pub(crate) fn sample_accepted_execution(rng: &mut TestRng) -> ConfirmedTxType<CurrentNetwork> {
         // Return the accepted execution.
-        ConfirmedTxType::AcceptedExecute(rng.gen())
+        ConfirmedTxType::AcceptedExecute(rng.random())
     }
 
     /// Samples a rejected deploy.
-    pub(crate) fn sample_rejected_deploy(rng: &mut TestRng) -> ConfirmedTxType<CurrentNetwork> {
+    pub(crate) fn sample_rejected_deploy(version: u8, rng: &mut TestRng) -> ConfirmedTxType<CurrentNetwork> {
         // Sample the rejected deployment.
-        let rejected = ledger_test_helpers::sample_rejected_deployment(rng.gen(), rng);
+        // Only V2 deployments can have translation keys.
+        let has_translation_keys = version >= 2 && rng.random();
+        let rejected = snarkvm_ledger_test_helpers::sample_rejected_deployment(
+            version,
+            rng.random(),
+            has_translation_keys,
+            rng.random(),
+            rng,
+        );
         // Return the rejected deploy.
-        ConfirmedTxType::RejectedDeploy(rng.gen(), rejected)
+        ConfirmedTxType::RejectedDeploy(rng.random(), rejected)
     }
 
     /// Samples a rejected execution.
     pub(crate) fn sample_rejected_execute(rng: &mut TestRng) -> ConfirmedTxType<CurrentNetwork> {
         // Sample the rejected execution.
-        let rejected = ledger_test_helpers::sample_rejected_execution(rng.gen(), rng);
+        let rejected = snarkvm_ledger_test_helpers::sample_rejected_execution(rng.random(), rng);
         // Return the rejected execution.
-        ConfirmedTxType::RejectedExecute(rng.gen(), rejected)
+        ConfirmedTxType::RejectedExecute(rng.random(), rejected)
     }
 
     /// Sample a list of randomly rejected transactions.
@@ -73,7 +81,8 @@ pub mod test_helpers {
         vec![
             sample_accepted_deploy(rng),
             sample_accepted_execution(rng),
-            sample_rejected_deploy(rng),
+            sample_rejected_deploy(1, rng),
+            sample_rejected_deploy(2, rng),
             sample_rejected_execute(rng),
         ]
     }

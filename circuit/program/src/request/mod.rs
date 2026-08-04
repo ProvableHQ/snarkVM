@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,9 +12,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-#[cfg(test)]
-use snarkvm_circuit_types::environment::assert_scope;
 
 mod to_tpk;
 mod verify;
@@ -31,13 +28,14 @@ pub enum InputID<A: Aleo> {
     Public(Field<A>),
     /// The ciphertext hash of the private input.
     Private(Field<A>),
-    /// The `(commitment, gamma, serial_number, tag)` tuple of the record input.
-    Record(Field<A>, Box<Group<A>>, Field<A>, Field<A>),
-    /// The hash of the external record input.
+    /// The `(commitment, gamma, record_view_key, serial_number, tag)` tuple of the record input.
+    Record(Field<A>, Box<Group<A>>, Field<A>, Field<A>, Field<A>),
+    /// The hash of the external record's (function_id, record, tvk, input index).
     ExternalRecord(Field<A>),
+    /// The hash of a dynamic record's (function_id, record, tvk, input index).
+    DynamicRecord(Field<A>),
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Inject for InputID<A> {
     type Primitive = console::InputID<A::Network>;
 
@@ -50,20 +48,22 @@ impl<A: Aleo> Inject for InputID<A> {
             console::InputID::Public(field) => Self::Public(Field::new(Mode::Public, field)),
             // Inject the ciphertext hash as `Mode::Public`.
             console::InputID::Private(field) => Self::Private(Field::new(Mode::Public, field)),
-            // Inject commitment and gamma as `Mode::Private`, and the expected serial number and tag as `Mode::Public`.
-            console::InputID::Record(commitment, gamma, serial_number, tag) => Self::Record(
+            // Inject commitment, gamma, and record view key as `Mode::Private`, and the expected serial number and tag as `Mode::Public`.
+            console::InputID::Record(commitment, gamma, record_view_key, serial_number, tag) => Self::Record(
                 Field::new(Mode::Private, commitment),
                 Box::new(Group::new(Mode::Private, gamma)),
+                Field::new(Mode::Private, record_view_key),
                 Field::new(Mode::Public, serial_number),
                 Field::new(Mode::Public, tag),
             ),
-            // Inject the commitment as `Mode::Public`.
+            // Inject the commitment of the external record as `Mode::Public`.
             console::InputID::ExternalRecord(field) => Self::ExternalRecord(Field::new(Mode::Public, field)),
+            // Inject the commitment of the dynamic record as `Mode::Public`.
+            console::InputID::DynamicRecord(field) => Self::DynamicRecord(Field::new(Mode::Public, field)),
         }
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Eject for InputID<A> {
     type Primitive = console::InputID<A::Network>;
 
@@ -73,12 +73,16 @@ impl<A: Aleo> Eject for InputID<A> {
             Self::Constant(field) => field.eject_mode(),
             Self::Public(field) => field.eject_mode(),
             Self::Private(field) => field.eject_mode(),
-            Self::Record(commitment, gamma, serial_number, tag) => Mode::combine(commitment.eject_mode(), [
-                gamma.eject_mode(),
-                serial_number.eject_mode(),
-                tag.eject_mode(),
-            ]),
+            Self::Record(commitment, gamma, record_view_key, serial_number, tag) => {
+                Mode::combine(commitment.eject_mode(), [
+                    gamma.eject_mode(),
+                    record_view_key.eject_mode(),
+                    serial_number.eject_mode(),
+                    tag.eject_mode(),
+                ])
+            }
             Self::ExternalRecord(field) => field.eject_mode(),
+            Self::DynamicRecord(field) => field.eject_mode(),
         }
     }
 
@@ -88,13 +92,15 @@ impl<A: Aleo> Eject for InputID<A> {
             Self::Constant(field) => console::InputID::Constant(field.eject_value()),
             Self::Public(field) => console::InputID::Public(field.eject_value()),
             Self::Private(field) => console::InputID::Private(field.eject_value()),
-            Self::Record(commitment, gamma, serial_number, tag) => console::InputID::Record(
+            Self::Record(commitment, gamma, record_view_key, serial_number, tag) => console::InputID::Record(
                 commitment.eject_value(),
                 gamma.eject_value(),
+                record_view_key.eject_value(),
                 serial_number.eject_value(),
                 tag.eject_value(),
             ),
             Self::ExternalRecord(field) => console::InputID::ExternalRecord(field.eject_value()),
+            Self::DynamicRecord(field) => console::InputID::DynamicRecord(field.eject_value()),
         }
     }
 }
@@ -108,10 +114,17 @@ impl<A: Aleo> ToFields for InputID<A> {
             InputID::Constant(field) => vec![field.clone()],
             InputID::Public(field) => vec![field.clone()],
             InputID::Private(field) => vec![field.clone()],
-            InputID::Record(commitment, gamma, serial_number, tag) => {
-                vec![commitment.clone(), gamma.to_x_coordinate(), serial_number.clone(), tag.clone()]
+            InputID::Record(commitment, gamma, record_view_key, serial_number, tag) => {
+                vec![
+                    commitment.clone(),
+                    gamma.to_x_coordinate(),
+                    record_view_key.clone(),
+                    serial_number.clone(),
+                    tag.clone(),
+                ]
             }
             InputID::ExternalRecord(field) => vec![field.clone()],
+            InputID::DynamicRecord(field) => vec![field.clone()],
         }
     }
 }
@@ -139,9 +152,10 @@ pub struct Request<A: Aleo> {
     tcm: Field<A>,
     /// The signer commitment.
     scm: Field<A>,
+    /// A flag indicating whether or not the request is dynamic.
+    is_dynamic: bool,
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Inject for Request<A> {
     type Primitive = console::Request<A::Network>;
 
@@ -205,6 +219,15 @@ impl<A: Aleo> Inject for Request<A> {
                         // Return the input.
                         Ok(input)
                     }
+                    // A dynamic record input is injected as `Mode::Private`.
+                    console::InputID::DynamicRecord(..) => {
+                        // Inject the input as `Mode::Private`.
+                        let input = Value::new(Mode::Private, input.clone());
+                        // Ensure the input is a dynamic record.
+                        ensure!(matches!(input, Value::DynamicRecord(..)), "Expected a dynamic record input");
+                        // Return the input.
+                        Ok(input)
+                    }
                 }
             })
             .collect::<Result<Vec<_>, _>>()
@@ -216,8 +239,8 @@ impl<A: Aleo> Inject for Request<A> {
         Self {
             signer: Address::new(mode, *request.signer()),
             network_id: U16::new(Mode::Constant, *request.network_id()),
-            program_id: ProgramID::new(Mode::Constant, *request.program_id()),
-            function_name: Identifier::new(Mode::Constant, *request.function_name()),
+            program_id: ProgramID::constant(*request.program_id()),
+            function_name: Identifier::constant(*request.function_name()),
             input_ids: request.input_ids().iter().map(|input_id| InputID::new(Mode::Public, *input_id)).collect(),
             inputs,
             signature: Signature::new(mode, *request.signature()),
@@ -225,6 +248,7 @@ impl<A: Aleo> Inject for Request<A> {
             tvk: Field::new(mode, *request.tvk()),
             tcm,
             scm,
+            is_dynamic: request.is_dynamic(),
         }
     }
 }
@@ -284,9 +308,13 @@ impl<A: Aleo> Request<A> {
     pub const fn scm(&self) -> &Field<A> {
         &self.scm
     }
+
+    /// Returns whether or not the request is dynamic.
+    pub fn is_dynamic(&self) -> bool {
+        self.is_dynamic
+    }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Eject for Request<A> {
     type Primitive = console::Request<A::Network>;
 
@@ -320,6 +348,7 @@ impl<A: Aleo> Eject for Request<A> {
             self.tvk.eject_value(),
             self.tcm.eject_value(),
             self.scm.eject_value(),
+            self.is_dynamic,
         ))
     }
 }

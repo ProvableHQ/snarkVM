@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +17,7 @@ use crate::snark::varuna::{SNARKMode, ahp::AHPForR1CS};
 use anyhow::Result;
 use snarkvm_fields::PrimeField;
 use snarkvm_utilities::{ToBytes, serialize::*};
+use std::io;
 
 /// Information about the circuit, including the field of definition, the number
 /// of variables, the number of constraints, and the maximum number of non-zero
@@ -24,10 +25,13 @@ use snarkvm_utilities::{ToBytes, serialize::*};
 #[derive(Copy, Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct CircuitInfo {
     /// The number of public inputs after padding.
+    // This includes the constant 1
     pub num_public_inputs: usize,
     /// The number of public and private variables in the constraint system.
     /// Note: This does *NOT* include the number of constants in the constraint
     /// system.
+    // This includes the padded instance (constant 1 and public variables) as
+    // well as the witness, but is not itself padded.
     pub num_public_and_private_variables: usize,
     /// The number of constraints.
     pub num_constraints: usize,

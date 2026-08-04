@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,17 +23,23 @@ use snarkvm_parameters::mainnet::PowersOfG;
 use snarkvm_utilities::{
     FromBytes,
     ToBytes,
-    borrow::Cow,
     error,
-    io::{Read, Write},
+    into_io_error,
     serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, SerializationError, Valid, Validate},
 };
 
 use crate::srs::{UniversalProver, UniversalVerifier};
 use anyhow::Result;
 use core::ops::{Add, AddAssign};
-use rand_core::RngCore;
-use std::{collections::BTreeMap, io, ops::Range, sync::Arc};
+use rand::Rng;
+use std::{
+    borrow::Cow,
+    collections::BTreeMap,
+    io,
+    io::{Read, Write},
+    ops::Range,
+    sync::Arc,
+};
 
 /// `UniversalParams` are the universal parameters for the KZG10 scheme.
 #[derive(Clone, Debug)]
@@ -353,7 +359,7 @@ impl<E: PairingEngine> KZGRandomness<E> {
         Self { blinding_polynomial: DensePolynomial::zero() }
     }
 
-    pub fn rand<R: RngCore>(hiding_bound: usize, _: bool, rng: &mut R) -> Self {
+    pub fn rand<R: Rng>(hiding_bound: usize, _: bool, rng: &mut R) -> Self {
         let mut randomness = KZGRandomness::empty();
         let hiding_poly_degree = Self::calculate_hiding_polynomial_degree(hiding_bound);
         randomness.blinding_polynomial = DensePolynomial::rand(hiding_poly_degree, rng);
@@ -419,13 +425,15 @@ impl<E: PairingEngine> KZGProof<E> {
 
 impl<E: PairingEngine> FromBytes for KZGProof<E> {
     fn read_le<R: Read>(mut reader: R) -> io::Result<Self> {
-        CanonicalDeserialize::deserialize_compressed(&mut reader).map_err(|_| error("could not deserialize KZG proof"))
+        CanonicalDeserialize::deserialize_compressed(&mut reader)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not deserialize KZG proof")))
     }
 }
 
 impl<E: PairingEngine> ToBytes for KZGProof<E> {
     fn write_le<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        CanonicalSerialize::serialize_compressed(self, &mut writer).map_err(|_| error("could not serialize KZG proof"))
+        CanonicalSerialize::serialize_compressed(self, &mut writer)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not serialize KZG proof")))
     }
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,31 +17,31 @@
 #![warn(clippy::cast_possible_truncation)]
 
 #[cfg(feature = "batch-certificate")]
-pub use narwhal_batch_certificate as batch_certificate;
+pub use snarkvm_ledger_narwhal_batch_certificate as batch_certificate;
 #[cfg(feature = "batch-certificate")]
-pub use narwhal_batch_certificate::BatchCertificate;
+pub use snarkvm_ledger_narwhal_batch_certificate::BatchCertificate;
 
 #[cfg(feature = "batch-header")]
-pub use narwhal_batch_header as batch_header;
+pub use snarkvm_ledger_narwhal_batch_header as batch_header;
 #[cfg(feature = "batch-header")]
-pub use narwhal_batch_header::BatchHeader;
+pub use snarkvm_ledger_narwhal_batch_header::BatchHeader;
 
 #[cfg(feature = "data")]
-pub use narwhal_data as data;
+pub use snarkvm_ledger_narwhal_data as data;
 #[cfg(feature = "data")]
-pub use narwhal_data::Data;
+pub use snarkvm_ledger_narwhal_data::Data;
 
 #[cfg(feature = "subdag")]
-pub use narwhal_subdag as subdag;
+pub use snarkvm_ledger_narwhal_subdag as subdag;
 #[cfg(feature = "subdag")]
-pub use narwhal_subdag::Subdag;
+pub use snarkvm_ledger_narwhal_subdag::Subdag;
 
 #[cfg(feature = "transmission")]
-pub use narwhal_transmission as transmission;
+pub use snarkvm_ledger_narwhal_transmission as transmission;
 #[cfg(feature = "transmission")]
-pub use narwhal_transmission::Transmission;
+pub use snarkvm_ledger_narwhal_transmission::Transmission;
 
 #[cfg(feature = "transmission-id")]
-pub use narwhal_transmission_id as transmission_id;
+pub use snarkvm_ledger_narwhal_transmission_id as transmission_id;
 #[cfg(feature = "transmission-id")]
-pub use narwhal_transmission_id::TransmissionID;
+pub use snarkvm_ledger_narwhal_transmission_id::TransmissionID;

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,12 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    FinalizeRegistersState,
-    Opcode,
-    Operand,
-    traits::{RegistersLoad, RegistersStore, StackMatches, StackProgram},
-};
+use crate::{FinalizeRegistersState, Opcode, Operand, StackTrait};
 use console::{
     network::prelude::*,
     program::{Literal, LiteralType, Plaintext, Register, Value},
@@ -55,8 +50,8 @@ impl<N: Network> RandChaCha<N> {
 
     /// Returns the operands in the operation.
     #[inline]
-    pub fn operands(&self) -> Vec<Operand<N>> {
-        self.operands.clone()
+    pub fn operands(&self) -> &[Operand<N>] {
+        &self.operands
     }
 
     /// Returns the destination register.
@@ -70,16 +65,18 @@ impl<N: Network> RandChaCha<N> {
     pub const fn destination_type(&self) -> LiteralType {
         self.destination_type
     }
+
+    /// Returns whether this command refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
+    }
 }
 
 impl<N: Network> RandChaCha<N> {
     /// Finalizes the command.
     #[inline]
-    pub fn finalize(
-        &self,
-        stack: &(impl StackMatches<N> + StackProgram<N>),
-        registers: &mut (impl RegistersLoad<N> + RegistersStore<N> + FinalizeRegistersState<N>),
-    ) -> Result<()> {
+    pub fn finalize(&self, stack: &impl StackTrait<N>, registers: &mut impl FinalizeRegistersState<N>) -> Result<()> {
         // Ensure the number of operands is within bounds.
         if self.operands.len() > MAX_ADDITIONAL_SEEDS {
             bail!("The number of operands must be <= {MAX_ADDITIONAL_SEEDS}")
@@ -91,11 +88,18 @@ impl<N: Network> RandChaCha<N> {
         // Construct the random seed.
         // If the height is greater than or equal to consensus V3, then use the new preimage definition.
         // The difference is that a nonce is also included in the new definition.
+        //
+        // `transition_id` and `nonce` are `Option`s on the trait — the view path leaves both as
+        // `None`. Views already reject `rand.chacha` at construction, so reaching this code on
+        // a view is unreachable, but we surface a clear runtime error here as a defense in depth.
         let consensus_version = N::CONSENSUS_VERSION(registers.state().block_height())?;
+        let transition_id = registers
+            .transition_id()
+            .ok_or_else(|| anyhow!("'rand.chacha' requires a transition ID, which is not available in this scope"))?;
         let preimage = if (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
             to_bits_le![
                 registers.state().random_seed(),
-                **registers.transition_id(),
+                **transition_id,
                 stack.program_id(),
                 registers.function_name(),
                 self.destination.locator(),
@@ -103,12 +107,15 @@ impl<N: Network> RandChaCha<N> {
                 seeds
             ]
         } else {
+            let nonce = registers
+                .nonce()
+                .ok_or_else(|| anyhow!("'rand.chacha' requires a nonce, which is not available in this scope"))?;
             to_bits_le![
                 registers.state().random_seed(),
-                **registers.transition_id(),
+                **transition_id,
                 stack.program_id(),
                 registers.function_name(),
-                registers.nonce(),
+                nonce,
                 self.destination.locator(),
                 self.destination_type.type_id(),
                 seeds
@@ -146,6 +153,7 @@ impl<N: Network> RandChaCha<N> {
             LiteralType::Scalar => Literal::Scalar(Scalar::rand(&mut rng)),
             LiteralType::Signature => bail!("Cannot 'rand.chacha' into a 'signature'"),
             LiteralType::String => bail!("Cannot 'rand.chacha' into a 'string'"),
+            LiteralType::Identifier => bail!("Cannot 'rand.chacha' into an 'identifier'"),
         };
 
         // Assign the value to the destination register.
@@ -195,7 +203,7 @@ impl<N: Network> Parser for RandChaCha<N> {
         let (string, _) = tag(";")(string)?;
 
         // Ensure the destination type is allowed.
-        if destination_type == LiteralType::String {
+        if matches!(destination_type, LiteralType::String | LiteralType::Identifier) {
             return map_res(fail, |_: ParserResult<Self>| {
                 Err(error(format!("Failed to parse 'rand.chacha': '{destination_type}' is invalid")))
             })(string);
@@ -274,7 +282,7 @@ impl<N: Network> FromBytes for RandChaCha<N> {
         let destination_type = LiteralType::read_le(&mut reader)?;
 
         // Ensure the destination type is allowed.
-        if destination_type == LiteralType::String {
+        if matches!(destination_type, LiteralType::String | LiteralType::Identifier) {
             return Err(error(format!("Failed to parse 'rand.chacha': '{destination_type}' is invalid")));
         }
 

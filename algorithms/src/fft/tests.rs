@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use crate::fft::{DensePolynomial, domain::*};
-use rand::Rng;
+use rand::RngExt;
 use snarkvm_curves::bls12_377::{Fr, G1Projective};
 use snarkvm_fields::{FftField, Field, One, Zero};
 use snarkvm_utilities::rand::{TestRng, Uniform};
@@ -27,7 +27,7 @@ fn vanishing_polynomial_evaluation() {
         let domain = EvaluationDomain::<Fr>::new(coeffs).unwrap();
         let z = domain.vanishing_polynomial();
         for _ in 0..100 {
-            let point: Fr = rng.gen();
+            let point: Fr = rng.random();
             assert_eq!(z.evaluate(point), domain.evaluate_vanishing_polynomial(point))
         }
     }
@@ -248,7 +248,7 @@ fn parallel_fft_consistency() {
         }
     }
 
-    fn test_consistency<R: Rng>(rng: &mut R, max_coeffs: u32) {
+    fn test_consistency<R: RngExt>(rng: &mut R, max_coeffs: u32) {
         for _ in 0..5 {
             for log_d in 0..max_coeffs {
                 let d = 1 << log_d;
@@ -286,7 +286,7 @@ fn parallel_fft_consistency() {
 
 #[test]
 fn fft_composition() {
-    fn test_fft_composition<F: FftField, T: crate::fft::DomainCoeff<F> + Uniform + core::fmt::Debug + Eq, R: Rng>(
+    fn test_fft_composition<F: FftField, T: crate::fft::DomainCoeff<F> + Uniform + core::fmt::Debug + Eq, R: RngExt>(
         rng: &mut R,
         max_coeffs: usize,
     ) {

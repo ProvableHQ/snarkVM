@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,9 +15,7 @@
 
 use super::*;
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Serialize
-    for ProgramCore<N, Instruction, Command>
-{
+impl<N: Network> Serialize for ProgramCore<N> {
     /// Serializes the program into string or bytes.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
@@ -27,9 +25,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Ser
     }
 }
 
-impl<'de, N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Deserialize<'de>
-    for ProgramCore<N, Instruction, Command>
-{
+impl<'de, N: Network> Deserialize<'de> for ProgramCore<N> {
     /// Deserializes the program from a string or bytes.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         match deserializer.is_human_readable() {

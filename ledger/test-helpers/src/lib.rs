@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,14 +13,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use algorithms::snark::varuna::VarunaVersion;
+extern crate snarkvm_circuit as circuit;
+extern crate snarkvm_console as console;
+
 use console::{
     account::{Address, PrivateKey},
     prelude::*,
     program::{Ciphertext, Literal, Plaintext, ProgramOwner, Record, Value},
     types::Field,
 };
-use ledger_block::{
+use snarkvm_algorithms::snark::varuna::VarunaVersion;
+use snarkvm_ledger_block::{
     Block,
     ConfirmedTransaction,
     Deployment,
@@ -35,13 +38,15 @@ use ledger_block::{
     Transactions,
     Transition,
 };
-use ledger_query::Query;
-use ledger_store::{BlockStore, helpers::memory::BlockMemory};
-use synthesizer_process::Process;
-use synthesizer_program::Program;
+use snarkvm_ledger_query::Query;
+use snarkvm_ledger_store::{BlockStore, helpers::memory::BlockMemory};
+use snarkvm_synthesizer_process::Process;
+use snarkvm_synthesizer_program::Program;
+use snarkvm_utilities::PrettyUnwrap;
 
 use aleo_std::StorageMode;
-use once_cell::sync::OnceCell;
+use anyhow::Context;
+use std::sync::OnceLock;
 
 type CurrentNetwork = console::network::MainnetV0;
 type CurrentAleo = circuit::network::AleoV0;
@@ -50,7 +55,7 @@ type CurrentAleo = circuit::network::AleoV0;
 
 /// Samples a random transition.
 pub fn sample_transition(rng: &mut TestRng) -> Transition<CurrentNetwork> {
-    crate::sample_execution(rng).into_transitions().next().unwrap()
+    crate::sample_execution(rng, 0).into_transitions().next().unwrap()
 }
 
 /// Sample the transition inputs.
@@ -58,7 +63,7 @@ pub fn sample_inputs() -> Vec<(<CurrentNetwork as Network>::TransitionID, Input<
     let rng = &mut TestRng::default();
 
     // Sample a transition.
-    let transaction = crate::sample_execution_transaction_with_fee(true, rng);
+    let transaction = crate::sample_execution_transaction_with_fee(true, rng, 0);
     let transition = transaction.transitions().next().unwrap();
 
     // Retrieve the transition ID and input.
@@ -91,7 +96,7 @@ pub fn sample_outputs() -> Vec<(<CurrentNetwork as Network>::TransitionID, Outpu
     let rng = &mut TestRng::default();
 
     // Sample a transition.
-    let transaction = crate::sample_execution_transaction_with_fee(true, rng);
+    let transaction = crate::sample_execution_transaction_with_fee(true, rng, 0);
     let transition = transaction.transitions().next().unwrap();
 
     // Retrieve the transition ID and input.
@@ -113,6 +118,11 @@ pub fn sample_outputs() -> Vec<(<CurrentNetwork as Network>::TransitionID, Outpu
     ).unwrap();
     let record_ciphertext = record.encrypt(randomizer).unwrap();
     let record_checksum = CurrentNetwork::hash_bhp1024(&record_ciphertext.to_bits_le()).unwrap();
+    // Sample a sender ciphertext.
+    let sender_ciphertext = match record_ciphertext.version().is_zero() {
+        true => None,
+        false => Some(Uniform::rand(rng)),
+    };
 
     vec![
         (transition_id, input),
@@ -121,23 +131,50 @@ pub fn sample_outputs() -> Vec<(<CurrentNetwork as Network>::TransitionID, Outpu
         (Uniform::rand(rng), Output::Public(Uniform::rand(rng), None)),
         (Uniform::rand(rng), Output::Public(plaintext_hash, Some(plaintext))),
         (Uniform::rand(rng), Output::Private(Uniform::rand(rng), None)),
-        (Uniform::rand(rng), Output::Private(ciphertext_hash, Some(ciphertext))),
-        (Uniform::rand(rng), Output::Record(Uniform::rand(rng), Uniform::rand(rng), None)),
-        (Uniform::rand(rng), Output::Record(Uniform::rand(rng), record_checksum, Some(record_ciphertext))),
+        (Uniform::rand(rng), Output::Private(ciphertext_hash, Some(ciphertext.clone()))),
+        (Uniform::rand(rng), Output::Record(Uniform::rand(rng), Uniform::rand(rng), None, sender_ciphertext)),
+        (
+            Uniform::rand(rng),
+            Output::Record(Uniform::rand(rng), record_checksum, Some(record_ciphertext.clone()), sender_ciphertext),
+        ),
         (Uniform::rand(rng), Output::ExternalRecord(Uniform::rand(rng))),
+        // RecordWithDynamicID with record ciphertext.
+        (
+            Uniform::rand(rng),
+            Output::RecordWithDynamicID(
+                Uniform::rand(rng),
+                record_checksum,
+                Some(record_ciphertext),
+                sender_ciphertext,
+                Uniform::rand(rng),
+            ),
+        ),
+        // RecordWithDynamicID without record ciphertext.
+        (
+            Uniform::rand(rng),
+            Output::RecordWithDynamicID(
+                Uniform::rand(rng),
+                Uniform::rand(rng),
+                None,
+                sender_ciphertext,
+                Uniform::rand(rng),
+            ),
+        ),
+        // ExternalRecordWithDynamicID.
+        (Uniform::rand(rng), Output::ExternalRecordWithDynamicID(Uniform::rand(rng), Uniform::rand(rng))),
     ]
 }
 
 /******************************************* Deployment *******************************************/
 
-pub fn sample_deployment(rng: &mut TestRng) -> Deployment<CurrentNetwork> {
-    static INSTANCE: OnceCell<Deployment<CurrentNetwork>> = OnceCell::new();
-    INSTANCE
+pub fn sample_deployment_v1(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+    static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
+    let deployment = INSTANCE
         .get_or_init(|| {
             // Initialize a new program.
             let (string, program) = Program::<CurrentNetwork>::parse(
                 r"
-program testing.aleo;
+program testing_one.aleo;
 
 mapping store:
     key as u32.public;
@@ -150,7 +187,6 @@ function compute:
             )
             .unwrap();
             assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-
             // Construct the process.
             let process = Process::load().unwrap();
             // Compute the deployment.
@@ -159,16 +195,127 @@ function compute:
             // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
             Deployment::from_str(&deployment.to_string()).unwrap()
         })
-        .clone()
+        .clone();
+    // Create a new deployment with the desired edition.
+    Deployment::<CurrentNetwork>::new(
+        edition % 2,
+        deployment.program().clone(),
+        deployment.verifying_keys().clone(),
+        None,
+        None,
+    )
+    .unwrap()
+}
+
+pub fn sample_deployment_v2_without_translation_keys(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+    static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
+    let deployment = INSTANCE
+        .get_or_init(|| {
+            // Initialize a new program.
+            let (string, program) = Program::<CurrentNetwork>::parse(
+                r"
+program testing_two.aleo;
+
+mapping store:
+    key as u32.public;
+    value as u32.public;
+
+function compute:
+    input r0 as u32.private;
+    add r0 r0 into r1;
+    output r1 as u32.public;",
+            )
+            .unwrap();
+            assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+            // Construct the process.
+            let process = Process::load().unwrap();
+            // Compute the deployment.
+            let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+            // Return the deployment.
+            // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
+            Deployment::from_str(&deployment.to_string()).unwrap()
+        })
+        .clone();
+    // Create a new deployment with the desired edition.
+    Deployment::<CurrentNetwork>::new(
+        edition,
+        deployment.program().clone(),
+        deployment.verifying_keys().clone(),
+        deployment.program_checksum(),
+        Some(Address::rand(rng)),
+    )
+    .unwrap()
+}
+
+pub fn sample_deployment_v2_with_translation_keys(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+    static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
+    let deployment = INSTANCE
+        .get_or_init(|| {
+            // Initialize a new program.
+            let (string, program) = Program::<CurrentNetwork>::parse(
+                r"
+program testing_three.aleo;
+
+record data:
+    owner as address.private;
+    one as field.private;
+    two as group.public;
+
+mapping store:
+    key as u32.public;
+    value as u32.public;
+
+function compute:
+    input r0 as u32.private;
+    add r0 r0 into r1;
+    output r1 as u32.public;",
+            )
+            .unwrap();
+            assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+            // Construct the process.
+            let process = Process::load().unwrap();
+            // Compute the deployment.
+            let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+            // Return the deployment.
+            // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
+            Deployment::from_str(&deployment.to_string()).unwrap()
+        })
+        .clone();
+    // Create a new deployment with the desired edition.
+    Deployment::<CurrentNetwork>::new(
+        edition,
+        deployment.program().clone(),
+        deployment.verifying_keys().clone(),
+        deployment.program_checksum(),
+        Some(Address::rand(rng)),
+    )
+    .unwrap()
+}
+
+/// Samples a V3 deployment (amendment) for the same program as V2 without translation keys.
+/// The edition must match an existing deployment's edition.
+/// V3 = checksum + no owner.
+pub fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+    // Sample a V2 deployment without translation keys, then remove the owner to make it V3.
+    let mut deployment = sample_deployment_v2_without_translation_keys(edition, rng);
+    deployment.set_program_owner_raw(None);
+    deployment
 }
 
 /// Samples a rejected deployment.
-pub fn sample_rejected_deployment(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
+pub fn sample_rejected_deployment(
+    version: u8,
+    edition: u16,
+    has_translation_keys: bool,
+    is_fee_private: bool,
+    rng: &mut TestRng,
+) -> Rejected<CurrentNetwork> {
     // Sample a deploy transaction.
-    let deployment = match crate::sample_deployment_transaction(is_fee_private, rng) {
-        Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
-        _ => unreachable!(),
-    };
+    let deployment =
+        match crate::sample_deployment_transaction(version, edition, has_translation_keys, is_fee_private, rng) {
+            Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
+            _ => unreachable!(),
+        };
 
     // Sample a new program owner.
     let private_key = PrivateKey::new(rng).unwrap();
@@ -182,19 +329,23 @@ pub fn sample_rejected_deployment(is_fee_private: bool, rng: &mut TestRng) -> Re
 /******************************************* Execution ********************************************/
 
 /// Samples a random execution.
-pub fn sample_execution(rng: &mut TestRng) -> Execution<CurrentNetwork> {
+pub fn sample_execution(rng: &mut TestRng, index: usize) -> Execution<CurrentNetwork> {
     // Sample the genesis block.
     let block = crate::sample_genesis_block(rng);
     // Retrieve a transaction.
-    let transaction = block.transactions().iter().next().unwrap().deref().clone();
+    let transaction = block.transactions().iter().nth(index).unwrap().deref().clone();
     // Retrieve the execution.
-    if let Transaction::Execute(_, _, execution, _) = transaction { *execution } else { unreachable!() }
+    if let Transaction::Execute(_, _, execution, _) = transaction {
+        *execution
+    } else {
+        panic!("Index {index} exceeded the number of executions in the genesis block")
+    }
 }
 
 /// Samples a rejected execution.
 pub fn sample_rejected_execution(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
     // Sample an execute transaction.
-    let execution = match crate::sample_execution_transaction_with_fee(is_fee_private, rng) {
+    let execution = match crate::sample_execution_transaction_with_fee(is_fee_private, rng, 0) {
         Transaction::Execute(_, _, execution, _) => execution,
         _ => unreachable!(),
     };
@@ -207,7 +358,7 @@ pub fn sample_rejected_execution(is_fee_private: bool, rng: &mut TestRng) -> Rej
 
 /// Samples a random hardcoded private fee.
 pub fn sample_fee_private_hardcoded(rng: &mut TestRng) -> Fee<CurrentNetwork> {
-    static INSTANCE: OnceCell<Fee<CurrentNetwork>> = OnceCell::new();
+    static INSTANCE: OnceLock<Fee<CurrentNetwork>> = OnceLock::new();
     INSTANCE
         .get_or_init(|| {
             // Sample a deployment or execution ID.
@@ -221,9 +372,9 @@ pub fn sample_fee_private_hardcoded(rng: &mut TestRng) -> Fee<CurrentNetwork> {
 /// Samples a random private fee.
 pub fn sample_fee_private(deployment_or_execution_id: Field<CurrentNetwork>, rng: &mut TestRng) -> Fee<CurrentNetwork> {
     // Sample the genesis block, transaction, and private key.
-    let (block, transaction, private_key) = crate::sample_genesis_block_and_components(rng);
+    let (block, transactions, private_key) = crate::sample_genesis_block_and_components(rng);
     // Retrieve a credits record.
-    let credits = transaction.records().next().unwrap().1.clone();
+    let credits = transactions.iter().next().unwrap().records().next().unwrap().1.clone();
     // Decrypt the record.
     let credits = credits.decrypt(&private_key.try_into().unwrap()).unwrap();
     // Sample a base fee in microcredits.
@@ -265,7 +416,7 @@ pub fn sample_fee_private(deployment_or_execution_id: Field<CurrentNetwork>, rng
 
 /// Samples a random hardcoded public fee.
 pub fn sample_fee_public_hardcoded(rng: &mut TestRng) -> Fee<CurrentNetwork> {
-    static INSTANCE: OnceCell<Fee<CurrentNetwork>> = OnceCell::new();
+    static INSTANCE: OnceLock<Fee<CurrentNetwork>> = OnceLock::new();
     INSTANCE
         .get_or_init(|| {
             // Sample a deployment or execution ID.
@@ -353,11 +504,36 @@ function large_transaction:
 /****************************************** Transaction *******************************************/
 
 /// Samples a random deployment transaction with a private or public fee.
-pub fn sample_deployment_transaction(is_fee_private: bool, rng: &mut TestRng) -> Transaction<CurrentNetwork> {
+pub fn sample_deployment_transaction(
+    version: u8,
+    edition: u16,
+    has_translation_keys: bool,
+    is_fee_private: bool,
+    rng: &mut TestRng,
+) -> Transaction<CurrentNetwork> {
     // Sample a private key.
     let private_key = PrivateKey::new(rng).unwrap();
     // Sample a deployment.
-    let deployment = crate::sample_deployment(rng);
+    let deployment = match (version, has_translation_keys) {
+        (1, false) => sample_deployment_v1(edition, rng),
+        (2, false) => {
+            let mut deployment = sample_deployment_v2_without_translation_keys(edition, rng);
+            // Set the program owner to the address of the private key.
+            deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
+            deployment
+        }
+        (2, true) => {
+            let mut deployment = sample_deployment_v2_with_translation_keys(edition, rng);
+            // Set the program owner to the address of the private key.
+            deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
+            deployment
+        }
+        (3, _) => {
+            // V3 is an amendment - uses the same program as V2 but with additional translation VKs and no program_owner.
+            sample_deployment_v3(edition, rng)
+        }
+        _ => panic!("Invalid deployment version ({version}) or translation keys combination."),
+    };
 
     // Compute the deployment ID.
     let deployment_id = deployment.to_deployment_id().unwrap();
@@ -375,9 +551,13 @@ pub fn sample_deployment_transaction(is_fee_private: bool, rng: &mut TestRng) ->
 }
 
 /// Samples a random execution transaction with a private or public fee.
-pub fn sample_execution_transaction_with_fee(is_fee_private: bool, rng: &mut TestRng) -> Transaction<CurrentNetwork> {
+pub fn sample_execution_transaction_with_fee(
+    is_fee_private: bool,
+    rng: &mut TestRng,
+    index: usize,
+) -> Transaction<CurrentNetwork> {
     // Sample an execution.
-    let execution = crate::sample_execution(rng);
+    let execution = crate::sample_execution(rng, index);
     // Compute the execution ID.
     let execution_id = execution.to_execution_id().unwrap();
 
@@ -393,7 +573,7 @@ pub fn sample_execution_transaction_with_fee(is_fee_private: bool, rng: &mut Tes
 
 /// Samples a large transaction.
 pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
-    static INSTANCE: once_cell::sync::OnceCell<Execution<CurrentNetwork>> = once_cell::sync::OnceCell::new();
+    static INSTANCE: std::sync::OnceLock<Execution<CurrentNetwork>> = std::sync::OnceLock::new();
 
     let execution = INSTANCE
         .get_or_init(|| {
@@ -401,9 +581,9 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
             let program = large_transaction_program();
 
             // Construct the process.
-            let mut process = synthesizer_process::Process::load().unwrap();
+            let process = snarkvm_synthesizer_process::Process::load().unwrap();
             // Add the program.
-            process.add_program(&program).unwrap();
+            process.lock().add_program(&program).unwrap();
 
             // Initialize a private key.
             let private_key = PrivateKey::new(rng).unwrap();
@@ -422,14 +602,14 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
             let (_, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
 
             // Initialize a new block store.
-            let block_store =
-                ledger_store::BlockStore::<CurrentNetwork, ledger_store::helpers::memory::BlockMemory<_>>::open(
-                    StorageMode::new_test(None),
-                )
-                .unwrap();
+            let block_store = snarkvm_ledger_store::BlockStore::<
+                CurrentNetwork,
+                snarkvm_ledger_store::helpers::memory::BlockMemory<_>,
+            >::open(StorageMode::new_test(None))
+            .unwrap();
 
             // Prepare the assignments.
-            trace.prepare(&ledger_query::Query::from(block_store)).unwrap();
+            trace.prepare(&snarkvm_ledger_query::Query::from(block_store)).unwrap();
             // Compute the proof and construct the execution.
             let execution = trace.prove_execution::<CurrentAleo, _>("testing.aleo", VarunaVersion::V1, rng).unwrap();
             // Reconstruct the execution from bytes.
@@ -481,35 +661,38 @@ pub fn sample_genesis_block(rng: &mut TestRng) -> Block<CurrentNetwork> {
     block
 }
 
-/// Samples a random genesis block and the transaction from the genesis block.
-pub fn sample_genesis_block_and_transaction(rng: &mut TestRng) -> (Block<CurrentNetwork>, Transaction<CurrentNetwork>) {
+/// Samples a random genesis block and the transactions from the genesis block.
+pub fn sample_genesis_block_and_transactions(
+    rng: &mut TestRng,
+) -> (Block<CurrentNetwork>, Transactions<CurrentNetwork>) {
     // Sample the genesis block and components.
-    let (block, transaction, _) = crate::sample_genesis_block_and_components(rng);
-    // Return the block and transaction.
-    (block, transaction)
+    let (block, transactions, _) = crate::sample_genesis_block_and_components(rng);
+    // Return the block and transactions.
+    (block, transactions)
 }
 
-/// Samples a random genesis block, the transaction from the genesis block, and the genesis private key.
+/// Samples a random genesis block, the transactions from the genesis block, and the genesis private key.
+/// If this function was called before, this returns a cached version.
 pub fn sample_genesis_block_and_components(
     rng: &mut TestRng,
-) -> (Block<CurrentNetwork>, Transaction<CurrentNetwork>, PrivateKey<CurrentNetwork>) {
-    static INSTANCE: OnceCell<(Block<CurrentNetwork>, Transaction<CurrentNetwork>, PrivateKey<CurrentNetwork>)> =
-        OnceCell::new();
-    INSTANCE.get_or_init(|| crate::sample_genesis_block_and_components_raw(rng)).clone()
+) -> (Block<CurrentNetwork>, Transactions<CurrentNetwork>, PrivateKey<CurrentNetwork>) {
+    static INSTANCE: OnceLock<(Block<CurrentNetwork>, Transactions<CurrentNetwork>, PrivateKey<CurrentNetwork>)> =
+        OnceLock::new();
+    INSTANCE.get_or_init(|| crate::sample_genesis_block_and_components_uncached(rng)).clone()
 }
 
 pub fn sample_genesis_private_key(rng: &mut TestRng) -> PrivateKey<CurrentNetwork> {
-    static INSTANCE: OnceCell<PrivateKey<CurrentNetwork>> = OnceCell::new();
+    static INSTANCE: OnceLock<PrivateKey<CurrentNetwork>> = OnceLock::new();
     *INSTANCE.get_or_init(|| {
         // Initialize a new caller.
         PrivateKey::<CurrentNetwork>::new(rng).unwrap()
     })
 }
 
-/// Samples a random genesis block, the transaction from the genesis block, and the genesis private key.
-fn sample_genesis_block_and_components_raw(
+/// Samples a random genesis block, the transactions from the genesis block, and the genesis private key.
+pub fn sample_genesis_block_and_components_uncached(
     rng: &mut TestRng,
-) -> (Block<CurrentNetwork>, Transaction<CurrentNetwork>, PrivateKey<CurrentNetwork>) {
+) -> (Block<CurrentNetwork>, Transactions<CurrentNetwork>, PrivateKey<CurrentNetwork>) {
     // Sample the genesis private key.
     let private_key = sample_genesis_private_key(rng);
     let address = Address::<CurrentNetwork>::try_from(private_key).unwrap();
@@ -523,35 +706,40 @@ fn sample_genesis_block_and_components_raw(
 
     // Initialize the process.
     let process = Process::load().unwrap();
-    // Authorize the function.
-    let authorization =
-        process.authorize::<CurrentAleo, _>(&private_key, locator.0, locator.1, inputs.iter(), rng).unwrap();
-    // Execute the function.
-    let (_, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+    // Create the transactions.
+    let transactions = {
+        Transactions::from_iter((0..2).map(|_| {
+            // Authorize the function.
+            let authorization =
+                process.authorize::<CurrentAleo, _>(&private_key, locator.0, locator.1, inputs.iter(), rng).unwrap();
+            // Execute the function.
+            let (_, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
 
-    // Initialize a new block store.
-    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
+            // Initialize a new block store.
+            let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
-    // Prepare the assignments.
-    trace.prepare(&Query::from(block_store)).unwrap();
-    // Compute the proof and construct the execution.
-    let execution = trace.prove_execution::<CurrentAleo, _>(locator.0, VarunaVersion::V1, rng).unwrap();
-    // Convert the execution.
-    // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
-    let execution = Execution::from_str(&execution.to_string()).unwrap();
+            // Prepare the assignments.
+            trace.prepare(&Query::from(block_store)).unwrap();
+            // Compute the proof and construct the execution.
+            let execution = trace.prove_execution::<CurrentAleo, _>(locator.0, VarunaVersion::V1, rng).unwrap();
+            // Convert the execution.
+            // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
+            let execution = Execution::from_str(&execution.to_string()).unwrap();
 
-    // Construct the transaction.
-    let transaction = Transaction::from_execution(execution, None).unwrap();
-    // Prepare the confirmed transaction.
-    let confirmed = ConfirmedTransaction::accepted_execute(0, transaction.clone(), vec![]).unwrap();
-    // Prepare the transactions.
-    let transactions = Transactions::from_iter([confirmed]);
+            // Construct the transaction.
+            let transaction = Transaction::from_execution(execution, None).unwrap();
+            // Prepare the confirmed transaction.
+            ConfirmedTransaction::accepted_execute(0, transaction.clone(), vec![]).unwrap()
+        }))
+    };
 
     // Construct the ratifications.
     let ratifications = Ratifications::try_from(vec![]).unwrap();
 
     // Prepare the block header.
-    let header = Header::genesis(&ratifications, &transactions, vec![]).unwrap();
+    let header = Header::genesis(&ratifications, &transactions, vec![])
+        .with_context(|| "Failed to generate genesis sample header")
+        .pretty_unwrap();
     // Prepare the previous block hash.
     let previous_hash = <CurrentNetwork as Network>::BlockHash::default();
 
@@ -563,12 +751,12 @@ fn sample_genesis_block_and_components_raw(
         ratifications,
         None.into(),
         vec![],
-        transactions,
+        transactions.clone(),
         vec![],
         rng,
     )
     .unwrap();
-    assert!(block.header().is_genesis(), "Failed to initialize a genesis block");
+    assert!(block.header().is_genesis().unwrap(), "Failed to initialize a genesis block");
     // Return the block, transaction, and private key.
-    (block, transaction, private_key)
+    (block, transactions, private_key)
 }

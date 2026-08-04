@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-committee"
-version = "3.8.0"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A committee for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -21,79 +21,73 @@ categories = [
 ]
 include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
-default = [ "rayon" ]
-serial = [ "console/serial" ]
-wasm = [ "console/wasm" ]
-metrics = [ "dep:metrics" ]
-prop-tests = [ "rand", "rand_chacha", "test-strategy", "proptest", "anyhow" ]
+default = [ ]
+serial = [ "snarkvm-console/serial" ]
+wasm = [ "snarkvm-console/wasm" ]
+metrics = [ "dep:snarkvm-metrics" ]
+prop-tests = [ "dep:rand", "dep:rand_chacha", "test-strategy", "dep:anyhow", "dep:proptest" ]
 test-helpers = [ "prop-tests", "rand_distr" ]
 
-[dependencies.console]
-package = "snarkvm-console"
-path = "../../console"
-version = "=3.8.0"
+[dependencies.snarkvm-console]
+workspace = true
+features = [ "program" ]
 
-[dependencies.ledger-narwhal-batch-header]
-package = "snarkvm-ledger-narwhal-batch-header"
-path = "../narwhal/batch-header"
-version = "=3.8.0"
+[dependencies.snarkvm-ledger-narwhal-batch-header]
+workspace = true
 
 [dependencies.indexmap]
-version = "2.0"
+workspace = true
 features = [ "serde", "rayon" ]
 
-[dependencies.metrics]
-package = "snarkvm-metrics"
-path = "../../metrics"
-version = "=3.8.0"
+[dependencies.snarkvm-metrics]
+workspace = true
 optional = true
 
 [dependencies.serde_json]
-version = "1.0"
+workspace = true
 features = [ "preserve_order" ]
 
 [dependencies.anyhow]
-version = "1.0.73"
+workspace = true
 optional = true
 
 [dependencies.proptest]
-version = "1.0.0"
+workspace = true
 optional = true
 
 [dependencies.rand]
-version = "0.8"
+workspace = true
 optional = true
 
 [dependencies.rand_chacha]
-version = "0.3"
+workspace = true
 optional = true
 
 [dependencies.rand_distr]
-version = "0.4"
+version = "0.6"
 optional = true
 
 [dependencies.rayon]
-version = "1"
-optional = true
+workspace = true
 
 [dependencies.test-strategy]
 version = "0.3.1"
 optional = true
 
 [dev-dependencies.bincode]
-version = "1.3"
+workspace = true
 
 [dev-dependencies.parking_lot]
-version = "0.12"
+workspace = true
 
 [dev-dependencies.rand_distr]
-version = "0.4"
+version = "0.6"
 
 [dev-dependencies.rayon]
-version = "1"
+workspace = true
 
 [dev-dependencies.snarkvm-ledger-committee]
 path = "."

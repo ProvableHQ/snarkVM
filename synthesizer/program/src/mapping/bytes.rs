@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,7 +59,7 @@ mapping main:
 
         let expected = Mapping::<CurrentNetwork>::from_str(mapping_string)?;
         let expected_bytes = expected.to_bytes_le()?;
-        println!("String size: {:?}, Bytecode size: {:?}", mapping_string.as_bytes().len(), expected_bytes.len());
+        println!("String size: {:?}, Bytecode size: {:?}", mapping_string.len(), expected_bytes.len());
 
         let candidate = Mapping::<CurrentNetwork>::from_bytes_le(&expected_bytes)?;
         assert_eq!(expected.to_string(), candidate.to_string());

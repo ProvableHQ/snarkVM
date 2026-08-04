@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,13 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    Vec,
-    error,
+use std::{
+    cell::Cell,
     fmt,
     io::{Read, Result as IoResult, Write},
     marker::PhantomData,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
+
 use serde::{
     Deserializer,
     Serializer,
@@ -27,14 +28,28 @@ use serde::{
     ser::{self, SerializeTuple},
 };
 use smol_str::SmolStr;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+
+thread_local! {
+    static UNCHECKED_DESERIALIZE: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Performs a bincode deserialization without any checks of the data.
+///
+/// Important: This should only be used when deserializing from local storage.
+#[inline(always)]
+pub fn unchecked_deserialize<T: de::DeserializeOwned>(data: &[u8]) -> Result<T, bincode::Error> {
+    UNCHECKED_DESERIALIZE.set(true);
+    let result = bincode::deserialize(data);
+    UNCHECKED_DESERIALIZE.set(false);
+    result
+}
 
 /// Takes as input a sequence of structs, and converts them to a series of little-endian bytes.
 /// All traits that implement `ToBytes` can be automatically converted to bytes in this manner.
 #[macro_export]
 macro_rules! to_bytes_le {
     ($($x:expr),*) => ({
-        let mut buffer = $crate::vec![];
+        let mut buffer = vec![];
         buffer.reserve(64);
         {$crate::push_bytes_to_vec!(buffer, $($x),*)}.map(|_| buffer)
     });
@@ -79,8 +94,39 @@ pub trait FromBytes {
     {
         Ok(Self::read_le(bytes)?)
     }
+
+    /// Same behavior as `Self::from_bytes_le` but avoids costly checks.
+    /// This shall only be called when deserializing from a trusted source, such as local storage.
+    ///
+    /// Returns `Self` from a byte array in little-endian order.
+    fn from_bytes_le_unchecked(bytes: &[u8]) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self::read_le_unchecked(bytes)?)
+    }
+
+    /// Same behavior as [`Self::read_le`] but avoids costly checks.
+    /// This shall only be called when deserializing from a trusted source, such as local storage.
+    ///
+    /// The default implementation simply calls [`Self::read_le`].
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self>
+    where
+        Self: Sized,
+    {
+        Self::read_le(reader)
+    }
+
+    /// Helper function that deserializes either unchecked or checked based on the given boolean flag.
+    fn read_le_with_unchecked<R: Read>(reader: R, unchecked: bool) -> IoResult<Self>
+    where
+        Self: Sized,
+    {
+        if unchecked { Self::read_le_unchecked(reader) } else { Self::read_le(reader) }
+    }
 }
 
+/// Helper struct to serialize an object.
 pub struct ToBytesSerializer<T: ToBytes>(PhantomData<T>);
 
 impl<T: ToBytes> ToBytesSerializer<T> {
@@ -163,6 +209,22 @@ impl<'de, T: FromBytes> FromBytesDeserializer<T> {
                 true => FromBytes::read_le(&buffer[..size_a]).map_err(de::Error::custom),
                 false => Err(error),
             },
+        }
+    }
+}
+
+pub struct FromBytesUncheckedDeserializer<T: FromBytes>(PhantomData<T>);
+
+impl<'de, T: FromBytes> FromBytesUncheckedDeserializer<T> {
+    /// Deserializes a dynamically-sized byte array.
+    pub fn deserialize_with_size_encoding<D: Deserializer<'de>>(deserializer: D, name: &str) -> Result<T, D::Error> {
+        let mut buffer = Vec::with_capacity(32);
+        deserializer.deserialize_bytes(FromBytesVisitor::new(&mut buffer, name))?;
+
+        if UNCHECKED_DESERIALIZE.get() {
+            FromBytes::read_le_unchecked(&*buffer).map_err(de::Error::custom)
+        } else {
+            FromBytes::read_le(&*buffer).map_err(de::Error::custom)
         }
     }
 }
@@ -291,7 +353,7 @@ impl FromBytes for bool {
         match u8::read_le(reader) {
             Ok(0) => Ok(false),
             Ok(1) => Ok(true),
-            Ok(_) => Err(error("FromBytes::read failed")),
+            Ok(_) => Err(std::io::Error::other("FromBytes::read failed")),
             Err(err) => Err(err),
         }
     }
@@ -324,7 +386,7 @@ impl FromBytes for SocketAddr {
         let ip = match u8::read_le(&mut reader)? {
             0 => IpAddr::V4(Ipv4Addr::from(u32::read_le(&mut reader)?)),
             1 => IpAddr::V6(Ipv6Addr::from(u128::read_le(&mut reader)?)),
-            _ => return Err(error("Invalid IP address")),
+            _ => return Err(std::io::Error::other("Invalid IP address")),
         };
         // Read the port.
         let port = u16::read_le(&mut reader)?;
@@ -463,7 +525,7 @@ pub fn bits_from_bytes_le(bytes: &[u8]) -> impl DoubleEndedIterator<Item = bool>
 
 #[inline]
 pub fn bytes_from_bits_le(bits: &[bool]) -> Vec<u8> {
-    let desired_size = if bits.len() % 8 == 0 { bits.len() / 8 } else { bits.len() / 8 + 1 };
+    let desired_size = if bits.len().is_multiple_of(8) { bits.len() / 8 } else { bits.len() / 8 + 1 };
 
     let mut bytes = Vec::with_capacity(desired_size);
     for bits in bits.chunks(8) {
@@ -495,7 +557,7 @@ impl<W: Write> LimitedWriter<W> {
 impl<W: Write> Write for LimitedWriter<W> {
     fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
         if self.remaining == 0 && !buf.is_empty() {
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Byte limit exceeded: {}", self.limit)));
+            return Err(std::io::Error::other(format!("Byte limit exceeded: {}", self.limit)));
         }
 
         let max_write = std::cmp::min(buf.len(), self.remaining);
@@ -518,7 +580,7 @@ mod test {
     use super::*;
     use crate::TestRng;
 
-    use rand::Rng;
+    use rand::RngExt;
 
     const ITERATIONS: usize = 1000;
 
@@ -571,7 +633,7 @@ mod test {
         let mut rng = TestRng::default();
 
         for _ in 0..ITERATIONS {
-            let given_bytes: [u8; 32] = rng.gen();
+            let given_bytes: [u8; 32] = rng.random();
 
             let bits = bits_from_bytes_le(&given_bytes).collect::<Vec<_>>();
             let recovered_bytes = bytes_from_bits_le(&bits);
@@ -583,15 +645,24 @@ mod test {
     #[test]
     fn test_socketaddr_bytes() {
         fn random_ipv4_address(rng: &mut TestRng) -> Ipv4Addr {
-            Ipv4Addr::new(rng.gen(), rng.gen(), rng.gen(), rng.gen())
+            Ipv4Addr::new(rng.random(), rng.random(), rng.random(), rng.random())
         }
 
         fn random_ipv6_address(rng: &mut TestRng) -> Ipv6Addr {
-            Ipv6Addr::new(rng.gen(), rng.gen(), rng.gen(), rng.gen(), rng.gen(), rng.gen(), rng.gen(), rng.gen())
+            Ipv6Addr::new(
+                rng.random(),
+                rng.random(),
+                rng.random(),
+                rng.random(),
+                rng.random(),
+                rng.random(),
+                rng.random(),
+                rng.random(),
+            )
         }
 
         fn random_port(rng: &mut TestRng) -> u16 {
-            rng.gen_range(1025..=65535) // excluding well-known ports
+            rng.random_range(1025..=65535) // excluding well-known ports
         }
 
         let rng = &mut TestRng::default();

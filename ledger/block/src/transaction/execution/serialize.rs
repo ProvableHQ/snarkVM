@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -66,7 +66,7 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Sample the execution.
-        let expected = crate::transaction::execution::test_helpers::sample_execution(rng);
+        let expected = crate::transaction::execution::test_helpers::sample_execution(rng, 0);
 
         // Serialize
         let expected_string = &expected.to_string();
@@ -85,7 +85,7 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Sample the execution.
-        let expected = crate::transaction::execution::test_helpers::sample_execution(rng);
+        let expected = crate::transaction::execution::test_helpers::sample_execution(rng, 0);
 
         // Serialize
         let expected_bytes = expected.to_bytes_le()?;

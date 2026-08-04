@@ -1,4 +1,5 @@
 /*
+start_height: 0
 cases:
   - program: timelock.aleo
     function: lock

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,13 +15,13 @@
 
 mod utilities;
 
-use console::{
+use snarkvm_console::{
     account::PrivateKey,
     network::prelude::*,
     program::{Identifier, Literal, ProgramID, Value},
     types::Boolean,
 };
-use synthesizer_process::Process;
+use snarkvm_synthesizer_process::Process;
 use utilities::*;
 
 use rayon::prelude::*;
@@ -31,22 +31,26 @@ use std::panic::AssertUnwindSafe;
 fn test_process_execute() {
     // Load the tests.
     let tests = load_tests::<_, ProgramTest>("./tests/process/execute", "./expectations/process/execute");
-    // Initialize a process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
 
     // Run each test and compare it against its corresponding expectation.
     tests.par_iter().for_each(|test| {
+        // Initialize a process.
+        let process = Process::<CurrentNetwork>::load().unwrap();
         // Run the test.
-        let output = run_test(process.clone(), test);
+        let output = run_test(&process, test);
         // Check against the expected output.
-        test.check(&output).unwrap();
-        // Save the output.
+        let res = test.check(&output);
+        if let Err(err) = &res {
+            println!("Error running test {:?}: {}", test.path(), err);
+        }
+        res.unwrap();
+        // Save the output when valid.
         test.save(&output).unwrap();
     });
 }
 
 // A helper function to run the test and extract the outputs as YAML, to be compared against the expectation.
-fn run_test(process: Process<CurrentNetwork>, test: &ProgramTest) -> serde_yaml::Mapping {
+fn run_test(process: &Process<CurrentNetwork>, test: &ProgramTest) -> serde_yaml::Mapping {
     // Initialize the output.
     let mut output = serde_yaml::Mapping::new();
     output.insert(
@@ -55,9 +59,8 @@ fn run_test(process: Process<CurrentNetwork>, test: &ProgramTest) -> serde_yaml:
     );
 
     // Add the programs into the process.
-    let mut process = process.clone();
     for program in test.programs() {
-        if let Err(err) = process.add_program(program) {
+        if let Err(err) = process.lock().add_program(program) {
             output
                 .get_mut(serde_yaml::Value::String("errors".to_string()))
                 .unwrap()

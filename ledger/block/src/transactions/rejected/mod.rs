@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -52,8 +52,8 @@ impl<N: Network> Rejected<N> {
     /// Returns the program owner of the rejected deployment.
     pub fn program_owner(&self) -> Option<&ProgramOwner<N>> {
         match self {
-            Self::Deployment(program_owner, _) => Some(program_owner),
-            Self::Execution(_) => None,
+            Self::Deployment(program_owner, ..) => Some(program_owner),
+            Self::Execution(..) => None,
         }
     }
 
@@ -61,14 +61,14 @@ impl<N: Network> Rejected<N> {
     pub fn deployment(&self) -> Option<&Deployment<N>> {
         match self {
             Self::Deployment(_, deployment) => Some(deployment),
-            Self::Execution(_) => None,
+            Self::Execution(..) => None,
         }
     }
 
     /// Returns the rejected execution.
     pub fn execution(&self) -> Option<&Execution<N>> {
         match self {
-            Self::Deployment(_, _) => None,
+            Self::Deployment(..) => None,
             Self::Execution(execution) => Some(execution),
         }
     }
@@ -85,15 +85,13 @@ impl<N: Network> Rejected<N> {
     /// When a transaction is rejected, its fee transition is used to construct the confirmed transaction ID,
     /// changing the original transaction ID.
     pub fn to_unconfirmed_id(&self, fee: &Option<Fee<N>>) -> Result<Field<N>> {
-        let (tree, fee_index) = match self {
-            Self::Deployment(_, deployment) => (Transaction::deployment_tree(deployment)?, deployment.len()),
-            Self::Execution(execution) => (Transaction::execution_tree(execution)?, execution.len()),
+        // Compute the deployment or execution tree.
+        let tree = match self {
+            Self::Deployment(_, deployment) => Transaction::deployment_tree(deployment)?,
+            Self::Execution(execution) => Transaction::execution_tree(execution)?,
         };
-        if let Some(fee) = fee {
-            Ok(*Transaction::transaction_tree(tree, fee_index, fee)?.root())
-        } else {
-            Ok(*tree.root())
-        }
+        // Construct the transaction tree and return the unconfirmed transaction ID.
+        Ok(*Transaction::transaction_tree(tree, fee.as_ref())?.root())
     }
 }
 
@@ -105,9 +103,21 @@ pub mod test_helpers {
     type CurrentNetwork = MainnetV0;
 
     /// Samples a rejected deployment.
-    pub(crate) fn sample_rejected_deployment(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
+    pub(crate) fn sample_rejected_deployment(
+        version: u8,
+        edition: u16,
+        has_translation_keys: bool,
+        is_fee_private: bool,
+        rng: &mut TestRng,
+    ) -> Rejected<CurrentNetwork> {
         // Sample a deploy transaction.
-        let deployment = match crate::transaction::test_helpers::sample_deployment_transaction(is_fee_private, rng) {
+        let deployment = match crate::transaction::test_helpers::sample_deployment_transaction(
+            version,
+            edition,
+            has_translation_keys,
+            is_fee_private,
+            rng,
+        ) {
             Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
             _ => unreachable!(),
         };
@@ -125,7 +135,7 @@ pub mod test_helpers {
     pub(crate) fn sample_rejected_execution(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
         // Sample an execute transaction.
         let execution =
-            match crate::transaction::test_helpers::sample_execution_transaction_with_fee(is_fee_private, rng) {
+            match crate::transaction::test_helpers::sample_execution_transaction_with_fee(is_fee_private, rng, 0) {
                 Transaction::Execute(_, _, execution, _) => execution,
                 _ => unreachable!(),
             };
@@ -138,11 +148,35 @@ pub mod test_helpers {
     pub(crate) fn sample_rejected_transactions() -> Vec<Rejected<CurrentNetwork>> {
         let rng = &mut TestRng::default();
 
-        vec![
-            sample_rejected_deployment(true, rng),
-            sample_rejected_deployment(false, rng),
-            sample_rejected_execution(true, rng),
-            sample_rejected_execution(false, rng),
-        ]
+        let mut txs = Vec::new();
+
+        // Sample the deployments.
+        for version in 1..=2 {
+            for edition in 0..=1 {
+                for has_translation_keys in [true, false] {
+                    // version 1 didn't support translation keys
+                    if version == 1 && has_translation_keys {
+                        continue;
+                    }
+                    // version 2 expects edition 1
+                    if version == 2 && edition == 0 {
+                        continue;
+                    }
+                    for is_fee_private in [true, false] {
+                        let tx =
+                            sample_rejected_deployment(version, edition, has_translation_keys, is_fee_private, rng);
+                        txs.push(tx);
+                    }
+                }
+            }
+        }
+
+        // Sample the executions.
+        for is_fee_private in [true, false] {
+            let tx = sample_rejected_execution(is_fee_private, rng);
+            txs.push(tx);
+        }
+
+        txs
     }
 }

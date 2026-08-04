@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,12 +18,18 @@ use console::{
     account::{Address, PrivateKey},
     network::{MainnetV0, prelude::*},
 };
-use ledger_committee::{MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE, MIN_VALIDATOR_STAKE};
-#[cfg(feature = "rocks")]
-use ledger_store::{FinalizeMode, FinalizeStorage, FinalizeStore, atomic_finalize};
-#[cfg(not(feature = "rocks"))]
-use ledger_store::{FinalizeMode, FinalizeStorage, FinalizeStore, atomic_finalize, helpers::memory::FinalizeMemory};
 use rand::seq::IteratorRandom;
+use snarkvm_ledger_committee::{MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE, MIN_VALIDATOR_STAKE};
+#[cfg(feature = "rocks")]
+use snarkvm_ledger_store::{FinalizeMode, FinalizeStorage, FinalizeStore, atomic_finalize};
+#[cfg(not(feature = "rocks"))]
+use snarkvm_ledger_store::{
+    FinalizeMode,
+    FinalizeStorage,
+    FinalizeStore,
+    atomic_finalize,
+    helpers::memory::FinalizeMemory,
+};
 
 use indexmap::{IndexMap, IndexSet};
 
@@ -35,8 +41,8 @@ fn random_below_with_blowup(value: u64, rng: &mut impl Rng) -> u64 {
     const BLOWUP: u64 = 20;
     let upper_bound = value + value / BLOWUP;
 
-    match rng.gen_range(0..100) {
-        0..=79 => rng.gen_range(0..=upper_bound),
+    match rng.random_range(0..100) {
+        0..=79 => rng.random_range(0..=upper_bound),
         _ => value,
     }
 }
@@ -49,7 +55,7 @@ fn random_with_default<'a, T>(
     default: Option<&'a T>,
     rng: &mut impl Rng,
 ) -> &'a T {
-    match rng.gen_range(0..100) {
+    match rng.random_range(0..100) {
         0..=79 => default.unwrap_or(values.choose(rng).unwrap()),
         _ => values.choose(rng).unwrap(),
     }
@@ -100,7 +106,7 @@ impl Operation {
     /// Returns a random operation. Note that the operation may not be valid in
     /// the sense that it is not guaranteed to execute successfully.
     pub fn random(state: &State, rng: &mut impl Rng) -> Self {
-        match rng.gen_range(0..3) {
+        match rng.random_range(0..3) {
             0 => Operation::random_bond_validator(state, rng),
             1 => Operation::random_bond_public(state, rng),
             _ => Operation::random_unbond_public(state, rng),

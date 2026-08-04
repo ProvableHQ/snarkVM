@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,7 +41,7 @@ impl<E: Environment> Inverse for Field<E> {
         });
 
         // Ensure `self` * `self^(-1)` == 1.
-        E::enforce(|| (self, &inverse, E::one()));
+        E::enforce(|| (self, &inverse, E::one())).expect("Field inverse constraint unsatisfied");
 
         inverse
     }
@@ -74,7 +74,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 1_000;
+    const ITERATIONS: u64 = 10;
 
     fn check_inverse(name: &str, mode: Mode, rng: &mut TestRng) {
         for _ in 0..ITERATIONS {

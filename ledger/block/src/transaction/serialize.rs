@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,8 +18,9 @@ use super::*;
 impl<N: Network> Serialize for Transaction<N> {
     /// Serializes the transaction to a JSON-string or buffer.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Note: We purposefully do not write out the deployment or execution ID,
+        // and instead recompute it when reconstructing the transaction, to ensure there was no malleability.
         match serializer.is_human_readable() {
-            // We don't write the deployment or execution id, which are recomputed when creating the Transaction.
             true => match self {
                 Self::Deploy(id, _, owner, deployment, fee) => {
                     let mut transaction = serializer.serialize_struct("Transaction", 5)?;
@@ -56,56 +57,56 @@ impl<N: Network> Serialize for Transaction<N> {
 impl<'de, N: Network> Deserialize<'de> for Transaction<N> {
     /// Deserializes the transaction from a JSON-string or buffer.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        match deserializer.is_human_readable() {
-            true => {
-                // Deserialize the transaction into a JSON value.
-                let mut transaction = serde_json::Value::deserialize(deserializer)?;
-                // Retrieve the transaction ID.
-                let id: N::TransactionID = DeserializeExt::take_from_value::<D>(&mut transaction, "id")?;
+        if deserializer.is_human_readable() {
+            // Deserialize the transaction into a JSON value.
+            let mut transaction = serde_json::Value::deserialize(deserializer)?;
+            // Retrieve the transaction ID.
+            let id: N::TransactionID = DeserializeExt::take_from_value::<D>(&mut transaction, "id")
+                .map_err(|err| de::Error::custom(format!("Failed to parse transaction ID: {err}")))?;
 
-                // Recover the transaction.
-                let transaction = match transaction
-                    .get("type")
-                    .ok_or_else(|| de::Error::custom("The \"type\" field is missing"))?
-                    .as_str()
-                {
-                    Some("deploy") => {
-                        // Retrieve the owner.
-                        let owner = DeserializeExt::take_from_value::<D>(&mut transaction, "owner")?;
-                        // Retrieve the deployment.
-                        let deployment = DeserializeExt::take_from_value::<D>(&mut transaction, "deployment")?;
-                        // Retrieve the fee.
-                        let fee = DeserializeExt::take_from_value::<D>(&mut transaction, "fee")?;
-                        // Construct the transaction.
-                        Transaction::from_deployment(owner, deployment, fee).map_err(de::Error::custom)?
-                    }
-                    Some("execute") => {
-                        // Retrieve the execution.
-                        let execution = DeserializeExt::take_from_value::<D>(&mut transaction, "execution")?;
-                        // Retrieve the fee, if it exists.
-                        let fee = serde_json::from_value(
-                            transaction.get_mut("fee").unwrap_or(&mut serde_json::Value::Null).take(),
-                        )
-                        .map_err(de::Error::custom)?;
-                        // Construct the transaction.
-                        Transaction::from_execution(execution, fee).map_err(de::Error::custom)?
-                    }
-                    Some("fee") => {
-                        // Retrieve the fee.
-                        let fee = DeserializeExt::take_from_value::<D>(&mut transaction, "fee")?;
-                        // Construct the transaction.
-                        Transaction::from_fee(fee).map_err(de::Error::custom)?
-                    }
-                    _ => return Err(de::Error::custom("Invalid transaction type")),
-                };
-
-                // Ensure the transaction ID matches.
-                match id == transaction.id() {
-                    true => Ok(transaction),
-                    false => Err(de::Error::custom(error("Mismatching transaction ID, possible data corruption"))),
+            // Recover the transaction.
+            let transaction = match transaction
+                .get("type")
+                .ok_or_else(|| de::Error::custom("The \"type\" field is missing"))?
+                .as_str()
+            {
+                Some("deploy") => {
+                    // Retrieve the owner.
+                    let owner = DeserializeExt::take_from_value::<D>(&mut transaction, "owner")?;
+                    // Retrieve the deployment.
+                    let deployment = DeserializeExt::take_from_value::<D>(&mut transaction, "deployment")?;
+                    // Retrieve the fee.
+                    let fee = DeserializeExt::take_from_value::<D>(&mut transaction, "fee")?;
+                    // Construct the transaction.
+                    Transaction::from_deployment(owner, deployment, fee).map_err(de::Error::custom)?
                 }
+                Some("execute") => {
+                    // Retrieve the execution.
+                    let execution = DeserializeExt::take_from_value::<D>(&mut transaction, "execution")?;
+                    // Retrieve the fee, if it exists.
+                    let fee = serde_json::from_value(
+                        transaction.get_mut("fee").unwrap_or(&mut serde_json::Value::Null).take(),
+                    )
+                    .map_err(de::Error::custom)?;
+                    // Construct the transaction.
+                    Transaction::from_execution(execution, fee).map_err(de::Error::custom)?
+                }
+                Some("fee") => {
+                    // Retrieve the fee.
+                    let fee = DeserializeExt::take_from_value::<D>(&mut transaction, "fee")?;
+                    // Construct the transaction.
+                    Transaction::from_fee(fee).map_err(de::Error::custom)?
+                }
+                _ => return Err(de::Error::custom("Invalid transaction type")),
+            };
+
+            // Ensure the transaction ID matches.
+            match id == transaction.id() {
+                true => Ok(transaction),
+                false => Err(de::Error::custom(error("Mismatching transaction ID, possible data corruption"))),
             }
-            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "transaction"),
+        } else {
+            FromBytesUncheckedDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "transaction")
         }
     }
 }
@@ -119,10 +120,14 @@ mod tests {
         let rng = &mut TestRng::default();
 
         for expected in [
-            crate::transaction::test_helpers::sample_deployment_transaction(true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(false, rng),
-            crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng),
-            crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, false, rng),
+            crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
+            crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
         ]
         .into_iter()
         {
@@ -142,10 +147,14 @@ mod tests {
         let rng = &mut TestRng::default();
 
         for expected in [
-            crate::transaction::test_helpers::sample_deployment_transaction(true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(false, rng),
-            crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng),
-            crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, false, rng),
+            crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
+            crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
         ]
         .into_iter()
         {

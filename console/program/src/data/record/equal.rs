@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +31,11 @@ impl<N: Network, Private: Visibility<Boolean = Boolean<N>>> Equal<Self> for Reco
     fn is_equal(&self, other: &Self) -> Self::Output {
         // Ensure the `data` lengths are equal.
         if self.data.len() != other.data.len() {
+            return Boolean::new(false);
+        }
+
+        // Check the `version`.
+        if !(*self.version.is_equal(&other.version)) {
             return Boolean::new(false);
         }
 
@@ -77,7 +82,8 @@ mod tests {
         f: 123456789field.private,
         g: 0group.private
     },
-    _nonce: 0group.public
+    _nonce: 0group.public,
+    _version: 0u8.public
 }",
         )
         .unwrap()
@@ -95,7 +101,8 @@ mod tests {
         f: 123456789field.private,
         g: 0group.private
     },
-    _nonce: 0group.public
+    _nonce: 0group.public,
+    _version: 0u8.public
 }",
         )
         .unwrap()

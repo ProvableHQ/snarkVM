@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,14 +23,14 @@ impl<N: Network> FromStr for PrivateKey<N> {
     /// Reads in an account private key from a base58 string.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // Encode the string into base58.
-        let data = bs58::decode(s).into_vec().map_err(|err| anyhow!("{:?}", err))?;
+        let data = bs58::decode(s).into_vec().map_err(|err| anyhow!("{err:?}"))?;
         if data.len() != 43 {
             bail!("Invalid account private key length: found {}, expected 43", data.len())
         } else if data[0..11] != PRIVATE_KEY_PREFIX {
             bail!("Invalid account private key prefix: found {:?}, expected {:?}", &data[0..11], PRIVATE_KEY_PREFIX)
         }
         // Output the private key.
-        Ok(Self::try_from(Field::new(FromBytes::read_le(&data[11..43])?)).map_err(|e| error(format!("{e}")))?)
+        Ok(Self::try_from(Field::new(FromBytes::read_le(&data[11..43])?)).map_err(into_io_error)?)
     }
 }
 

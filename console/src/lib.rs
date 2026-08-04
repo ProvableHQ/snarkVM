@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,6 +16,9 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
 #![warn(clippy::cast_possible_truncation)]
+
+#[cfg(all(feature = "dev_skip_checks", not(feature = "test_consensus_heights")))]
+compile_error!("feature \"dev_skip_checks\" requires feature \"test_consensus_heights\".");
 
 #[cfg(feature = "account")]
 pub use snarkvm_console_account as account;
@@ -39,3 +42,6 @@ pub mod prelude {
     #[cfg(feature = "network")]
     pub use crate::network::prelude::*;
 }
+
+#[cfg(all(feature = "filesystem", target_arch = "wasm32"))]
+compile_error!("Filesystem feature is not supported on wasm32");

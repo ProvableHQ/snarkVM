@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -138,6 +138,16 @@ mapping withdraw:
     key as address.public;
     // The value represents the withdrawal address of the owner.
     value as address.public;
+
+/**********************************************************************************************************************/
+
+mapping pool:
+    // The key represents the index at which the count is stored.
+    //    - This address (aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc) stores the number of microcredits
+    //      that have been migrated into the pool for records after the inclusion upgrade.
+    key as address.public;
+    // The value represents the amount of microcredits in the pool.
+    value as u64.public;
 
 /**********************************************************************************************************************/
 
@@ -1034,5 +1044,47 @@ finalize fee_public:
     sub r2 r1 into r3;
     // Updates the balance of the sender.
     set r3 into account[r0];
+
+/**********************************************************************************************************************/
+
+// The `upgrade` function migrates the input record to the pool of records after the inclusion upgrade.
+// The original record will be spent and the new record will be created with the same amount of credits.
+// If the caller executes a transaction that contains only a call to this function, then the transaction does not
+// require a fee, unless the caller wishes to provide an additional fee. Transactions that contain multiple transitions
+// (that include one or more calls to this function) will require a fee as per standard consensus rules.
+function upgrade:
+    // Input the record.
+    input r0 as credits.record;
+
+    // Check if the record amount is at most 500,000 credits.
+    lte r0.microcredits 1_000_000_000_000u64 into r1;
+    // Ensure that the record amount is at most 500,000 credits.
+    assert.eq r1 true;
+
+    // Construct a record for the specified receiver.
+    cast r0.owner r0.microcredits into r2 as credits.record;
+
+    // Decrement the private pool of records before the inclusion upgrade.
+    async upgrade r0.microcredits into r3;
+    // Output the upgraded record.
+    output r2 as credits.record;
+    // Output the finalize future.
+    output r3 as credits.aleo/upgrade.future;
+
+finalize upgrade:
+    // Input the record amount.
+    input r0 as u64.public;
+
+    // Get the remaining `credits.record` pool size.
+    get.or_use pool[aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc] 0u64 into r1;
+    // Increment the pool by the record amount.
+    add r1 r0 into r2;
+    // Determine if the total number of migrated credits is less than or equal to 4_000_000 credits.
+    lte r2 4_000_000_000_000u64 into r3;
+    // Enforce that the total number of migrated credits is less than or equal to 4_000_000 credits.
+    assert.eq r3 true;
+
+    // Set the new pool size.
+    set r2 into pool[aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc];
 
 /**********************************************************************************************************************/

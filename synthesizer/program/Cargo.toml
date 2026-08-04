@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-synthesizer-program"
-version = "3.8.0"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Program for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -21,58 +21,72 @@ categories = [
 ]
 include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = [ ]
-serial = [ "console/serial" ]
-wasm = [ "console/wasm" ]
+serial = [ "snarkvm-console/serial" ]
+wasm = [ "snarkvm-console/wasm" ]
 
-[dependencies.circuit]
-package = "snarkvm-circuit"
-path = "../../circuit"
-version = "=3.8.0"
+[dependencies.snarkvm-algorithms]
+workspace = true
 
-[dependencies.console]
-package = "snarkvm-console"
-path = "../../console"
-version = "=3.8.0"
-default-features = false
+[dependencies.snarkvm-circuit]
+workspace = true
+
+[dependencies.snarkvm-console]
+workspace = true
 features = [ "account", "network", "program", "types" ]
 
+[dependencies.snarkvm-synthesizer-error]
+workspace = true
+
+[dependencies.snarkvm-synthesizer-snark]
+workspace = true
+
+[dependencies.snarkvm-utilities]
+workspace = true
+
+[dependencies.enum-iterator]
+workspace = true
+
 [dependencies.indexmap]
-version = "2.0"
+workspace = true
 features = [ "serde", "rayon" ]
 
 [dependencies.paste]
-version = "1.0.14"
+workspace = true
 
 [dependencies.rand]
-version = "0.8"
+workspace = true
 
 [dependencies.rand_chacha]
-version = "0.3"
+workspace = true
 
-[dependencies.serde_json]
-version = "1.0"
-features = [ "preserve_order" ]
-
-[dependencies.synthesizer-snark]
-package = "snarkvm-synthesizer-snark"
-path = "../snark"
-version = "=3.8.0"
-
-[dev-dependencies.bincode]
+[dependencies.rayon]
 version = "1"
 
-[dev-dependencies.console]
-package = "snarkvm-console"
-path = "../../console"
+[dependencies.serde_json]
+workspace = true
+features = [ "preserve_order" ]
+
+[dependencies.tiny-keccak]
+version = "2"
+features = [ "sha3" ]
+
+[dev-dependencies.bincode]
+workspace = true
+
+[dev-dependencies.k256]
+workspace = true
+
+[dev-dependencies.snarkvm-console]
+workspace = true
 features = [ "test" ]
 
 [dev-dependencies.criterion]
-version = "0.5"
+workspace = true
 
-[dev-dependencies.synthesizer-process]
-package = "snarkvm-synthesizer-process"
+[dev-dependencies.snarkvm-synthesizer-process]
 path = "../process"
+features = [ "test" ]

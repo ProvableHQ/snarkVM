@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,7 +34,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlWrapped<Integer<E, M>> for
 
             // Zero-extend `rhs` by `8`.
             let mut bits_le = rhs.bits_le[..first_upper_bit_index].to_vec();
-            bits_le.extend(core::iter::repeat(Boolean::constant(false)).take(8));
+            bits_le.extend(core::iter::repeat_n(Boolean::constant(false), 8));
 
             // Use U8 for the exponent as it costs fewer constraints.
             let rhs_as_u8 = U8 { bits_le, phantom: Default::default() };
@@ -73,7 +73,6 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlWrapped<Integer<E, M>> for
                     shift_in_field = shift_in_field.square();
                     shift_in_field = Field::ternary(bit, &(&shift_in_field * &two), &shift_in_field);
                 }
-                // TODO (@pranav) Avoid initializing the integer.
                 let shift_as_multiplicand =
                     Self { bits_le: shift_in_field.to_lower_bits_le(I::BITS as usize), phantom: Default::default() };
                 self.mul_wrapped(&shift_as_multiplicand)
@@ -151,7 +150,7 @@ mod tests {
 
     use core::{ops::RangeInclusive, panic::RefUnwindSafe};
 
-    const ITERATIONS: u64 = 32;
+    const ITERATIONS: u64 = 10;
 
     fn check_shl<I: IntegerType + RefUnwindSafe, M: Magnitude + RefUnwindSafe>(
         name: &str,

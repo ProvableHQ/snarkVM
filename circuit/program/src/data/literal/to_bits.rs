@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -52,6 +52,7 @@ impl<A: Aleo> ToBits for &Literal<A> {
             Literal::Scalar(literal) => literal.write_bits_le(vec),
             Literal::Signature(literal) => literal.write_bits_le(vec),
             Literal::String(literal) => literal.write_bits_le(vec),
+            Literal::Identifier(literal) => literal.write_bits_le(vec),
         }
     }
 
@@ -75,6 +76,7 @@ impl<A: Aleo> ToBits for &Literal<A> {
             Literal::Scalar(literal) => literal.write_bits_be(vec),
             Literal::Signature(literal) => literal.write_bits_be(vec),
             Literal::String(literal) => literal.write_bits_be(vec),
+            Literal::Identifier(literal) => literal.write_bits_be(vec),
         }
     }
 }

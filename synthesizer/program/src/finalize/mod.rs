@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,13 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::Command;
+
 mod input;
 use input::*;
 
 mod bytes;
 mod parse;
 
-use crate::traits::CommandTrait;
 use console::{
     network::prelude::*,
     program::{FinalizeType, Identifier, Register},
@@ -29,24 +30,33 @@ use indexmap::IndexSet;
 use std::collections::HashMap;
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct FinalizeCore<N: Network, Command: CommandTrait<N>> {
+pub struct FinalizeCore<N: Network> {
     /// The name of the associated function.
     name: Identifier<N>,
     /// The input statements, added in order of the input registers.
     /// Input assignments are ensured to match the ordering of the input statements.
     inputs: IndexSet<Input<N>>,
     /// The commands, in order of execution.
-    commands: Vec<Command>,
+    commands: Vec<Command<N>>,
     /// The number of write commands.
     num_writes: u16,
+    /// The number of `call` commands (view calls).
+    num_calls: u16,
     /// A mapping from `Position`s to their index in `commands`.
     positions: HashMap<Identifier<N>, usize>,
 }
 
-impl<N: Network, Command: CommandTrait<N>> FinalizeCore<N, Command> {
+impl<N: Network> FinalizeCore<N> {
     /// Initializes a new finalize with the given name.
     pub fn new(name: Identifier<N>) -> Self {
-        Self { name, inputs: IndexSet::new(), commands: Vec::new(), num_writes: 0, positions: HashMap::new() }
+        Self {
+            name,
+            inputs: IndexSet::new(),
+            commands: Vec::new(),
+            num_writes: 0,
+            num_calls: 0,
+            positions: HashMap::new(),
+        }
     }
 
     /// Returns the name of the associated function.
@@ -65,7 +75,7 @@ impl<N: Network, Command: CommandTrait<N>> FinalizeCore<N, Command> {
     }
 
     /// Returns the finalize commands.
-    pub fn commands(&self) -> &[Command] {
+    pub fn commands(&self) -> &[Command<N>] {
         &self.commands
     }
 
@@ -78,9 +88,51 @@ impl<N: Network, Command: CommandTrait<N>> FinalizeCore<N, Command> {
     pub const fn positions(&self) -> &HashMap<Identifier<N>, usize> {
         &self.positions
     }
+
+    pub fn contains_external_struct(&self) -> bool {
+        self.commands
+            .iter()
+            .any(|command| matches!(command, Command::Instruction(inst) if inst.contains_external_struct()))
+    }
+
+    /// Returns `true` if the finalize scope contains a string type.
+    pub fn contains_string_type(&self) -> bool {
+        self.input_types().iter().any(|input_type| {
+            matches!(input_type, FinalizeType::Plaintext(plaintext_type) if plaintext_type.contains_string_type())
+        }) || self.commands.iter().any(|command| {
+            command.contains_string_type()
+        })
+    }
+
+    /// Returns `true` if the finalize scope contains an identifier type in its inputs or commands.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        for input_type in self.input_types() {
+            if let FinalizeType::Plaintext(plaintext_type) = input_type {
+                if plaintext_type.contains_identifier_type()? {
+                    return Ok(true);
+                }
+            }
+        }
+        // Check commands for identifier types in cast destinations.
+        for command in &self.commands {
+            if command.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Returns `true` if the finalize scope contains an array type with a size that exceeds the given maximum.
+    pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
+        self.input_types().iter().any(|input_type| {
+            matches!(input_type, FinalizeType::Plaintext(plaintext_type) if plaintext_type.exceeds_max_array_size(max_array_size))
+        }) || self.commands.iter().any(|command| {
+            command.exceeds_max_array_size(max_array_size)
+        })
+    }
 }
 
-impl<N: Network, Command: CommandTrait<N>> FinalizeCore<N, Command> {
+impl<N: Network> FinalizeCore<N> {
     /// Adds the input statement to finalize.
     ///
     /// # Errors
@@ -110,16 +162,38 @@ impl<N: Network, Command: CommandTrait<N>> FinalizeCore<N, Command> {
     /// # Errors
     /// This method will halt if the maximum number of commands has been reached.
     #[inline]
-    pub fn add_command(&mut self, command: Command) -> Result<()> {
+    pub fn add_command(&mut self, command: Command<N>) -> Result<()> {
         // Ensure the maximum number of commands has not been exceeded.
         ensure!(self.commands.len() < N::MAX_COMMANDS, "Cannot add more than {} commands", N::MAX_COMMANDS);
         // Ensure the number of write commands has not been exceeded.
-        ensure!(self.num_writes < N::MAX_WRITES, "Cannot add more than {} 'set' & 'remove' commands", N::MAX_WRITES);
+        if command.is_write() {
+            ensure!(
+                self.num_writes < N::LATEST_MAX_WRITES(),
+                "Cannot add more than {} 'set' & 'remove' commands",
+                N::LATEST_MAX_WRITES()
+            );
+        }
 
-        // Ensure the command is not a call instruction.
-        ensure!(!command.is_call(), "Forbidden operation: Finalize cannot invoke a 'call'");
-        // Ensure the command is not a cast to record instruction.
-        ensure!(!command.is_cast_to_record(), "Forbidden operation: Finalize cannot cast to a record");
+        // Ensure the command is not an async instruction.
+        ensure!(!command.is_async(), "Forbidden operation: Finalize cannot invoke an 'async' instruction");
+        // Allow `call` only when the target resolves to a `view` function (enforced later by the
+        // type-check at `Stack::new`). `call.dynamic` remains forbidden because we have not yet
+        // designed a way to track dynamic spend / gas usage for runtime-resolved targets.
+        ensure!(!command.is_dynamic_call(), "Forbidden operation: Finalize cannot invoke a 'call.dynamic'");
+        // Bound the number of view-calls per finalize body. This is a structural cap mirrored
+        // on `Transaction::MAX_TRANSITIONS` — without it, a finalize could chain up to
+        // `MAX_COMMANDS` calls, each into a view whose own body has up to `MAX_COMMANDS`
+        // commands, giving `O(MAX_COMMANDS^2)` worst-case work. `TRANSACTION_SPEND_LIMIT` still
+        // bounds it economically, but this gives a tight structural bound on top.
+        if command.is_call() {
+            ensure!(
+                (self.num_calls as usize) < N::MAX_CALLS,
+                "Cannot add more than {} 'call' commands in a finalize body",
+                N::MAX_CALLS
+            );
+        }
+        // Ensure the command does not operate on a record (cast-to-record or `get.record.dynamic`).
+        ensure!(!command.is_instruction_for_record(), "Forbidden operation: Finalize cannot operate on records");
 
         // Check the destination registers.
         for register in command.destinations() {
@@ -138,7 +212,7 @@ impl<N: Network, Command: CommandTrait<N>> FinalizeCore<N, Command> {
             // Ensure the position is not yet defined.
             ensure!(!self.positions.contains_key(position), "Cannot redefine position '{position}'");
             // Ensure that there are less than `u8::MAX` positions.
-            ensure!(self.positions.len() < u8::MAX as usize, "Cannot add more than {} positions", u8::MAX);
+            ensure!(self.positions.len() < N::MAX_POSITIONS, "Cannot add more than {} positions", N::MAX_POSITIONS);
             // Insert the position.
             self.positions.insert(*position, self.commands.len());
         }
@@ -148,6 +222,11 @@ impl<N: Network, Command: CommandTrait<N>> FinalizeCore<N, Command> {
             // Increment the number of write commands.
             self.num_writes += 1;
         }
+        // Track the number of view-calls. `is_dynamic_call` is already rejected above, so this
+        // counts only static `Call`s.
+        if command.is_call() {
+            self.num_calls += 1;
+        }
 
         // Insert the command.
         self.commands.push(command);
@@ -155,7 +234,7 @@ impl<N: Network, Command: CommandTrait<N>> FinalizeCore<N, Command> {
     }
 }
 
-impl<N: Network, Command: CommandTrait<N>> TypeName for FinalizeCore<N, Command> {
+impl<N: Network> TypeName for FinalizeCore<N> {
     /// Returns the type name as a string.
     #[inline]
     fn type_name() -> &'static str {
@@ -221,10 +300,10 @@ mod tests {
         let name = Identifier::from_str("finalize_core_test").unwrap();
         let mut finalize = Finalize::<CurrentNetwork>::new(name);
 
-        for _ in 0..CurrentNetwork::MAX_WRITES * 2 {
+        for _ in 0..CurrentNetwork::LATEST_MAX_WRITES() * 2 {
             let command = Command::<CurrentNetwork>::from_str("remove object[r0];").unwrap();
 
-            match finalize.commands.len() < CurrentNetwork::MAX_WRITES as usize {
+            match finalize.commands.len() < CurrentNetwork::LATEST_MAX_WRITES() as usize {
                 true => assert!(finalize.add_command(command).is_ok()),
                 false => assert!(finalize.add_command(command).is_err()),
             }
@@ -258,7 +337,7 @@ mod tests {
         // Ensure that adding more than the maximum number of positions will fail.
         for i in 1..u8::MAX as usize * 2 {
             let position = to_unique_string(i);
-            println!("position: {}", position);
+            // println!("position: {position}");
             let command = Command::<CurrentNetwork>::from_str(&format!("position {position};")).unwrap();
 
             match finalize.commands.len() < u8::MAX as usize {
@@ -266,5 +345,25 @@ mod tests {
                 false => assert!(finalize.add_command(command).is_err()),
             }
         }
+    }
+
+    #[test]
+    fn test_reject_cast_to_dynamic_record_in_finalize() {
+        let name = Identifier::from_str("finalize_core_test").unwrap();
+        let mut finalize = Finalize::<CurrentNetwork>::new(name);
+
+        let cmd = Command::<CurrentNetwork>::from_str("cast r0 into r1 as dynamic.record;").unwrap();
+        let err = finalize.add_command(cmd).unwrap_err();
+        assert!(err.to_string().contains("operate on records"));
+    }
+
+    #[test]
+    fn test_reject_get_record_dynamic_in_finalize() {
+        let name = Identifier::from_str("finalize_core_test").unwrap();
+        let mut finalize = Finalize::<CurrentNetwork>::new(name);
+
+        let cmd = Command::<CurrentNetwork>::from_str("get.record.dynamic r0.x into r1 as bool;").unwrap();
+        let err = finalize.add_command(cmd).unwrap_err();
+        assert!(err.to_string().contains("operate on records"));
     }
 }

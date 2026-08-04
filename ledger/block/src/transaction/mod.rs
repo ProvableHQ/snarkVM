@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -67,9 +67,18 @@ impl<N: Network> Transaction<N> {
         // Compute the deployment ID.
         let deployment_id = *deployment_tree.root();
         // Compute the transaction ID
-        let transaction_id = *Self::transaction_tree(deployment_tree, deployment.len(), &fee)?.root();
+        let transaction_id = *Self::transaction_tree(deployment_tree, Some(&fee))?.root();
         // Ensure the owner signed the correct transaction ID.
         ensure!(owner.verify(deployment_id), "Attempted to create a deployment transaction with an invalid owner");
+        // Ensure the owner matches the program owner in the deployment, if it exists.
+        if let Some(program_owner) = deployment.program_owner() {
+            ensure!(
+                owner.address() == program_owner,
+                "Attempted to create a deployment transaction with a provided owner '{}' and deployment owner '{}' that do not match",
+                owner.address(),
+                program_owner
+            )
+        }
         // Construct the deployment transaction.
         Ok(Self::Deploy(transaction_id.into(), deployment_id, owner, Box::new(deployment), fee))
     }
@@ -82,14 +91,8 @@ impl<N: Network> Transaction<N> {
         let execution_tree = Self::execution_tree(&execution)?;
         // Compute the execution ID.
         let execution_id = *execution_tree.root();
-        // Compute the transaction ID
-        let transaction_id = match &fee {
-            Some(fee) => {
-                // Compute the root of the transaction tree.
-                *Self::transaction_tree(execution_tree, execution.len(), fee)?.root()
-            }
-            None => execution_id,
-        };
+        // Compute the transaction ID.
+        let transaction_id = *Self::transaction_tree(execution_tree, fee.as_ref())?.root();
         // Construct the execution transaction.
         Ok(Self::Execute(transaction_id.into(), execution_id, Box::new(execution), fee))
     }
@@ -132,6 +135,19 @@ impl<N: Network> Transaction<N> {
         match self {
             // Case 1 - The transaction contains a transition that calls 'credits.aleo/split'.
             Transaction::Execute(_, _, execution, _) => execution.transitions().any(|transition| transition.is_split()),
+            // Otherwise, return 'false'.
+            _ => false,
+        }
+    }
+
+    /// Returns `true` if this transaction contains a call to `credits.aleo/upgrade`.
+    #[inline]
+    pub fn contains_upgrade(&self) -> bool {
+        match self {
+            // Case 1 - The transaction contains a transition that calls 'credits.aleo/upgrade'.
+            Transaction::Execute(_, _, execution, _) => {
+                execution.transitions().any(|transition| transition.is_upgrade())
+            }
             // Otherwise, return 'false'.
             _ => false,
         }
@@ -257,7 +273,7 @@ impl<N: Network> Transaction<N> {
             // Check the execution and fee.
             Self::Execute(_, _, execution, fee) => {
                 execution.contains_transition(transition_id)
-                    || fee.as_ref().map_or(false, |fee| fee.id() == transition_id)
+                    || fee.as_ref().is_some_and(|fee| fee.id() == transition_id)
             }
             // Check the fee.
             Self::Fee(_, fee) => fee.id() == transition_id,
@@ -433,20 +449,51 @@ impl<N: Network> Transaction<N> {
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;
-    use console::{account::PrivateKey, network::MainnetV0, program::ProgramOwner};
+    use console::{account::PrivateKey, network::MainnetV0, program::ProgramOwner, types::Address};
 
     type CurrentNetwork = MainnetV0;
 
     /// Samples a random deployment transaction with a private or public fee.
-    pub fn sample_deployment_transaction(is_fee_private: bool, rng: &mut TestRng) -> Transaction<CurrentNetwork> {
+    pub fn sample_deployment_transaction(
+        version: u8,
+        edition: u16,
+        has_translation_keys: bool,
+        is_fee_private: bool,
+        rng: &mut TestRng,
+    ) -> Transaction<CurrentNetwork> {
         // Sample a private key.
         let private_key = PrivateKey::new(rng).unwrap();
         // Sample a deployment.
-        let deployment = crate::transaction::deployment::test_helpers::sample_deployment(rng);
+        let deployment = match (version, has_translation_keys) {
+            (1, false) => crate::transaction::deployment::test_helpers::sample_deployment_v1(edition, rng),
+            (2, false) => {
+                let mut deployment =
+                    crate::transaction::deployment::test_helpers::sample_deployment_v2_without_translation_keys(
+                        edition, rng,
+                    );
+                // Set the program owner to the address of the private key.
+                deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
+                deployment
+            }
+            (2, true) => {
+                let mut deployment =
+                    crate::transaction::deployment::test_helpers::sample_deployment_v2_with_translation_keys(
+                        edition, rng,
+                    );
+                // Set the program owner to the address of the private key.
+                deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
+                deployment
+            }
+            (3, _) => {
+                // V3 is an amendment - uses the same program as V2 but with new VKs and no program_owner.
+                crate::transaction::deployment::test_helpers::sample_deployment_v3(edition, rng)
+            }
+            _ => panic!("Invalid deployment version ({version}) or translation keys combination."),
+        };
 
         // Compute the deployment ID.
         let deployment_id = deployment.to_deployment_id().unwrap();
-        // Construct a program owner.
+        // Construct a program owner (the transaction signer).
         let owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
         // Sample the fee.
@@ -463,9 +510,10 @@ pub mod test_helpers {
     pub fn sample_execution_transaction_with_fee(
         is_fee_private: bool,
         rng: &mut TestRng,
+        index: usize,
     ) -> Transaction<CurrentNetwork> {
         // Sample an execution.
-        let execution = crate::transaction::execution::test_helpers::sample_execution(rng);
+        let execution = crate::transaction::execution::test_helpers::sample_execution(rng, index);
         // Compute the execution ID.
         let execution_id = execution.to_execution_id().unwrap();
 
@@ -506,10 +554,20 @@ mod tests {
 
         // Transaction IDs are created using `transaction_tree`.
         for expected in [
-            crate::transaction::test_helpers::sample_deployment_transaction(true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(false, rng),
-            crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng),
-            crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, false, rng),
+            crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
+            crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
         ]
         .into_iter()
         {

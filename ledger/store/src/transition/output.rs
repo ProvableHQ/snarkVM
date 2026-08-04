@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,7 +22,7 @@ use console::{
     program::{Ciphertext, Future, Plaintext, Record},
     types::{Field, Group},
 };
-use ledger_block::Output;
+use snarkvm_ledger_block::Output;
 
 use aleo_std_storage::StorageMode;
 use anyhow::Result;
@@ -44,10 +44,16 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
     type RecordMap: for<'a> Map<'a, Field<N>, (Field<N>, Option<Record<N, Ciphertext<N>>>)>;
     /// The mapping of `record nonce` to `commitment`.
     type RecordNonceMap: for<'a> Map<'a, Group<N>, Field<N>>;
+    /// The mapping of `record nonce` to `sender ciphertext`.
+    type RecordSenderMap: for<'a> Map<'a, Group<N>, Option<Field<N>>>;
     /// The mapping of `external hash` to `()`. Note: This is **not** the record commitment.
     type ExternalRecordMap: for<'a> Map<'a, Field<N>, ()>;
     /// The mapping of `future hash` to `(optional) future`.
     type FutureMap: for<'a> Map<'a, Field<N>, Option<Future<N>>>;
+    /// The mapping of `dynamic hash` to `()`. Note: This is **not** the record commitment.
+    type DynamicRecordMap: for<'a> Map<'a, Field<N>, ()>;
+    /// The mapping of `output ID` to `dynamic ID`.
+    type DynamicIDMap: for<'a> Map<'a, Field<N>, Field<N>>;
 
     /// Initializes the transition output storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
@@ -66,10 +72,16 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
     fn record_map(&self) -> &Self::RecordMap;
     /// Returns the record nonce map.
     fn record_nonce_map(&self) -> &Self::RecordNonceMap;
+    /// Returns the record sender map.
+    fn record_sender_map(&self) -> &Self::RecordSenderMap;
     /// Returns the external record map.
     fn external_record_map(&self) -> &Self::ExternalRecordMap;
     /// Returns the future map.
     fn future_map(&self) -> &Self::FutureMap;
+    /// Returns the dynamic record map.
+    fn dynamic_record_map(&self) -> &Self::DynamicRecordMap;
+    /// Returns the dynamic ID map.
+    fn dynamic_id_map(&self) -> &Self::DynamicIDMap;
 
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode;
@@ -83,8 +95,11 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
         self.private_map().start_atomic();
         self.record_map().start_atomic();
         self.record_nonce_map().start_atomic();
+        self.record_sender_map().start_atomic();
         self.external_record_map().start_atomic();
         self.future_map().start_atomic();
+        self.dynamic_record_map().start_atomic();
+        self.dynamic_id_map().start_atomic();
     }
 
     /// Checks if an atomic batch is in progress.
@@ -96,8 +111,11 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
             || self.private_map().is_atomic_in_progress()
             || self.record_map().is_atomic_in_progress()
             || self.record_nonce_map().is_atomic_in_progress()
+            || self.record_sender_map().is_atomic_in_progress()
             || self.external_record_map().is_atomic_in_progress()
             || self.future_map().is_atomic_in_progress()
+            || self.dynamic_record_map().is_atomic_in_progress()
+            || self.dynamic_id_map().is_atomic_in_progress()
     }
 
     /// Checkpoints the atomic batch.
@@ -109,8 +127,11 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
         self.private_map().atomic_checkpoint();
         self.record_map().atomic_checkpoint();
         self.record_nonce_map().atomic_checkpoint();
+        self.record_sender_map().atomic_checkpoint();
         self.external_record_map().atomic_checkpoint();
         self.future_map().atomic_checkpoint();
+        self.dynamic_record_map().atomic_checkpoint();
+        self.dynamic_id_map().atomic_checkpoint();
     }
 
     /// Clears the latest atomic batch checkpoint.
@@ -122,8 +143,11 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
         self.private_map().clear_latest_checkpoint();
         self.record_map().clear_latest_checkpoint();
         self.record_nonce_map().clear_latest_checkpoint();
+        self.record_sender_map().clear_latest_checkpoint();
         self.external_record_map().clear_latest_checkpoint();
         self.future_map().clear_latest_checkpoint();
+        self.dynamic_record_map().clear_latest_checkpoint();
+        self.dynamic_id_map().clear_latest_checkpoint();
     }
 
     /// Rewinds the atomic batch to the previous checkpoint.
@@ -135,8 +159,11 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
         self.private_map().atomic_rewind();
         self.record_map().atomic_rewind();
         self.record_nonce_map().atomic_rewind();
+        self.record_sender_map().atomic_rewind();
         self.external_record_map().atomic_rewind();
         self.future_map().atomic_rewind();
+        self.dynamic_record_map().atomic_rewind();
+        self.dynamic_id_map().atomic_rewind();
     }
 
     /// Aborts an atomic batch write operation.
@@ -148,8 +175,11 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
         self.private_map().abort_atomic();
         self.record_map().abort_atomic();
         self.record_nonce_map().abort_atomic();
+        self.record_sender_map().abort_atomic();
         self.external_record_map().abort_atomic();
         self.future_map().abort_atomic();
+        self.dynamic_record_map().abort_atomic();
+        self.dynamic_id_map().abort_atomic();
     }
 
     /// Finishes an atomic batch write operation.
@@ -161,8 +191,11 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
         self.private_map().finish_atomic()?;
         self.record_map().finish_atomic()?;
         self.record_nonce_map().finish_atomic()?;
+        self.record_sender_map().finish_atomic()?;
         self.external_record_map().finish_atomic()?;
-        self.future_map().finish_atomic()
+        self.future_map().finish_atomic()?;
+        self.dynamic_record_map().finish_atomic()?;
+        self.dynamic_id_map().finish_atomic()
     }
 
     /// Stores the given `(transition ID, output)` pair into storage.
@@ -180,16 +213,39 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
                     Output::Constant(output_id, constant) => self.constant_map().insert(output_id, constant)?,
                     Output::Public(output_id, public) => self.public_map().insert(output_id, public)?,
                     Output::Private(output_id, private) => self.private_map().insert(output_id, private)?,
-                    Output::Record(commitment, checksum, optional_record) => {
-                        // If the optional record exists, insert the record nonce.
+                    Output::Record(commitment, checksum, optional_record, optional_sender) => {
+                        // If the optional record ciphertext exists, insert the record nonce.
                         if let Some(record) = &optional_record {
+                            // Insert the record nonce to commitment.
                             self.record_nonce_map().insert(*record.nonce(), commitment)?;
+                            // If the optional sender ciphertext exists, insert the record sender.
+                            self.record_sender_map().insert(*record.nonce(), optional_sender)?;
                         }
                         // Insert the record entry.
                         self.record_map().insert(commitment, (checksum, optional_record))?
                     }
                     Output::ExternalRecord(output_id) => self.external_record_map().insert(output_id, ())?,
                     Output::Future(output_id, future) => self.future_map().insert(output_id, future)?,
+                    Output::DynamicRecord(output_id) => self.dynamic_record_map().insert(output_id, ())?,
+                    Output::RecordWithDynamicID(commitment, checksum, optional_record, optional_sender, dynamic_id) => {
+                        // If the optional record ciphertext exists, insert the record nonce.
+                        if let Some(record) = &optional_record {
+                            // Insert the record nonce to commitment.
+                            self.record_nonce_map().insert(*record.nonce(), commitment)?;
+                            // If the optional sender ciphertext exists, insert the record sender.
+                            self.record_sender_map().insert(*record.nonce(), optional_sender)?;
+                        }
+                        // Insert the record entry.
+                        self.record_map().insert(commitment, (checksum, optional_record))?;
+                        // Insert the dynamic ID.
+                        self.dynamic_id_map().insert(commitment, dynamic_id)?;
+                    }
+                    Output::ExternalRecordWithDynamicID(output_id, dynamic_id) => {
+                        // Insert the external record entry.
+                        self.external_record_map().insert(output_id, ())?;
+                        // Insert the dynamic ID.
+                        self.dynamic_id_map().insert(output_id, dynamic_id)?;
+                    }
                 }
             }
 
@@ -215,10 +271,13 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
                 // Remove the reverse output ID.
                 self.reverse_id_map().remove(&output_id)?;
 
-                // If the output is a record, remove the record nonce.
+                // If the output is a record, remove the record nonce and record sender.
                 if let Some(record) = self.record_map().get_confirmed(&output_id)? {
                     if let Some(record) = &record.1 {
+                        // Remove the record nonce.
                         self.record_nonce_map().remove(record.nonce())?;
+                        // Remove the record sender, if it exists.
+                        self.record_sender_map().remove(record.nonce())?;
                     }
                 }
 
@@ -229,6 +288,8 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
                 self.record_map().remove(&output_id)?;
                 self.external_record_map().remove(&output_id)?;
                 self.future_map().remove(&output_id)?;
+                self.dynamic_record_map().remove(&output_id)?;
+                self.dynamic_id_map().remove(&output_id)?;
             }
 
             Ok(())
@@ -260,8 +321,19 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
         macro_rules! into_output {
             (Output::Record($output_id:ident, $output:expr)) => {
                 match $output {
-                    Cow::Borrowed((checksum, opt_record)) => Output::Record($output_id, *checksum, opt_record.clone()),
-                    Cow::Owned((checksum, opt_record)) => Output::Record($output_id, checksum, opt_record),
+                    Cow::Borrowed((checksum, Some(record))) => Output::Record($output_id, *checksum, Some(record.clone()), match self.record_sender_map().get_confirmed(&record.nonce())? {
+                        Some(sender) => *sender,
+                        None => None,
+                    }),
+                    Cow::Borrowed((checksum, None)) => Output::Record($output_id, *checksum, None, None),
+                    Cow::Owned((checksum, Some(record))) => {
+                        let record_nonce = *record.nonce(); // We extract the nonce here to avoid cloning the entire record.
+                        Output::Record($output_id, checksum, Some(record), match self.record_sender_map().get_confirmed(&record_nonce)? {
+                            Some(sender) => *sender,
+                            None => None,
+                        })
+                    },
+                    Cow::Owned((checksum, None)) => Output::Record($output_id, checksum, None, None),
                 }
             };
             (Output::$Variant:ident($output_id:ident, $output:expr)) => {
@@ -274,6 +346,9 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
 
         // A helper function to construct the output given the output ID.
         let construct_output = |output_id| {
+            // Retrieve the dynamic ID, if it exists.
+            let dynamic_id = self.dynamic_id_map().get_confirmed(&output_id)?;
+
             if let Some(constant) = self.constant_map().get_confirmed(&output_id)? {
                 return Ok(into_output!(Output::Constant(output_id, constant)));
             }
@@ -284,13 +359,57 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
                 return Ok(into_output!(Output::Private(output_id, private)));
             }
             if let Some(record) = self.record_map().get_confirmed(&output_id)? {
-                return Ok(into_output!(Output::Record(output_id, record)));
+                // Check if this record has a dynamic ID.
+                match dynamic_id {
+                    Some(dynamic_id) => {
+                        let (checksum, optional_record) = match record {
+                            Cow::Borrowed((cs, rec)) => (*cs, rec.clone()),
+                            Cow::Owned((cs, rec)) => (cs, rec),
+                        };
+                        let sender = match &optional_record {
+                            Some(record) => {
+                                let sender = self.record_sender_map().get_confirmed(record.nonce())?;
+                                match sender {
+                                    Some(Cow::Borrowed(s)) => *s,
+                                    Some(Cow::Owned(s)) => s,
+                                    None => None,
+                                }
+                            }
+                            None => None,
+                        };
+                        let dynamic_id = match dynamic_id {
+                            Cow::Borrowed(id) => *id,
+                            Cow::Owned(id) => id,
+                        };
+                        return Ok(Output::RecordWithDynamicID(
+                            output_id,
+                            checksum,
+                            optional_record,
+                            sender,
+                            dynamic_id,
+                        ));
+                    }
+                    None => return Ok(into_output!(Output::Record(output_id, record))),
+                }
             }
             if self.external_record_map().get_confirmed(&output_id)?.is_some() {
-                return Ok(Output::ExternalRecord(output_id));
+                // Check if this external record has a dynamic ID.
+                match dynamic_id {
+                    Some(dynamic_id) => {
+                        let dynamic_id = match dynamic_id {
+                            Cow::Borrowed(id) => *id,
+                            Cow::Owned(id) => id,
+                        };
+                        return Ok(Output::ExternalRecordWithDynamicID(output_id, dynamic_id));
+                    }
+                    None => return Ok(Output::ExternalRecord(output_id)),
+                }
             }
             if let Some(future) = self.future_map().get_confirmed(&output_id)? {
                 return Ok(into_output!(Output::Future(output_id, future)));
+            }
+            if self.dynamic_record_map().get_confirmed(&output_id)?.is_some() {
+                return Ok(Output::DynamicRecord(output_id));
             }
 
             bail!("Missing output '{output_id}' in transition '{transition_id}'")
@@ -318,10 +437,16 @@ pub struct OutputStore<N: Network, O: OutputStorage<N>> {
     record: O::RecordMap,
     /// The map of record nonces.
     record_nonce: O::RecordNonceMap,
+    /// The map of record senders.
+    record_sender: O::RecordSenderMap,
     /// The map of external record outputs.
     external_record: O::ExternalRecordMap,
     /// The map of future outputs.
     future: O::FutureMap,
+    /// The map of dynamic record outputs.
+    dynamic_record: O::DynamicRecordMap,
+    /// The map of dynamic IDs.
+    dynamic_id: O::DynamicIDMap,
     /// The output storage.
     storage: O,
 }
@@ -338,8 +463,11 @@ impl<N: Network, O: OutputStorage<N>> OutputStore<N, O> {
             private: storage.private_map().clone(),
             record: storage.record_map().clone(),
             record_nonce: storage.record_nonce_map().clone(),
+            record_sender: storage.record_sender_map().clone(),
             external_record: storage.external_record_map().clone(),
             future: storage.future_map().clone(),
+            dynamic_record: storage.dynamic_record_map().clone(),
+            dynamic_id: storage.dynamic_id_map().clone(),
             storage,
         })
     }
@@ -352,8 +480,11 @@ impl<N: Network, O: OutputStorage<N>> OutputStore<N, O> {
             private: storage.private_map().clone(),
             record: storage.record_map().clone(),
             record_nonce: storage.record_nonce_map().clone(),
+            record_sender: storage.record_sender_map().clone(),
             external_record: storage.external_record_map().clone(),
             future: storage.future_map().clone(),
+            dynamic_record: storage.dynamic_record_map().clone(),
+            dynamic_id: storage.dynamic_id_map().clone(),
             storage,
         }
     }
@@ -435,6 +566,15 @@ impl<N: Network, O: OutputStorage<N>> OutputStore<N, O> {
             Err(e) => Err(e),
         }
     }
+
+    /// Returns the record sender ciphertext for the given `nonce`.
+    pub fn get_record_sender_ciphertext(&self, nonce: &Group<N>) -> Result<Option<Field<N>>> {
+        match self.record_sender.get_confirmed(nonce)? {
+            Some(Cow::Borrowed(sender)) => Ok(*sender),
+            Some(Cow::Owned(sender)) => Ok(sender),
+            None => Ok(None),
+        }
+    }
 }
 
 impl<N: Network, O: OutputStorage<N>> OutputStore<N, O> {
@@ -500,6 +640,16 @@ impl<N: Network, O: OutputStorage<N>> OutputStore<N, O> {
     /// Returns an iterator over the future output IDs, for all transition outputs that are future outputs.
     pub fn future_output_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
         self.future.keys_confirmed()
+    }
+
+    /// Returns an iterator of the dynamic record output IDs, for all transition outputs that are dynamic records.
+    pub fn dynamic_output_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
+        self.dynamic_record.keys_confirmed()
+    }
+
+    /// Returns an iterator over the dynamic IDs, for all transition outputs with dynamic IDs.
+    pub fn output_dynamic_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
+        self.dynamic_id.values_confirmed()
     }
 }
 
@@ -572,7 +722,7 @@ mod tests {
     #[test]
     fn test_insert_get_remove() {
         // Sample the transition outputs.
-        for (transition_id, output) in ledger_test_helpers::sample_outputs() {
+        for (transition_id, output) in snarkvm_ledger_test_helpers::sample_outputs() {
             // Initialize a new output store.
             let output_store = OutputMemory::open(StorageMode::Test(None)).unwrap();
 
@@ -599,7 +749,7 @@ mod tests {
     #[test]
     fn test_find_transition_id() {
         // Sample the transition outputs.
-        for (transition_id, output) in ledger_test_helpers::sample_outputs() {
+        for (transition_id, output) in snarkvm_ledger_test_helpers::sample_outputs() {
             // Initialize a new output store.
             let output_store = OutputMemory::open(StorageMode::Test(None)).unwrap();
 

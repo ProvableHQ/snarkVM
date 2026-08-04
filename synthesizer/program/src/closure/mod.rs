@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::Instruction;
+
 mod input;
 use input::*;
 
@@ -22,28 +24,27 @@ use output::*;
 mod bytes;
 mod parse;
 
-use crate::InstructionTrait;
 use console::{
-    network::prelude::*,
+    network::{error, prelude::*},
     program::{Identifier, Register, RegisterType},
 };
 
 use indexmap::IndexSet;
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct ClosureCore<N: Network, Instruction: InstructionTrait<N>> {
+pub struct ClosureCore<N: Network> {
     /// The name of the closure.
     name: Identifier<N>,
     /// The input statements, added in order of the input registers.
     /// Input assignments are ensured to match the ordering of the input statements.
     inputs: IndexSet<Input<N>>,
     /// The instructions, in order of execution.
-    instructions: Vec<Instruction>,
+    instructions: Vec<Instruction<N>>,
     /// The output statements, in order of the desired output.
     outputs: IndexSet<Output<N>>,
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>> ClosureCore<N, Instruction> {
+impl<N: Network> ClosureCore<N> {
     /// Initializes a new closure with the given name.
     pub fn new(name: Identifier<N>) -> Self {
         Self { name, inputs: IndexSet::new(), instructions: Vec::new(), outputs: IndexSet::new() }
@@ -54,13 +55,21 @@ impl<N: Network, Instruction: InstructionTrait<N>> ClosureCore<N, Instruction> {
         &self.name
     }
 
+    /// Returns the checksum of the closure.
+    ///
+    /// The checksum is a 32-byte hash of the closure's source code in string format.
+    /// This ensures a strict definition of closure equivalence, useful for program upgradability.
+    pub fn to_checksum(&self) -> [console::types::U8<N>; 32] {
+        crate::to_checksum::source_code_checksum(&self.to_string())
+    }
+
     /// Returns the closure inputs.
     pub const fn inputs(&self) -> &IndexSet<Input<N>> {
         &self.inputs
     }
 
     /// Returns the closure instructions.
-    pub fn instructions(&self) -> &[Instruction] {
+    pub fn instructions(&self) -> &[Instruction<N>] {
         &self.instructions
     }
 
@@ -68,9 +77,55 @@ impl<N: Network, Instruction: InstructionTrait<N>> ClosureCore<N, Instruction> {
     pub const fn outputs(&self) -> &IndexSet<Output<N>> {
         &self.outputs
     }
+
+    /// Returns the closure output types.
+    pub fn output_types(&self) -> Vec<RegisterType<N>> {
+        self.outputs.iter().map(|output| output.register_type()).cloned().collect()
+    }
+
+    /// Returns whether the closure refers to an external struct.
+    pub fn contains_external_struct(&self) -> bool {
+        self.inputs.iter().any(|input| input.register_type().contains_external_struct())
+            || self.outputs.iter().any(|output| output.register_type().contains_external_struct())
+            || self.instructions.iter().any(|instruction| instruction.contains_external_struct())
+    }
+
+    /// Returns `true` if the closure instructions contain a string type.
+    /// Note that input and output types don't have to be checked if we are sure the broader function doesn't contain a string type.
+    pub fn contains_string_type(&self) -> bool {
+        self.instructions.iter().any(|instruction| instruction.contains_string_type())
+    }
+
+    /// Returns `true` if the closure contains an identifier type in its inputs, outputs, or instructions.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        for input in &self.inputs {
+            if input.register_type().contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        for output in &self.outputs {
+            if output.register_type().contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        // Check instruction-level types (e.g., cast destination types).
+        for instruction in &self.instructions {
+            if instruction.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Returns `true` if the closure contains an array type with a size that exceeds the given maximum.
+    pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
+        self.inputs.iter().any(|input| input.register_type().exceeds_max_array_size(max_array_size))
+            || self.outputs.iter().any(|output| output.register_type().exceeds_max_array_size(max_array_size))
+            || self.instructions.iter().any(|instruction| instruction.exceeds_max_array_size(max_array_size))
+    }
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>> ClosureCore<N, Instruction> {
+impl<N: Network> ClosureCore<N> {
     /// Adds the input statement to the closure.
     ///
     /// # Errors
@@ -102,7 +157,7 @@ impl<N: Network, Instruction: InstructionTrait<N>> ClosureCore<N, Instruction> {
     /// This method will halt if there are output statements already.
     /// This method will halt if the maximum number of instructions has been reached.
     #[inline]
-    pub fn add_instruction(&mut self, instruction: Instruction) -> Result<()> {
+    pub fn add_instruction(&mut self, instruction: Instruction<N>) -> Result<()> {
         // Ensure that there are no outputs in memory.
         ensure!(self.outputs.is_empty(), "Cannot add instructions after outputs have been added");
 
@@ -132,8 +187,9 @@ impl<N: Network, Instruction: InstructionTrait<N>> ClosureCore<N, Instruction> {
         // Ensure the maximum number of outputs has not been exceeded.
         ensure!(self.outputs.len() < N::MAX_OUTPUTS, "Cannot add more than {} outputs", N::MAX_OUTPUTS);
 
-        // Ensure the closure output register is not a record.
-        ensure!(!matches!(output.register_type(), RegisterType::Record(..)), "Output register cannot be a record");
+        // Ensure the closure output register is not a static record.
+        // ExternalRecord and DynamicRecord are checked at V15+ deployment time (see `VM::check_transaction`).
+        ensure!(!matches!(output.register_type(), RegisterType::Record(..)), "Closure outputs do not support records");
 
         // Insert the output statement.
         self.outputs.insert(output);
@@ -141,7 +197,7 @@ impl<N: Network, Instruction: InstructionTrait<N>> ClosureCore<N, Instruction> {
     }
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>> TypeName for ClosureCore<N, Instruction> {
+impl<N: Network> TypeName for ClosureCore<N> {
     /// Returns the type name as a string.
     #[inline]
     fn type_name() -> &'static str {
@@ -221,5 +277,27 @@ mod tests {
                 false => assert!(closure.add_output(output).is_err()),
             }
         }
+    }
+
+    #[test]
+    fn test_add_output_record_types_rejected() {
+        let name = Identifier::from_str("closure_core_test").unwrap();
+
+        // DynamicRecord output is allowed at parse time (gated at V15+ deployment time).
+        let mut closure = Closure::<CurrentNetwork>::new(name);
+        let output = Output::<CurrentNetwork>::from_str("output r0 as dynamic.record;").unwrap();
+        assert!(closure.add_output(output).is_ok());
+
+        // ExternalRecord output is allowed at parse time (gated at V15+ deployment time).
+        let mut closure = Closure::<CurrentNetwork>::new(name);
+        let output = Output::<CurrentNetwork>::from_str("output r0 as test_prog.aleo/token.record;").unwrap();
+        assert!(closure.add_output(output).is_ok());
+
+        // Static Record output is rejected at parse time.
+        let mut closure = Closure::<CurrentNetwork>::new(name);
+        let output = Output::<CurrentNetwork>::from_str("output r0 as token.record;").unwrap();
+        let result = closure.add_output(output);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Closure outputs do not support records"));
     }
 }

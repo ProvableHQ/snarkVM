@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -67,7 +67,7 @@ fn poseidon8(c: &mut Criterion) {
 
 criterion_group! {
     name = sponge;
-    config = Criterion::default().sample_size(50);
+    config = Criterion::default().sample_size(10);
     targets = poseidon2, poseidon4, poseidon8,
 }
 

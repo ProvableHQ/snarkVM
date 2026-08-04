@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +21,7 @@ pub use modules::*;
 
 pub mod prelude {
     pub use crate::modules::*;
+    pub use io_error as error;
     pub use snarkvm_console_network_environment::prelude::*;
 }
 
@@ -60,5 +61,5 @@ pub mod modules {
     #[cfg(feature = "string")]
     pub use snarkvm_console_types_string as string;
     #[cfg(feature = "string")]
-    pub use snarkvm_console_types_string::StringType;
+    pub use snarkvm_console_types_string::{IdentifierLiteral, StringType};
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,9 +16,8 @@
 use super::*;
 
 impl<N: Network> FromBytes for Block<N> {
-    /// Reads the block from the buffer.
-    #[inline]
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+    /// Read the block either with or without checking the data.
+    fn read_le_with_unchecked<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
@@ -27,59 +26,73 @@ impl<N: Network> FromBytes for Block<N> {
         }
 
         // Read the block hash.
-        let block_hash: N::BlockHash = FromBytes::read_le(&mut reader)?;
+        let block_hash: N::BlockHash = FromBytes::read_le_with_unchecked(&mut reader, unchecked)?;
         // Read the previous block hash.
-        let previous_hash = FromBytes::read_le(&mut reader)?;
+        let previous_hash = FromBytes::read_le_with_unchecked(&mut reader, unchecked)?;
         // Read the header.
-        let header = FromBytes::read_le(&mut reader)?;
+        let header = FromBytes::read_le_with_unchecked(&mut reader, unchecked)?;
 
         // Read the authority.
-        let authority = FromBytes::read_le(&mut reader)?;
+        let authority = Authority::<N>::read_le_with_unchecked(&mut reader, unchecked)?;
 
         // Read the ratifications.
-        let ratifications = Ratifications::read_le(&mut reader)?;
+        let ratifications = Ratifications::read_le_with_unchecked(&mut reader, unchecked)?;
 
         // Read the solutions.
-        let solutions: Solutions<N> = FromBytes::read_le(&mut reader)?;
+        let solutions: Solutions<N> = FromBytes::read_le_with_unchecked(&mut reader, unchecked)?;
 
         // Read the number of aborted solution IDs.
         let num_aborted_solutions = u32::read_le(&mut reader)?;
         // Ensure the number of aborted solutions IDs is within bounds (this is an early safety check).
-        if num_aborted_solutions as usize > Solutions::<N>::max_aborted_solutions().map_err(error)? {
+        if num_aborted_solutions as usize > Solutions::<N>::max_aborted_solutions() {
             return Err(error("Invalid number of aborted solutions IDs in the block"));
         }
         // Read the aborted solution IDs.
         let mut aborted_solution_ids = Vec::with_capacity(num_aborted_solutions as usize);
         for _ in 0..num_aborted_solutions {
-            aborted_solution_ids.push(FromBytes::read_le(&mut reader)?);
+            aborted_solution_ids.push(FromBytes::read_le_with_unchecked(&mut reader, unchecked)?);
         }
 
         // Read the transactions.
-        let transactions = FromBytes::read_le(&mut reader)?;
+        let transactions = FromBytes::read_le_with_unchecked(&mut reader, unchecked)?;
 
         // Read the number of aborted transaction IDs.
         let num_aborted_transactions = u32::read_le(&mut reader)?;
         // Ensure the number of aborted transaction IDs is within bounds (this is an early safety check).
-        if num_aborted_transactions as usize > Transactions::<N>::max_aborted_transactions().map_err(error)? {
+        if num_aborted_transactions as usize > Transactions::<N>::max_aborted_transactions() {
             return Err(error("Invalid number of aborted transaction IDs in the block"));
         }
         // Read the aborted transaction IDs.
         let mut aborted_transaction_ids = Vec::with_capacity(num_aborted_transactions as usize);
         for _ in 0..num_aborted_transactions {
-            aborted_transaction_ids.push(FromBytes::read_le(&mut reader)?);
+            aborted_transaction_ids.push(FromBytes::read_le_with_unchecked(&mut reader, unchecked)?);
         }
 
         // Construct the block.
-        let block = Self::from(
-            previous_hash,
-            header,
-            authority,
-            ratifications,
-            solutions,
-            aborted_solution_ids,
-            transactions,
-            aborted_transaction_ids,
-        )
+        let block = if unchecked {
+            Self::from_unchecked(
+                block_hash,
+                previous_hash,
+                header,
+                authority,
+                ratifications,
+                solutions,
+                aborted_solution_ids,
+                transactions,
+                aborted_transaction_ids,
+            )
+        } else {
+            Self::from(
+                previous_hash,
+                header,
+                authority,
+                ratifications,
+                solutions,
+                aborted_solution_ids,
+                transactions,
+                aborted_transaction_ids,
+            )
+        }
         .map_err(error)?;
 
         // Ensure the block hash matches.
@@ -87,6 +100,16 @@ impl<N: Network> FromBytes for Block<N> {
             true => Ok(block),
             false => Err(error("Mismatching block hash, possible data corruption")),
         }
+    }
+
+    /// Reads the block from the buffer.
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, false)
+    }
+
+    // Reads the block from the buffer without any checks on the data.
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, true)
     }
 }
 
@@ -141,6 +164,7 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le()?;
             assert_eq!(expected, Block::read_le(&expected_bytes[..])?);
+            assert_eq!(expected, Block::read_le_unchecked(&expected_bytes[..])?);
         }
         Ok(())
     }
@@ -153,6 +177,20 @@ mod tests {
         // Check the byte representation.
         let expected_bytes = genesis_block.to_bytes_le()?;
         assert_eq!(genesis_block, Block::read_le(&expected_bytes[..])?);
+        assert_eq!(genesis_block, Block::read_le_unchecked(&expected_bytes[..])?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bincode() -> Result<()> {
+        // Load the genesis block.
+        let genesis_block = Block::<CurrentNetwork>::read_le(CurrentNetwork::genesis_bytes()).unwrap();
+
+        let bincode_data = bincode::serialize(&genesis_block)?;
+        let block = bincode::deserialize(&bincode_data)?;
+
+        assert_eq!(genesis_block, block);
 
         Ok(())
     }

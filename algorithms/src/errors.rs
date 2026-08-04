@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,9 +44,6 @@ pub enum SNARKError {
 
     #[error("Public input size was different from the circuit")]
     PublicInputSizeMismatch,
-
-    #[error("Circuit not found")]
-    CircuitNotFound,
 }
 
 impl From<AHPError> for SNARKError {

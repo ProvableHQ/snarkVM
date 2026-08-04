@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +15,7 @@
 
 use super::*;
 
-impl<N: Network, Command: CommandTrait<N>> FromBytes for FinalizeCore<N, Command> {
+impl<N: Network> FromBytes for FinalizeCore<N> {
     /// Reads the finalize from a buffer.
     #[inline]
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
@@ -54,7 +54,7 @@ impl<N: Network, Command: CommandTrait<N>> FromBytes for FinalizeCore<N, Command
     }
 }
 
-impl<N: Network, Command: CommandTrait<N>> ToBytes for FinalizeCore<N, Command> {
+impl<N: Network> ToBytes for FinalizeCore<N> {
     /// Writes the finalize to a buffer.
     #[inline]
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
@@ -118,7 +118,7 @@ finalize main:
 
         let expected = Finalize::<CurrentNetwork>::from_str(finalize_string)?;
         let expected_bytes = expected.to_bytes_le()?;
-        println!("String size: {:?}, Bytecode size: {:?}", finalize_string.as_bytes().len(), expected_bytes.len());
+        println!("String size: {:?}, Bytecode size: {:?}", finalize_string.len(), expected_bytes.len());
 
         let candidate = Finalize::<CurrentNetwork>::from_bytes_le(&expected_bytes)?;
         assert_eq!(expected.to_string(), candidate.to_string());

@@ -1,41 +1,35 @@
 [package]
 name = "snarkvm-console"
-version = "3.8.0"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Console environment for a decentralized virtual machine"
 homepage = "https://aleo.org"
 repository = "https://github.com/ProvableHQ/snarkVM"
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies.snarkvm-console-account]
-path = "./account"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [dependencies.snarkvm-console-algorithms]
-path = "./algorithms"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [dependencies.snarkvm-console-collections]
-path = "./collections"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [dependencies.snarkvm-console-network]
-path = "./network"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [dependencies.snarkvm-console-program]
-path = "./program"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [dependencies.snarkvm-console-types]
-path = "./types"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [features]
@@ -43,6 +37,7 @@ default = [
   "account",
   "algorithms",
   "collections",
+  "filesystem",
   "network",
   "program",
   "types"
@@ -56,9 +51,17 @@ test = [
 account = [ "network", "snarkvm-console-account" ]
 algorithms = [ "snarkvm-console-algorithms" ]
 collections = [ "algorithms", "snarkvm-console-collections" ]
+filesystem = [ "snarkvm-console-network/filesystem" ]
+locktick = [ "snarkvm-console-collections?/locktick" ]
 network = [ "collections", "snarkvm-console-network" ]
 program = [ "network", "snarkvm-console-program" ]
-serial = [ "snarkvm-console-collections/serial" ]
+serial = [ "snarkvm-console-algorithms/serial", "snarkvm-console-collections/serial" ]
 types = [ "snarkvm-console-types" ]
 test_targets = [ "snarkvm-console-network/test_targets" ]
 test_consensus_heights = [ "snarkvm-console-network/test_consensus_heights" ]
+dev-print = [
+  "snarkvm-console-algorithms?/dev-print",
+  "snarkvm-console-network?/dev-print",
+  "snarkvm-console-program?/dev-print"
+]
+dev_skip_checks = [ ]

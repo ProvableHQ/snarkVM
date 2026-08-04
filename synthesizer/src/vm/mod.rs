@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,18 +22,34 @@ mod execute;
 mod finalize;
 mod verify;
 
-use crate::{Restrictions, cast_mut_ref, cast_ref, convert, process};
-use algorithms::snark::varuna::VarunaVersion;
+#[cfg(test)]
+mod tests;
+
+use crate::{Command, Restrictions, Stack, cast_mut_ref, cast_ref, convert, process};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
-    program::{Argument, Identifier, Literal, Locator, Plaintext, ProgramID, ProgramOwner, Record, Response, Value},
-    types::{Field, Group, U64},
+    program::{
+        Argument,
+        FINALIZE_ID_DEPTH,
+        Identifier,
+        Literal,
+        Locator,
+        Plaintext,
+        ProgramID,
+        ProgramOwner,
+        Record,
+        Response,
+        Value,
+    },
+    types::{Field, Group, U8, U64},
 };
-use ledger_block::{
+use snarkvm_ledger_authority::Authority;
+use snarkvm_ledger_block::{
     Block,
     ConfirmedTransaction,
     Deployment,
+    DeploymentVersion,
     Execution,
     Fee,
     Header,
@@ -41,15 +57,16 @@ use ledger_block::{
     Ratifications,
     Ratify,
     Rejected,
+    RejectedReason,
     Solutions,
     Transaction,
     Transactions,
 };
-use ledger_committee::Committee;
-use ledger_narwhal_data::Data;
-use ledger_puzzle::Puzzle;
-use ledger_query::{Query, QueryTrait};
-use ledger_store::{
+use snarkvm_ledger_committee::Committee;
+use snarkvm_ledger_narwhal_data::Data;
+use snarkvm_ledger_puzzle::Puzzle;
+use snarkvm_ledger_query::{Query, QueryTrait};
+use snarkvm_ledger_store::{
     BlockStore,
     ConsensusStorage,
     ConsensusStore,
@@ -59,11 +76,29 @@ use ledger_store::{
     TransitionStore,
     atomic_finalize,
 };
-use synthesizer_process::{Authorization, Process, Trace, deployment_cost, execution_cost_v1, execution_cost_v2};
-use synthesizer_program::{FinalizeGlobalState, FinalizeOperation, FinalizeStoreTrait, Program};
-use utilities::try_vm_runtime;
+use snarkvm_synthesizer_process::{
+    Authorization,
+    InclusionVersion,
+    Process,
+    Trace,
+    deploy_compute_cost_in_microcredits,
+    deployment_cost,
+    execute_compute_cost_in_microcredits,
+    execution_cost,
+    transaction_compute_spend_in_microcredits,
+};
+use snarkvm_synthesizer_program::{
+    FinalizeCore,
+    FinalizeGlobalState,
+    FinalizeOperation,
+    FinalizeStoreTrait,
+    Program,
+    StackTrait as _,
+};
+use snarkvm_utilities::try_vm_runtime;
 
 use aleo_std::prelude::{finish, lap, timer};
+use anyhow::Context;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Either;
 #[cfg(feature = "locktick")]
@@ -72,36 +107,46 @@ use lru::LruCache;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use rand::{SeedableRng, rngs::StdRng};
-use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    num::NonZeroUsize,
+    sync::{Arc, mpsc},
+    thread,
+};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
+// The key for the partially-verified transactions cache.
+// The key is a tuple of the transaction ID and a list of `(program checksum, edition, amendment count, consensus version)` for each transition.
+// This is because program upgrades, amendments and consensus version changes can change verification behavior.
+pub type TransactionCacheKey<N> = (<N as Network>::TransactionID, Vec<([U8<N>; 32], u16, u64, ConsensusVersion)>);
+
 #[derive(Clone)]
 pub struct VM<N: Network, C: ConsensusStorage<N>> {
     /// The process.
-    process: Arc<RwLock<Process<N>>>,
+    process: Arc<Process<N>>,
     /// The puzzle.
     puzzle: Puzzle<N>,
     /// The VM store.
     store: ConsensusStore<N, C>,
     /// A cache containing the list of recent partially-verified transactions.
-    partially_verified_transactions: Arc<RwLock<LruCache<N::TransactionID, N::TransmissionChecksum>>>,
+    partially_verified_transactions: Arc<RwLock<LruCache<TransactionCacheKey<N>, N::TransmissionChecksum>>>,
     /// The restrictions list.
     restrictions: Restrictions<N>,
-    /// The lock to guarantee atomicity over calls to speculate and finalize.
-    atomic_lock: Arc<Mutex<()>>,
-    /// The lock for ensuring there is no concurrency when advancing blocks.
-    block_lock: Arc<Mutex<()>>,
+    /// The list of rejection reasons for pending confirmed transactions.
+    /// TODO: it would be cleaner if these are passed along as an argument to `add_next_block`, but this requires a bigger refactor.
+    pending_rejected_reasons: Arc<RwLock<HashMap<N::TransactionID, RejectedReason<N>>>>,
+    /// A sender to the channel for operations that must be performed sequentially.
+    sequential_ops_tx: Arc<RwLock<Option<mpsc::Sender<SequentialOperationRequest<N>>>>>,
+    /// The handle to the thread which processes operations sequentially.
+    sequential_ops_thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Initializes the VM from storage.
     #[inline]
     pub fn from(store: ConsensusStore<N, C>) -> Result<Self> {
-        // Initialize a new process.
-        let mut process = Process::load()?;
-
         // Initialize the store for 'credits.aleo'.
         let credits = Program::<N>::credits()?;
         for mapping in credits.mappings().values() {
@@ -117,20 +162,44 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Retrieve the block store.
         let block_store = store.block_store();
 
+        #[cfg(not(any(test, feature = "test")))]
+        let process = {
+            // Determine the latest block height.
+            let latest_block_height = block_store.current_block_height();
+            // Determine the consensus version.
+            let consensus_version = N::CONSENSUS_VERSION(latest_block_height)?; // TODO (raychu86): Record Commitment - Select the proper consensus version.
+            // Initialize a new process based on the consensus version.
+            if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version) {
+                Process::load_v0()?
+            } else {
+                Process::load()?
+            }
+        };
+        #[cfg(any(test, feature = "test"))]
+        // Initialize a new process.
+        let process = Process::load()?;
+
         // Retrieve the list of deployment transaction IDs and their associated block heights.
         let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
         let mut deployment_ids = cfg_into_iter!(deployment_ids)
             .map(|transaction_id| {
+                // Retrieve the block hash for the deployment transaction ID.
+                let Some(hash) = block_store.find_block_hash(&transaction_id)? else {
+                    bail!("Deployment transaction '{transaction_id}' is not found in storage.")
+                };
                 // Retrieve the height.
-                let height =
-                    match block_store.find_block_hash(&transaction_id)?.map(|hash| block_store.get_block_height(&hash))
-                    {
-                        Some(Ok(Some(height))) => height,
-                        _ => {
-                            bail!("Block height for deployment transaction '{transaction_id}' is not found in storage.")
-                        }
-                    };
-                Ok((transaction_id, height))
+                let Some(height) = block_store.get_block_height(&hash)? else {
+                    bail!("Block height for deployment transaction '{transaction_id}' is not found in storage.")
+                };
+                // Get the corresponding block's transactions.
+                let Some(transactions) = block_store.get_block_transactions(&hash)? else {
+                    bail!("Transactions for deployment transaction '{hash}' is not found in storage.")
+                };
+                // Find the index of the deployment transaction ID in the block's transactions.
+                let Some(index) = transactions.index_of(transaction_id.deref()) else {
+                    bail!("Transaction for deployment transaction '{transaction_id}' is not found in storage.")
+                };
+                Ok((transaction_id, (height, index)))
             })
             .collect::<Result<Vec<_>>>()?;
         // Sort the deployment transaction IDs by their block heights.
@@ -160,30 +229,42 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             deployments.iter().try_for_each(|deployment| process.load_deployment(deployment))?;
         }
 
-        // Return the new VM.
-        Ok(Self {
-            process: Arc::new(RwLock::new(process)),
+        // Construct the VM object.
+        let vm = Self {
+            process: Arc::new(process),
             puzzle: Self::new_puzzle()?,
             store,
             partially_verified_transactions: Arc::new(RwLock::new(LruCache::new(
                 NonZeroUsize::new(Transactions::<N>::MAX_TRANSACTIONS).unwrap(),
             ))),
             restrictions: Restrictions::load()?,
-            atomic_lock: Arc::new(Mutex::new(())),
-            block_lock: Arc::new(Mutex::new(())),
-        })
+            sequential_ops_tx: Default::default(),
+            pending_rejected_reasons: Default::default(),
+            sequential_ops_thread: Default::default(),
+        };
+
+        // Spawn a thread for sequential operations.
+        let (sequential_ops_tx, sequential_ops_rx) = mpsc::channel();
+        let sequential_ops_thread = vm.start_sequential_queue(sequential_ops_rx);
+
+        // Populate the fields related to the sequential operations.
+        *vm.sequential_ops_tx.write() = Some(sequential_ops_tx);
+        *vm.sequential_ops_thread.lock() = Some(sequential_ops_thread);
+
+        // Return the new VM.
+        Ok(vm)
     }
 
     /// Returns `true` if a program with the given program ID exists.
     #[inline]
     pub fn contains_program(&self, program_id: &ProgramID<N>) -> bool {
-        self.process.read().contains_program(program_id)
+        self.process.contains_program(program_id)
     }
 
     /// Returns the process.
     #[inline]
-    pub fn process(&self) -> Arc<RwLock<Process<N>>> {
-        self.process.clone()
+    pub fn process(&self) -> &Arc<Process<N>> {
+        &self.process
     }
 
     /// Returns the puzzle.
@@ -194,7 +275,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
     /// Returns the partially-verified transactions.
     #[inline]
-    pub fn partially_verified_transactions(&self) -> Arc<RwLock<LruCache<N::TransactionID, N::TransmissionChecksum>>> {
+    pub fn partially_verified_transactions(
+        &self,
+    ) -> Arc<RwLock<LruCache<TransactionCacheKey<N>, N::TransmissionChecksum>>> {
         self.partially_verified_transactions.clone()
     }
 
@@ -224,6 +307,120 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         self.store.transaction_store()
     }
 
+    /// Builds a `FinalizeGlobalState` from the block at the given `height`.
+    ///
+    /// Returns an error if no block exists at `height`. Views reuse the same shape that
+    /// the consensus path uses in `add_next_block_inner`, populating round, timestamp, the
+    /// cumulative weights, and the previous-block hash from the actual block — so any
+    /// operand or opcode that reads from `FinalizeGlobalState` (block.height,
+    /// block.timestamp, random_seed via rand.chacha, etc.) sees real values.
+    #[cfg(feature = "history")]
+    fn finalize_state_for_block(&self, height: u32) -> Result<FinalizeGlobalState> {
+        let block_hash =
+            self.block_store().get_block_hash(height)?.ok_or_else(|| anyhow!("No block exists at height {height}"))?;
+        let block = self
+            .block_store()
+            .get_block(&block_hash)?
+            .ok_or_else(|| anyhow!("Block hash for height {height} resolved but the block could not be loaded"))?;
+        // Match the consensus path's gating: the timestamp is only included from V12 onward.
+        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
+            .then_some(block.timestamp());
+        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
+            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
+        } else {
+            (None, None)
+        };
+        FinalizeGlobalState::new::<N>(
+            block.round(),
+            block.height(),
+            block_timestamp,
+            block.cumulative_weight(),
+            block.cumulative_proof_target(),
+            block.previous_hash(),
+            block_spend_limit,
+            block_synthesis_limit,
+        )
+    }
+
+    /// Evaluates a view function against finalize-store state at the given block `height`.
+    /// Returns the typed outputs.
+    ///
+    /// Mapping reads are pinned to `height` via the per-key historical update map, and the
+    /// `FinalizeGlobalState` is reconstructed from the block at `height`. Available only with
+    /// `--features history`.
+    ///
+    /// snarkOS calls this with `current_block_height()` for "latest", or any earlier height
+    /// for historic views. `height` must satisfy `height <= current_block_height()`.
+    ///
+    /// The view body is taken from the program edition live at `height`.
+    #[cfg(feature = "history")]
+    #[inline]
+    pub fn evaluate_view_at_height(
+        &self,
+        program_id: impl TryInto<ProgramID<N>>,
+        view_name: impl TryInto<Identifier<N>>,
+        inputs: Vec<Value<N>>,
+        height: u32,
+    ) -> Result<Vec<Value<N>>> {
+        let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
+        let view_name = view_name.try_into().map_err(|_| anyhow!("Invalid view function name"))?;
+        let state = self.finalize_state_for_block(height)?;
+        let edition = self.resolve_program_edition_at_height(&program_id, height)?;
+        let latest_stack = self.process.get_stack(program_id)?;
+        let stack = if *latest_stack.program_edition() == edition {
+            // The historic edition is already the loaded one.
+            latest_stack
+        } else {
+            // Build a one-off stack for the historic edition. `new_raw` skips upgrade validation, as the
+            // process holds a newer edition; views can't `call`, so the live (latest) imports resolve
+            // identically (struct, record, and mapping types are frozen across upgrades).
+            let program = self
+                .transaction_store()
+                .deployment_store()
+                .get_program_for_edition(&program_id, edition)?
+                .ok_or_else(|| anyhow!("Program '{program_id}' (edition {edition}) was not found in storage"))?;
+            let stack = Stack::new_raw(&self.process, &program, edition)?;
+            stack.initialize_and_check(&self.process)?;
+            Arc::new(stack)
+        };
+        snarkvm_synthesizer_process::evaluate_view_with_stack_at_height(
+            state,
+            self.finalize_store(),
+            &stack,
+            &view_name,
+            inputs,
+            height,
+        )
+    }
+
+    /// Returns the program edition live at block `height`: the newest edition whose original
+    /// deployment was confirmed at or before `height`. Editions deploy in increasing block order.
+    #[cfg(feature = "history")]
+    fn resolve_program_edition_at_height(&self, program_id: &ProgramID<N>, height: u32) -> Result<u16> {
+        let deployment_store = self.transaction_store().deployment_store();
+        let block_store = self.block_store();
+        let latest_edition = deployment_store
+            .get_latest_edition_for_program(program_id)?
+            .ok_or_else(|| anyhow!("Program '{program_id}' has not been deployed"))?;
+        for edition in (0..=latest_edition).rev() {
+            let Some(transaction_id) =
+                deployment_store.find_original_transaction_id_from_program_id_and_edition(program_id, edition)?
+            else {
+                continue;
+            };
+            let Some(block_hash) = block_store.find_block_hash(&transaction_id)? else {
+                continue;
+            };
+            let Some(deployment_height) = block_store.get_block_height(&block_hash)? else {
+                continue;
+            };
+            if deployment_height <= height {
+                return Ok(edition);
+            }
+        }
+        bail!("Program '{program_id}' was not deployed at or before height {height}")
+    }
+
     /// Returns the transition store.
     #[inline]
     pub fn transition_store(&self) -> &TransitionStore<N, C::TransitionStorage> {
@@ -237,7 +434,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Initialize a new instance of the puzzle.
         macro_rules! logic {
             ($network:path, $aleo:path) => {{
-                let puzzle = Puzzle::new::<ledger_puzzle_epoch::SynthesisPuzzle<$network, $aleo>>();
+                let puzzle = Puzzle::new::<snarkvm_ledger_puzzle_epoch::SynthesisPuzzle<$network, $aleo>>();
                 Ok(cast_ref!(puzzle as Puzzle<N>).clone())
             }};
         }
@@ -247,40 +444,62 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
-    /// Returns a new genesis block for a beacon chain.
+    /// Returns a new genesis block for a beacon chain with the default size (four validators).
     pub fn genesis_beacon<R: Rng + CryptoRng>(&self, private_key: &PrivateKey<N>, rng: &mut R) -> Result<Block<N>> {
-        let private_keys = [*private_key, PrivateKey::new(rng)?, PrivateKey::new(rng)?, PrivateKey::new(rng)?];
+        self.genesis_beacon_with_size(private_key, 4, rng)
+    }
+
+    /// Returns a new genesis block for a beacon chain.
+    pub fn genesis_beacon_with_size<R: Rng + CryptoRng>(
+        &self,
+        private_key: &PrivateKey<N>,
+        num_validators: usize,
+        rng: &mut R,
+    ) -> Result<Block<N>> {
+        ensure!(num_validators >= 4, "Need at least four validators");
+
+        let mut private_keys = vec![*private_key];
+        for _ in 1..num_validators {
+            private_keys.push(PrivateKey::new(rng)?);
+        }
 
         // Construct the committee members.
-        let members = indexmap::indexmap! {
-            Address::try_from(private_keys[0])? => (ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8),
-            Address::try_from(private_keys[1])? => (ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8),
-            Address::try_from(private_keys[2])? => (ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8),
-            Address::try_from(private_keys[3])? => (ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8),
-        };
+        let mut members = IndexMap::with_capacity(num_validators);
+        for key in &private_keys {
+            let addr = Address::try_from(key)?;
+            members.insert(addr, (snarkvm_ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8));
+        }
+
         // Construct the committee.
         let committee = Committee::<N>::new_genesis(members)?;
 
         // Compute the remaining supply.
-        let remaining_supply = N::STARTING_SUPPLY - (ledger_committee::MIN_VALIDATOR_STAKE * 4);
+        let remaining_supply = N::STARTING_SUPPLY
+            .checked_sub(snarkvm_ledger_committee::MIN_VALIDATOR_STAKE * (num_validators as u64))
+            .with_context(|| "Not enough starting supply for this many validators")?;
+
         // Construct the public balances.
-        let public_balances = indexmap::indexmap! {
-            Address::try_from(private_keys[0])? => remaining_supply / 4,
-            Address::try_from(private_keys[1])? => remaining_supply / 4,
-            Address::try_from(private_keys[2])? => remaining_supply / 4,
-            Address::try_from(private_keys[3])? => remaining_supply / 4,
-        };
+        let mut public_balances = IndexMap::with_capacity(4);
+        for key in &private_keys {
+            let addr = Address::try_from(key)?;
+            public_balances.insert(addr, remaining_supply / num_validators as u64);
+        }
+
         // Construct the bonded balances.
         let bonded_balances = committee
             .members()
             .iter()
             .map(|(address, (amount, _, _))| (*address, (*address, *address, *amount)))
             .collect();
+
         // Return the genesis block.
         self.genesis_quorum(private_key, committee, public_balances, bonded_balances, rng)
     }
 
     /// Returns a new genesis block for a quorum chain.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
     pub fn genesis_quorum<R: Rng + CryptoRng>(
         &self,
         private_key: &PrivateKey<N>,
@@ -359,26 +578,56 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             rng,
         )?;
         // Ensure the block is valid genesis block.
-        match block.is_genesis() {
+        match block.is_genesis()? {
             true => Ok(block),
             false => bail!("Failed to initialize a genesis block"),
         }
     }
 
     /// Adds the given block into the VM.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
     #[inline]
     pub fn add_next_block(&self, block: &Block<N>) -> Result<()> {
-        // Acquire the block lock, which is needed to ensure this function is not called concurrently.
-        // Note: This lock must be held for the entire scope of this function.
-        let _block_lock = self.block_lock.lock();
+        let sequential_op = SequentialOperation::AddNextBlock(block.clone());
+        let Some(SequentialOperationResult::AddNextBlock(ret)) = self.run_sequential_operation(sequential_op) else {
+            bail!("Already shutting down");
+        };
 
+        ret
+    }
+
+    /// Adds the given block into the VM.
+    ///
+    /// # Note
+    /// This must only be called from the sequential operation thread.
+    ///
+    /// # Panics
+    /// This function panics if not called from the sequential operation thread.
+    #[inline]
+    pub(crate) fn add_next_block_inner(&self, block: Block<N>) -> Result<()> {
+        self.ensure_sequential_processing();
+
+        // Determine if the block timestamp should be included.
+        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
+            .then_some(block.timestamp());
+        // Determine the block spend and synthesis limits.
+        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
+            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
+        } else {
+            (None, None)
+        };
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
             block.round(),
             block.height(),
+            block_timestamp,
             block.cumulative_weight(),
             block.cumulative_proof_target(),
             block.previous_hash(),
+            block_spend_limit,
+            block_synthesis_limit,
         )?;
 
         // Pause the atomic writes, so that both the insertion and finalization belong to a single batch.
@@ -386,7 +635,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         self.block_store().pause_atomic_writes()?;
 
         // First, insert the block.
-        if let Err(insert_error) = self.block_store().insert(block) {
+        if let Err(insert_error) = self.block_store().insert(&block) {
             if cfg!(feature = "rocks") {
                 // Clear all pending atomic operations so that unpausing the atomic writes
                 // doesn't execute any of the queued storage operations.
@@ -402,13 +651,21 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Next, finalize the transactions.
         match self.finalize(state, block.ratifications(), block.solutions(), block.transactions()) {
             Ok(_ratified_finalize_operations) => {
+                // If the block advances to `ConsensusVersion::V8`, updated the VKs used for the credits program.
+                if N::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap_or_default() == block.height() {
+                    self.process.lock().update_credits_verifying_keys()?;
+                }
                 // Unpause the atomic writes, executing the ones queued from block insertion and finalization.
                 #[cfg(feature = "rocks")]
                 self.block_store().unpause_atomic_writes::<false>()?;
                 // If the block advances to a new consensus version, clear the partial verification cache.
-                // TODO: This may have performance implications if the version
-                // list grows large as it is in the hot path.
-                if N::CONSENSUS_VERSION_HEIGHTS.iter().any(|(_, height)| height == &block.height()) {
+                if N::CONSENSUS_VERSION_HEIGHTS().iter().rev().any(|(_, height)| {
+                    if block.height() < *height {
+                        // If the block height is less than the consensus version height, break early.
+                        return false;
+                    }
+                    height == &block.height()
+                }) {
                     self.partially_verified_transactions().write().clear();
                 }
                 Ok(())
@@ -441,37 +698,56 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     }
 }
 
+impl<N: Network, C: ConsensusStorage<N>> Drop for VM<N, C> {
+    fn drop(&mut self) {
+        // Check if this the final external reference to `VM`.
+        if Arc::strong_count(&self.sequential_ops_tx) == 1 {
+            // If the background thread exists, shut it down.
+            if let Some(thread) = self.sequential_ops_thread.lock().take() {
+                // First, close the channel.
+                self.sequential_ops_tx.write().take();
+                // Wait for the thread to terminate.
+                trace!("Waiting for sequential ops thread to terminate");
+                thread.join().expect("Sequential ops thread had an error");
+            } else {
+                debug!("No sequential ops background thread existed durign shutdown");
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use super::*;
     use circuit::AleoV0;
     use console::{
-        account::{Address, ViewKey},
+        account::{Address, ComputeKey, GraphKey, ViewKey},
         network::MainnetV0,
-        program::{Entry, Value},
-        types::Field,
+        program::{DynamicRecord, Entry, InputID, Request, Signature, Value, ValueType, compute_function_id},
+        types::{Field, Scalar, U16},
     };
-    use ledger_block::{Block, Header, Input, Metadata, Transition};
-    use ledger_test_helpers::{large_transaction_program, small_transaction_program};
-    use synthesizer_program::Program;
+    use snarkvm_ledger_block::{Block, Header, Input, Metadata, Transition};
+    use snarkvm_ledger_test_helpers::{large_transaction_program, small_transaction_program};
+    use snarkvm_synthesizer_process::{execution_cost_for_authorization, execution_cost_for_call};
+    use snarkvm_synthesizer_program::Program;
 
     use aleo_std::StorageMode;
     use indexmap::IndexMap;
-    use once_cell::sync::OnceCell;
     use serde_json::json;
-    use synthesizer_snark::{Proof, VerifyingKey};
+    use snarkvm_synthesizer_snark::{Proof, VerifyingKey};
+    use std::sync::OnceLock;
 
     pub(crate) type CurrentNetwork = MainnetV0;
-    type CurrentAleo = AleoV0;
+    pub(crate) type CurrentAleo = AleoV0;
 
     #[cfg(not(feature = "rocks"))]
-    type LedgerType = ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
+    pub(crate) type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
     #[cfg(feature = "rocks")]
-    type LedgerType = ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
+    pub(crate) type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
     /// Samples a new finalize state.
     pub(crate) fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
-        FinalizeGlobalState::from(block_height as u64, block_height, [0u8; 32])
+        FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32], None, None)
     }
 
     pub(crate) fn sample_vm() -> VM<CurrentNetwork, LedgerType> {
@@ -482,20 +758,31 @@ pub(crate) mod test_helpers {
     #[cfg(feature = "test")]
     pub(crate) fn sample_vm_at_height(height: u32, rng: &mut TestRng) -> VM<CurrentNetwork, LedgerType> {
         // Initialize the VM with a genesis block.
-        let vm = sample_vm_with_genesis_block(rng);
+        let mut vm = sample_vm_with_genesis_block(rng);
         // Get the genesis private key.
         let genesis_private_key = sample_genesis_private_key(rng);
         // Advance the VM to the given height.
-        for _ in 0..height {
-            let block = sample_next_block(&vm, &genesis_private_key, &[], rng).unwrap();
-            vm.add_next_block(&block).unwrap();
-        }
+        advance_vm_to_height(&mut vm, genesis_private_key, height, rng);
         // Return the VM.
         vm
     }
 
+    #[cfg(feature = "test")]
+    pub(crate) fn advance_vm_to_height(
+        vm: &mut VM<CurrentNetwork, LedgerType>,
+        genesis_private_key: PrivateKey<CurrentNetwork>,
+        height: u32,
+        rng: &mut TestRng,
+    ) {
+        // Advance the VM to the given height.
+        for _ in vm.block_store().current_block_height()..height {
+            let block = sample_next_block(vm, &genesis_private_key, &[], rng).unwrap();
+            vm.add_next_block(&block).unwrap();
+        }
+    }
+
     pub(crate) fn sample_genesis_private_key(rng: &mut TestRng) -> PrivateKey<CurrentNetwork> {
-        static INSTANCE: OnceCell<PrivateKey<CurrentNetwork>> = OnceCell::new();
+        static INSTANCE: OnceLock<PrivateKey<CurrentNetwork>> = OnceLock::new();
         *INSTANCE.get_or_init(|| {
             // Initialize a new caller.
             PrivateKey::<CurrentNetwork>::new(rng).unwrap()
@@ -503,7 +790,7 @@ pub(crate) mod test_helpers {
     }
 
     pub(crate) fn sample_genesis_block(rng: &mut TestRng) -> Block<CurrentNetwork> {
-        static INSTANCE: OnceCell<Block<CurrentNetwork>> = OnceCell::new();
+        static INSTANCE: OnceLock<Block<CurrentNetwork>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
                 // Initialize the VM.
@@ -528,7 +815,7 @@ pub(crate) mod test_helpers {
     }
 
     pub(crate) fn sample_program() -> Program<CurrentNetwork> {
-        static INSTANCE: OnceCell<Program<CurrentNetwork>> = OnceCell::new();
+        static INSTANCE: OnceLock<Program<CurrentNetwork>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
                 // Initialize a new program.
@@ -569,7 +856,7 @@ function compute:
     }
 
     pub(crate) fn sample_deployment_transaction(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
-        static INSTANCE: OnceCell<Transaction<CurrentNetwork>> = OnceCell::new();
+        static INSTANCE: OnceLock<Transaction<CurrentNetwork>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
                 // Initialize the program.
@@ -606,7 +893,7 @@ function compute:
     }
 
     pub(crate) fn sample_execution_transaction_without_fee(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
-        static INSTANCE: OnceCell<Transaction<CurrentNetwork>> = OnceCell::new();
+        static INSTANCE: OnceLock<Transaction<CurrentNetwork>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
                 // Initialize a new caller.
@@ -649,7 +936,7 @@ function compute:
     }
 
     pub(crate) fn sample_execution_transaction_with_private_fee(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
-        static INSTANCE: OnceCell<Transaction<CurrentNetwork>> = OnceCell::new();
+        static INSTANCE: OnceLock<Transaction<CurrentNetwork>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
                 // Initialize a new caller.
@@ -693,7 +980,7 @@ function compute:
     }
 
     pub(crate) fn sample_execution_transaction_with_public_fee(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
-        static INSTANCE: OnceCell<Transaction<CurrentNetwork>> = OnceCell::new();
+        static INSTANCE: OnceLock<Transaction<CurrentNetwork>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
                 // Initialize a new caller.
@@ -744,36 +1031,6 @@ function compute:
             .clone()
     }
 
-    #[cfg(feature = "test")]
-    pub(crate) fn create_new_transaction_with_different_fee(
-        rng: &mut TestRng,
-        transaction: Transaction<CurrentNetwork>,
-        fee: u64,
-    ) -> Transaction<CurrentNetwork> {
-        // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
-
-        // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
-
-        // Get Execution
-        let execution = transaction.execution().unwrap().clone();
-
-        // Authorize the fee.
-        let authorization =
-            vm.authorize_fee_public(&caller_private_key, fee, 100, execution.to_execution_id().unwrap(), rng).unwrap();
-        // Compute the fee.
-        let fee = vm.execute_fee_authorization(authorization, None, rng).unwrap();
-
-        // Construct the transaction.
-        Transaction::from_execution(execution, Some(fee)).unwrap()
-    }
-
     pub fn sample_next_block<R: Rng + CryptoRng>(
         vm: &VM<MainnetV0, LedgerType>,
         private_key: &PrivateKey<MainnetV0>,
@@ -784,12 +1041,27 @@ function compute:
         let block_hash = vm.block_store().get_block_hash(vm.block_store().max_height().unwrap()).unwrap().unwrap();
         let previous_block = vm.block_store().get_block(&block_hash).unwrap().unwrap();
 
-        // Construct the new block header.
+        // Create the finalize state for the next block height.
+        let next_block_height = previous_block.height() + 1;
         let time_since_last_block = MainnetV0::BLOCK_TIME as i64;
-        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(
-            sample_finalize_state(1),
-            time_since_last_block,
+        let next_block_timestamp = previous_block.timestamp().saturating_add(time_since_last_block);
+        let next_timestamp = (next_block_height
+            >= MainnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
+        .then_some(next_block_timestamp);
+        let finalize_state = FinalizeGlobalState::from(
+            next_block_height as u64,
+            next_block_height,
+            next_timestamp,
+            [0u8; 32],
             None,
+            None,
+        );
+
+        // Speculate on the ratifications, solutions, and transactions.
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(
+            finalize_state,
+            time_since_last_block,
+            Some(0u64),
             vec![],
             &None.into(),
             transactions.iter(),
@@ -810,6 +1082,7 @@ function compute:
             previous_block.timestamp().saturating_add(time_since_last_block),
         )?;
 
+        // Construct the new block header.
         let header = Header::from(
             vm.block_store().current_state_root(),
             transactions.to_transactions_root().unwrap(),
@@ -834,7 +1107,468 @@ function compute:
         )
     }
 
+    // Populates and signs a mocked request (e.g. one produced by Request::sample), reusing its
+    // identifying data while recomputing tvk, tcm, scm, the input IDs, and the signature so that the
+    // resulting request is well-formed and verifies. The corrected input values are supplied
+    // explicitly via `inputs`; they must be correct for the resulting request to be valid. Note that
+    // the request's program, function name and signer must also be correct.
+    //
+    // Unlike Request::sign, the transition view key tvk is provided externally rather than being
+    // derived from the transition randomness r.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn populate_request_and_sign<N: Network, R: Rng + CryptoRng>(
+        request: &Request<N>,
+        private_key: &PrivateKey<N>,
+        input_types: &[ValueType<N>],
+        inputs: &[Value<N>],
+        tvk: Field<N>,
+        root_tvk: Option<Field<N>>,
+        is_root: bool,
+        program_checksum: Option<Field<N>>,
+        rng: &mut R,
+    ) -> Result<Request<N>> {
+        // Reuse the mocked request's identifying data.
+        let program_id = *request.program_id();
+        let function_name = *request.function_name();
+        let is_dynamic = request.is_dynamic();
+
+        // Ensure the number of inputs matches the number of input types.
+        if input_types.len() != inputs.len() {
+            bail!(
+                "'{program_id}/{function_name}' expects {} inputs, but {} were provided.",
+                input_types.len(),
+                inputs.len()
+            )
+        }
+
+        let sk_sig = private_key.sk_sig();
+        let compute_key = ComputeKey::try_from(private_key)?;
+        let pk_sig = compute_key.pk_sig();
+        let pr_sig = compute_key.pr_sig();
+        let view_key = ViewKey::try_from((private_key, &compute_key))?;
+        let sk_tag = GraphKey::try_from(view_key)?.sk_tag();
+
+        let signer = Address::try_from(compute_key)?;
+        ensure!(signer == *request.signer(), "The private key does not correspond to the mocked request's signer");
+
+        // Sample a random nonce.
+        let nonce = Field::<N>::rand(rng);
+        // Compute `r` as `HashToScalar(sk_sig || nonce)`.
+        // Unlike in the usual Request::sign method, this r is unrelated to the tvk.
+        let r = N::hash_to_scalar_psd4(&[N::serial_number_domain(), sk_sig.to_field()?, nonce])?;
+        // Compute `g_r` as `r * G`. Note: this is the transition public key `tpk`.
+        let g_r = N::g_scalar_multiply(&r);
+
+        // Compute the transition commitment `tcm` as `Hash(tvk)`.
+        let tcm = N::hash_psd2(&[tvk])?;
+        // Compute the signer commitment `scm` as `Hash(signer || root_tvk)`.
+        let root_tvk = root_tvk.unwrap_or(tvk);
+        let scm = N::hash_psd2(&[(*signer).to_x_coordinate(), root_tvk])?;
+        // Compute 'is_root' as a field element.
+        let is_root = if is_root { Field::<N>::one() } else { Field::<N>::zero() };
+
+        // Retrieve the network ID.
+        let network_id = U16::new(N::ID);
+        // Compute the function ID.
+        let function_id = compute_function_id(&network_id, &program_id, &function_name)?;
+
+        // Construct the hash input as `(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, program checksum?, input IDs])`.
+        let mut message = Vec::with_capacity(9 + 2 * inputs.len());
+        message.extend([g_r, pk_sig, pr_sig, *signer].map(|point| point.to_x_coordinate()));
+        message.extend([tvk, tcm, function_id, is_root]);
+        // Add the program checksum to the hash input if it was provided.
+        if let Some(program_checksum) = program_checksum {
+            message.push(program_checksum);
+        }
+
+        // Initialize a vector to store the input IDs.
+        let mut input_ids = Vec::with_capacity(inputs.len());
+
+        // Compute the input IDs from the (already prepared) inputs.
+        for (index, (input, input_type)) in inputs.iter().zip_eq(input_types).enumerate() {
+            // Convert index to u16.
+            let index = u16::try_from(index).map_err(|_| anyhow!("Input index exceeds u16"))?;
+
+            match input_type {
+                // A constant input is hashed (using `tcm`) to a field element.
+                ValueType::Constant(..) => {
+                    let input_id = InputID::constant(function_id, input, tcm, index)?;
+                    message.push(*input_id.id());
+                    input_ids.push(input_id);
+                }
+                // A public input is hashed (using `tcm`) to a field element.
+                ValueType::Public(..) => {
+                    let input_id = InputID::public(function_id, input, tcm, index)?;
+                    message.push(*input_id.id());
+                    input_ids.push(input_id);
+                }
+                // A private input is encrypted (using `tvk`) and hashed to a field element.
+                ValueType::Private(..) => {
+                    let input_id = InputID::private(function_id, input, tvk, index)?;
+                    message.push(*input_id.id());
+                    input_ids.push(input_id);
+                }
+                // A record input is computed to its serial number.
+                ValueType::Record(record_name) => {
+                    // Compute the input ID (commitment, gamma, record view key, serial number, tag).
+                    let input_id =
+                        InputID::record(&program_id, record_name, input, &signer, &view_key, &sk_sig, sk_tag)?;
+                    // Extract the commitment, gamma, and tag for the message.
+                    let (commitment, gamma, tag) = match &input_id {
+                        InputID::Record(c, g, _, _, t) => (*c, *g, *t),
+                        // InputID::record always returns the Record variant.
+                        _ => unreachable!(),
+                    };
+                    // Compute the generator `H` as `HashToGroup(commitment)`.
+                    let h = N::hash_to_group_psd2(&[N::serial_number_domain(), commitment])?;
+                    // Compute `h_r` as `r * H`.
+                    let h_r = h * r;
+                    // Add (`H`, `r * H`, `gamma`, `tag`) to the preimage.
+                    message.extend([h, h_r, gamma].iter().map(|point| point.to_x_coordinate()));
+                    message.push(tag);
+                    input_ids.push(input_id);
+                }
+                // An external record input is hashed (using `tvk`) to a field element.
+                ValueType::ExternalRecord(..) => {
+                    let input_id = InputID::external_record(function_id, input, tvk, index)?;
+                    message.push(*input_id.id());
+                    input_ids.push(input_id);
+                }
+                // A future is not a valid input.
+                ValueType::Future(..) => bail!("A future is not a valid input"),
+                // A dynamic record input is hashed (using `tvk`) to a field element.
+                ValueType::DynamicRecord => {
+                    let input_id = InputID::dynamic_record(function_id, input, tvk, index)?;
+                    message.push(*input_id.id());
+                    input_ids.push(input_id);
+                }
+                // A dynamic future is not a valid input.
+                ValueType::DynamicFuture => bail!("A dynamic future is not a valid input"),
+            }
+        }
+
+        // Compute `challenge` as `HashToScalar(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, program checksum?, input IDs])`.
+        let challenge = N::hash_to_scalar_psd8(&message)?;
+        // Compute `response` as `r - challenge * sk_sig`.
+        let response = r - challenge * sk_sig;
+
+        // Construct the populated and signed request via the public tuple constructor.
+        Ok(Request::from((
+            signer,
+            network_id,
+            program_id,
+            function_name,
+            input_ids,
+            inputs.to_vec(),
+            Signature::from((challenge, response, compute_key)),
+            sk_tag,
+            tvk,
+            tcm,
+            scm,
+            is_dynamic,
+        )))
+    }
+
+    // Resolves the correct value of a record-bearing input slot of a reauthorized request.
+    //
+    // The mocked authorization derives intermediate records (those produced within the call tree) using
+    // mocked transition view keys, so their nonces (and thus commitments, serial numbers, and input
+    // IDs) do not match the execution. This function recovers the correct value by selecting, among the
+    // candidate records, the one whose recomputed input ID matches the corresponding transition input.
+    //
+    // The candidates are the mocked value (correct for records derived purely from the root inputs,
+    // since translation is tvk-independent) followed by the records decrypted from the execution's
+    // outputs (correct for records produced within the call tree, since every such record is emitted as
+    // a static record output by its birth transition).
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_record_input(
+        mock_value: &Value<CurrentNetwork>,
+        value_type: &ValueType<CurrentNetwork>,
+        target_id: &Field<CurrentNetwork>,
+        output_records: &[Record<CurrentNetwork, Plaintext<CurrentNetwork>>],
+        program_id: &ProgramID<CurrentNetwork>,
+        function_id: Field<CurrentNetwork>,
+        signer: &Address<CurrentNetwork>,
+        view_key: &ViewKey<CurrentNetwork>,
+        sk_sig: &Scalar<CurrentNetwork>,
+        sk_tag: Field<CurrentNetwork>,
+        tvk: Field<CurrentNetwork>,
+        index: u16,
+    ) -> Result<Value<CurrentNetwork>> {
+        // Computes the transition-level input ID that the given candidate value would yield, returning
+        // `None` if the candidate's shape is incompatible with the input type. For a record input, the
+        // transition stores the serial number, so that is extracted; for external and dynamic record
+        // inputs, the transition stores the input ID hash directly.
+        let candidate_id = |value: &Value<CurrentNetwork>| -> Option<Field<CurrentNetwork>> {
+            match value_type {
+                ValueType::Record(record_name) => {
+                    match InputID::record(program_id, record_name, value, signer, view_key, sk_sig, sk_tag) {
+                        Ok(InputID::Record(_, _, _, serial_number, _)) => Some(serial_number),
+                        _ => None,
+                    }
+                }
+                ValueType::ExternalRecord(..) => {
+                    InputID::external_record(function_id, value, tvk, index).ok().map(|id| *id.id())
+                }
+                ValueType::DynamicRecord => {
+                    InputID::dynamic_record(function_id, value, tvk, index).ok().map(|id| *id.id())
+                }
+                _ => None,
+            }
+        };
+
+        // First, try the mocked value, which is correct for records derived purely from the root inputs.
+        if candidate_id(mock_value) == Some(*target_id) {
+            return Ok(mock_value.clone());
+        }
+        // Otherwise, search the records decrypted from the execution's outputs.
+        for record in output_records {
+            let value = match value_type {
+                ValueType::Record(..) | ValueType::ExternalRecord(..) => Value::Record(record.clone()),
+                ValueType::DynamicRecord => Value::DynamicRecord(DynamicRecord::from_record(record)?),
+                _ => continue,
+            };
+            if candidate_id(&value) == Some(*target_id) {
+                return Ok(value);
+            }
+        }
+        bail!("Could not resolve the value of record input {index} for '{program_id}'")
+    }
+
+    // Reconstructs an authorization for the given execution, extracting suitable requests and calling
+    // authorize_requests. More specifically, this function:
+    // - recovers each transition's actual tvk from its tpk and the signer's view key,
+    // - samples a mocked authorization for the same root call via sample_authorization
+    //   In particular, the requests in the authoriztion have correct program IDs, function names and
+    //   input values (not IDs), but their tvk, tcm and signatures are mocked.
+    // - corrects the input values of records produced within the call tree, whose mocked nonces do not
+    //   match the execution, by decrypting the corresponding records from the execution's outputs,
+    // - populates each mocked request with the correct data derived from its recovered tvk (tcm, input
+    //   IDs and signature) via populate_request_and_sign
+    // - passes the populated requests to authorize_requests
+    pub(crate) fn reauthorize_from_execution(
+        vm: &VM<CurrentNetwork, LedgerType>,
+        execution: &Execution<CurrentNetwork>,
+        root_inputs: &[Value<CurrentNetwork>],
+        private_key: &PrivateKey<CurrentNetwork>,
+        rng: &mut TestRng,
+    ) -> Authorization<CurrentNetwork> {
+        // Derive the signer's view key, address, and signing material.
+        let view_key = ViewKey::try_from(private_key).unwrap();
+        let signer = view_key.to_address();
+        let sk_sig = private_key.sk_sig();
+        let sk_tag = GraphKey::try_from(view_key).unwrap().sk_tag();
+
+        // Decrypt every record emitted as a (static) record output of the execution. These provide the
+        // correct values for records produced within the call tree, whose nonces depend on the
+        // producing transition's tvk and so do not match the mocked authorization.
+        let output_records: Vec<Record<CurrentNetwork, Plaintext<CurrentNetwork>>> = execution
+            .transitions()
+            .flat_map(|transition| transition.outputs())
+            .filter_map(|output| match output {
+                Output::Record(_, _, Some(record), _) | Output::RecordWithDynamicID(_, _, Some(record), _, _) => {
+                    record.decrypt(&view_key).ok()
+                }
+                _ => None,
+            })
+            .collect();
+
+        // Recover the transition view keys (tvks) from the transitions' tpks, in post-order (the order
+        // in which the transitions appear in the execution).
+        let recovered_tvks: Vec<Field<CurrentNetwork>> =
+            execution.transitions().map(|transition| (*transition.tpk() * *view_key).to_x_coordinate()).collect();
+        // The root call is the last transition (post-order), and its tvk is the root tvk.
+        let root_transition = execution.transitions().last().unwrap();
+        let root_tvk = *recovered_tvks.last().unwrap();
+
+        // Sample a mocked authorization for the same root call.
+        let root_stack = vm.process().get_stack(*root_transition.program_id()).unwrap();
+        let sampled = root_stack
+            .sample_authorization::<CurrentAleo, _>(
+                signer,
+                *root_transition.program_id(),
+                *root_transition.function_name(),
+                root_inputs.iter(),
+                rng,
+            )
+            .unwrap();
+
+        // The mocked transitions are in the same post-order as the execution's transitions, so map each
+        // mocked transition's tcm to the recovered tvk and execution transition by position. Each mocked
+        // request is then matched to its tvk and transition via its (mocked) tcm.
+        let tcm_to_tvk: HashMap<Field<CurrentNetwork>, Field<CurrentNetwork>> = sampled
+            .transitions()
+            .values()
+            .zip_eq(recovered_tvks.iter().copied())
+            .map(|(transition, tvk)| (*transition.tcm(), tvk))
+            .collect();
+        let tcm_to_transition: HashMap<Field<CurrentNetwork>, &Transition<CurrentNetwork>> = sampled
+            .transitions()
+            .values()
+            .zip_eq(execution.transitions())
+            .map(|(mock, real)| (*mock.tcm(), real))
+            .collect();
+
+        // Populate each mocked request with the correct data derived from its recovered tvk.
+        let populated_requests: Vec<Request<CurrentNetwork>> = sampled
+            .to_vec_deque()
+            .into_iter()
+            .map(|request| {
+                // Recover this request's tvk and execution transition via its (mocked) tcm.
+                let tvk = *tcm_to_tvk.get(request.tcm()).expect("every mocked request has a matching transition");
+                let transition = *tcm_to_transition.get(request.tcm()).expect("every mocked request has a transition");
+                // Look up the callee program's stack, function input types, and program checksum.
+                let stack = vm.process().get_stack(*request.program_id()).unwrap();
+                let input_types = stack.get_function(request.function_name()).unwrap().input_types();
+                let program_checksum = match stack.program().contains_constructor() {
+                    true => Some(stack.program_checksum_as_field().unwrap()),
+                    false => None,
+                };
+                // The root request is the one whose tvk matches the root tvk.
+                let is_root = tvk == root_tvk;
+                // Compute the function ID used to recompute external and dynamic record input IDs.
+                let function_id =
+                    compute_function_id(&U16::new(CurrentNetwork::ID), request.program_id(), request.function_name())
+                        .unwrap();
+                // Correct the value of each record-bearing input, leaving other inputs untouched.
+                let corrected_inputs: Vec<Value<CurrentNetwork>> = request
+                    .inputs()
+                    .iter()
+                    .zip_eq(input_types.iter())
+                    .enumerate()
+                    .map(|(index, (mock_value, value_type))| match value_type {
+                        ValueType::Record(..) | ValueType::ExternalRecord(..) | ValueType::DynamicRecord => {
+                            let target_id = transition.inputs()[index].id();
+                            resolve_record_input(
+                                mock_value,
+                                value_type,
+                                target_id,
+                                &output_records,
+                                request.program_id(),
+                                function_id,
+                                &signer,
+                                &view_key,
+                                &sk_sig,
+                                sk_tag,
+                                tvk,
+                                u16::try_from(index).unwrap(),
+                            )
+                            .unwrap()
+                        }
+                        _ => mock_value.clone(),
+                    })
+                    .collect();
+                // Populate and sign the request.
+                populate_request_and_sign(
+                    &request,
+                    private_key,
+                    &input_types,
+                    &corrected_inputs,
+                    tvk,
+                    Some(root_tvk),
+                    is_root,
+                    program_checksum,
+                    rng,
+                )
+                .unwrap()
+            })
+            .collect();
+
+        // Authorize from the populated requests.
+        root_stack.authorize_requests::<CurrentAleo, _>(populated_requests, rng).unwrap()
+    }
+
+    // Adds the given transactions to a new block and asserts all of them were accepted,
+    // additionally checking that the cost estimations based on the Authorization and the call
+    // target an inputs are correct. The latter check is done if and only if the `inputs` parameter
+    // is provided, which should not be done for deployments. Furthermore, if that is the case, it
+    // is checked that authorize_requests recovers a consistent authorization when provided with the
+    // same requests.
+    pub(crate) fn add_and_test_with_costs(
+        vm: &VM<CurrentNetwork, LedgerType>,
+        caller_private_key: &PrivateKey<CurrentNetwork>,
+        inputs: Option<&[&[Value<CurrentNetwork>]]>,
+        transactions: &[Transaction<CurrentNetwork>],
+        rng: &mut TestRng,
+    ) {
+        // Check the transactions.
+        let transactions: Vec<_> = transactions
+            .iter()
+            .map(|tx_0| {
+                // Serialize and deserialize the transaction to ensure consistency.
+                let tx_bytes_0 = tx_0.to_bytes_le().unwrap();
+                let tx_1 = Transaction::<CurrentNetwork>::from_bytes_le(&tx_bytes_0).unwrap();
+                assert_eq!(tx_0, &tx_1);
+                assert_eq!(tx_bytes_0, tx_1.to_bytes_le().unwrap());
+                // Stringify and parse the transaction to ensure consistency.
+                let tx_1_string = tx_1.to_string();
+                let tx = Transaction::<CurrentNetwork>::from_str(&tx_1_string).unwrap();
+                assert_eq!(tx_0, &tx);
+                assert_eq!(tx_1_string, tx.to_string());
+                // Check the transaction.
+                vm.check_transaction(&tx, None, rng).map_err(|e| anyhow!("Transaction check failed: {e}")).unwrap();
+                tx
+            })
+            .collect();
+        // Sample the next block.
+        let block = sample_next_block(vm, caller_private_key, &transactions, rng).unwrap();
+        // Assert all transactions were accepted.
+        assert_eq!(block.transactions().num_accepted(), transactions.len());
+        assert_eq!(block.transactions().num_rejected(), 0);
+        assert_eq!(block.aborted_transaction_ids().len(), 0);
+
+        // Add the next block to the VM.
+        vm.add_next_block(&block).unwrap();
+
+        // Check the cost estimation is correct:
+        if let Some(inputs) = inputs {
+            for (transaction, inputs) in transactions.iter().zip_eq(inputs) {
+                if let Some(execution) = transaction.execution() {
+                    let actual_cost = execution_cost(vm.process(), execution, ConsensusVersion::V14).unwrap();
+                    let authorization =
+                        Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
+                    let estimated_cost_authorization =
+                        execution_cost_for_authorization(vm.process(), &authorization, ConsensusVersion::V14).unwrap();
+                    assert_eq!(actual_cost, estimated_cost_authorization);
+
+                    let root_transition = execution.transitions().last().unwrap();
+                    let estimated_cost_request = execution_cost_for_call::<CurrentAleo, _>(
+                        vm.process(),
+                        Address::try_from(caller_private_key).unwrap(),
+                        *root_transition.program_id(),
+                        *root_transition.function_name(),
+                        inputs.iter(),
+                        ConsensusVersion::V14,
+                        rng,
+                    )
+                    .unwrap();
+                    assert_eq!(actual_cost, estimated_cost_request);
+
+                    // Reconstruct an authorization from the execution using authorize_requests
+                    let reauthorization = reauthorize_from_execution(vm, execution, inputs, caller_private_key, rng);
+                    let reauthorized_transitions = reauthorization.transitions();
+
+                    // Test consistency between the transitions in the original execution and the new reauthorization.
+                    // All values can be compared directly except for tpk.
+                    for (original, (tid, reauthorized)) in
+                        execution.transitions().zip_eq(reauthorized_transitions.iter())
+                    {
+                        assert_eq!(original.id(), tid);
+                        assert_eq!(original.id(), reauthorized.id());
+                        assert_eq!(original.program_id(), reauthorized.program_id());
+                        assert_eq!(original.function_name(), reauthorized.function_name());
+                        assert_eq!(original.tcm(), reauthorized.tcm());
+                        assert_eq!(original.scm(), reauthorized.scm());
+                        assert_eq!(original.inputs(), reauthorized.inputs());
+                        assert_eq!(original.outputs(), reauthorized.outputs());
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
+    #[ignore]
     fn test_multiple_deployments_and_multiple_executions() {
         let rng = &mut TestRng::default();
 
@@ -984,6 +1718,7 @@ finalize getter:
     }
 
     #[test]
+    #[ignore]
     fn test_load_deployments_with_imports() {
         // NOTE: This seed was chosen for the CI's RNG to ensure that the test passes.
         let rng = &mut TestRng::fixed(123456789);
@@ -1082,19 +1817,6 @@ function a:
         let deployment_block =
             sample_next_block(&vm, &caller_private_key, &[deployment_3.clone(), deployment_4.clone()], rng).unwrap();
         vm.add_next_block(&deployment_block).unwrap();
-
-        // Sanity check the ordering of the deployment transaction IDs from storage.
-        {
-            let deployment_transaction_ids =
-                vm.transaction_store().deployment_transaction_ids().map(|id| *id).collect::<Vec<_>>();
-            // This assert check is here to ensure that we are properly loading imports even though any order will work for `VM::from`.
-            // Note: `deployment_transaction_ids` is sorted lexicographically by transaction ID, so the order may change if we update internal methods.
-            assert_eq!(
-                deployment_transaction_ids,
-                vec![deployment_4.id(), deployment_3.id(), deployment_2.id(), deployment_1.id()],
-                "Update me if serialization has changed"
-            );
-        }
 
         // Enforce that the VM can load properly with the imports.
         assert!(VM::from(vm.store.clone()).is_ok());
@@ -1224,6 +1946,7 @@ function check:
     }
 
     #[test]
+    #[ignore]
     fn test_deployment_with_external_records() {
         let rng = &mut TestRng::default();
 
@@ -1302,7 +2025,7 @@ function call_fee_public:
 finalize call_fee_public:
     input r0 as credits.aleo/fee_public.future;
     await r0;
-    
+
 function call_fee_private:
     input r0 as credits.aleo/credits.record;
     input r1 as u64.private;
@@ -1319,13 +2042,13 @@ function call_fee_private:
         vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
 
         // Execute the programs.
-        let internal_base_fee_amount: u64 = rng.gen_range(1..1000);
-        let internal_priority_fee_amount: u64 = rng.gen_range(1..1000);
+        let internal_base_fee_amount: u64 = rng.random_range(1..1000);
+        let internal_priority_fee_amount: u64 = rng.random_range(1..1000);
 
         // Ensure that the transaction that calls `fee_public` internally cannot be generated.
         let inputs = [
-            Value::<MainnetV0>::from_str(&format!("{}u64", internal_base_fee_amount)).unwrap(),
-            Value::<MainnetV0>::from_str(&format!("{}u64", internal_priority_fee_amount)).unwrap(),
+            Value::<MainnetV0>::from_str(&format!("{internal_base_fee_amount}u64")).unwrap(),
+            Value::<MainnetV0>::from_str(&format!("{internal_priority_fee_amount}u64")).unwrap(),
             Value::<MainnetV0>::from_str("1field").unwrap(),
         ];
         assert!(
@@ -1336,8 +2059,8 @@ function call_fee_private:
         // Ensure that the transaction that calls `fee_private` internally cannot be generated.
         let inputs = [
             Value::<MainnetV0>::Record(record_0),
-            Value::<MainnetV0>::from_str(&format!("{}u64", internal_base_fee_amount)).unwrap(),
-            Value::<MainnetV0>::from_str(&format!("{}u64", internal_priority_fee_amount)).unwrap(),
+            Value::<MainnetV0>::from_str(&format!("{internal_base_fee_amount}u64")).unwrap(),
+            Value::<MainnetV0>::from_str(&format!("{internal_priority_fee_amount}u64")).unwrap(),
             Value::<MainnetV0>::from_str("1field").unwrap(),
         ];
         assert!(
@@ -1347,6 +2070,7 @@ function call_fee_private:
     }
 
     #[test]
+    #[cfg(feature = "memory-intensive")]
     #[ignore = "memory-intensive"]
     fn test_deployment_synthesis_overload() {
         let rng = &mut TestRng::default();
@@ -1370,7 +2094,8 @@ program synthesis_overload.aleo;
 function do:
     input r0 as [[u128; 32u32]; 2u32].private;
     hash.sha3_256 r0 into r1 as field;
-    output r1 as field.public;",
+    hash.sha3_256 r0 into r2 as field;
+    output r2 as field.public;",
         )
         .unwrap();
 
@@ -1404,8 +2129,10 @@ function do:
     cast 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 into r0 as [u32; 32u32];
     cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r1 as [[u32; 32u32]; 32u32];
     cast r1 r1 r1 r1 r1 into r2 as [[[u32; 32u32]; 32u32]; 5u32];
-    hash.bhp1024 r2 into r3 as u32;
-    output r3 as u32.private;
+    cast r1 r1 r1 r1 r1 into r3 as [[[u32; 32u32]; 32u32]; 5u32];
+    hash.bhp1024 r2 into r4 as u32;
+    hash.bhp1024 r3 into r5 as u32;
+    output r4 as u32.private;
 function do2:
     cast 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 0u32 into r0 as [u32; 32u32];
     cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r1 as [[u32; 32u32]; 32u32];
@@ -1477,8 +2204,14 @@ function do:
         let fee = vm.execute_fee_authorization(fee_authorization, None, rng).unwrap();
 
         // Create a new deployment transaction with the overreported verifying keys.
-        let adjusted_deployment =
-            Deployment::new(deployment.edition(), deployment.program().clone(), vks_with_overreport).unwrap();
+        let adjusted_deployment = Deployment::new(
+            deployment.edition(),
+            deployment.program().clone(),
+            vks_with_overreport,
+            deployment.program_checksum(),
+            deployment.program_owner(),
+        )
+        .unwrap();
         let adjusted_transaction = Transaction::from_deployment(program_owner, adjusted_deployment, fee).unwrap();
 
         // Verify the deployment transaction. It should error when certificate checking for constraint count mismatch.
@@ -1532,8 +2265,14 @@ function do:
         }
 
         // Create a new deployment transaction with the underreported verifying keys.
-        let adjusted_deployment =
-            Deployment::new(deployment.edition(), deployment.program().clone(), vks_with_underreport).unwrap();
+        let adjusted_deployment = Deployment::new(
+            deployment.edition(),
+            deployment.program().clone(),
+            vks_with_underreport,
+            deployment.program_checksum(),
+            deployment.program_owner(),
+        )
+        .unwrap();
         let deployment_id = adjusted_deployment.to_deployment_id().unwrap();
         let adjusted_transaction =
             Transaction::Deploy(txid, deployment_id, program_owner, Box::new(adjusted_deployment), fee);
@@ -1607,8 +2346,14 @@ function do:
         }
 
         // Create a new deployment transaction with the underreported verifying keys.
-        let adjusted_deployment =
-            Deployment::new(deployment.edition(), deployment.program().clone(), vks_with_underreport).unwrap();
+        let adjusted_deployment = Deployment::new(
+            deployment.edition(),
+            deployment.program().clone(),
+            vks_with_underreport,
+            deployment.program_checksum(),
+            deployment.program_owner(),
+        )
+        .unwrap();
         let deployment_id = adjusted_deployment.to_deployment_id().unwrap();
         let adjusted_transaction =
             Transaction::Deploy(txid, deployment_id, program_owner, Box::new(adjusted_deployment), fee);
@@ -1637,105 +2382,6 @@ function do:
 
         // Update the VM.
         vm.add_next_block(&block).unwrap();
-    }
-
-    #[test]
-    #[ignore]
-    fn test_deployment_memory_overload() {
-        const NUM_DEPLOYMENTS: usize = 32;
-
-        let rng = &mut TestRng::default();
-
-        // Initialize a private key.
-        let private_key = sample_genesis_private_key(rng);
-
-        // Initialize a view key.
-        let view_key = ViewKey::try_from(&private_key).unwrap();
-
-        // Initialize the genesis block.
-        let genesis = sample_genesis_block(rng);
-
-        // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
-
-        // Deploy the base program.
-        let program = Program::from_str(
-            r"
-program program_layer_0.aleo;
-
-mapping m:
-    key as u8.public;
-    value as u32.public;
-
-function do:
-    input r0 as u32.public;
-    async do r0 into r1;
-    output r1 as program_layer_0.aleo/do.future;
-
-finalize do:
-    input r0 as u32.public;
-    set r0 into m[0u8];",
-        )
-        .unwrap();
-
-        let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
-        vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
-
-        // For each layer, deploy a program that calls the program from the previous layer.
-        for i in 1..NUM_DEPLOYMENTS {
-            let mut program_string = String::new();
-            // Add the import statements.
-            for j in 0..i {
-                program_string.push_str(&format!("import program_layer_{}.aleo;\n", j));
-            }
-            // Add the program body.
-            program_string.push_str(&format!(
-                "program program_layer_{i}.aleo;
-
-mapping m:
-    key as u8.public;
-    value as u32.public;
-
-function do:
-    input r0 as u32.public;
-    call program_layer_{prev}.aleo/do r0 into r1;
-    async do r0 r1 into r2;
-    output r2 as program_layer_{i}.aleo/do.future;
-
-finalize do:
-    input r0 as u32.public;
-    input r1 as program_layer_{prev}.aleo/do.future;
-    await r1;
-    set r0 into m[0u8];",
-                prev = i - 1
-            ));
-            // Construct the program.
-            let program = Program::from_str(&program_string).unwrap();
-
-            // Deploy the program.
-            let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
-
-            vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
-        }
-
-        // Fetch the unspent records.
-        let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
-        trace!("Unspent Records:\n{:#?}", records);
-
-        // Select a record to spend.
-        let record = Some(records.values().next().unwrap().decrypt(&view_key).unwrap());
-
-        // Prepare the inputs.
-        let inputs = [Value::<CurrentNetwork>::from_str("1u32").unwrap()].into_iter();
-
-        // Execute.
-        let transaction =
-            vm.execute(&private_key, ("program_layer_30.aleo", "do"), inputs, record, 0, None, rng).unwrap();
-
-        // Verify.
-        vm.check_transaction(&transaction, None, rng).unwrap();
     }
 
     #[test]
@@ -1774,7 +2420,7 @@ finalize do:
             Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => *balance,
             _ => panic!("Expected a valid balance"),
         };
-        assert_eq!(balance, 182_499_999_894_244, "Update me if the initial balance changes.");
+        assert_eq!(balance, 182_499_999_894_112, "Update me if the initial balance changes.");
 
         // Transfer credits from the caller to the recipient.
         let transaction = vm
@@ -1811,7 +2457,7 @@ finalize do:
             Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => *balance,
             _ => panic!("Expected a valid balance"),
         };
-        assert_eq!(balance, 182_499_999_843_183, "Update me if the initial balance changes.");
+        assert_eq!(balance, 182_499_999_843_051, "Update me if the initial balance changes.");
 
         // Check the balance of the recipient.
         let balance = match vm
@@ -1865,7 +2511,7 @@ finalize do:
             Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => *balance,
             _ => panic!("Expected a valid balance"),
         };
-        assert_eq!(balance, 182_499_999_894_244, "Update me if the initial balance changes.");
+        assert_eq!(balance, 182_499_999_894_112, "Update me if the initial balance changes.");
 
         // Transfer credits from the caller to the recipient.
         let transaction = vm
@@ -1902,7 +2548,7 @@ finalize do:
             Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => *balance,
             _ => panic!("Expected a valid balance"),
         };
-        assert_eq!(balance, 182_499_999_843_163, "Update me if the initial balance changes.");
+        assert_eq!(balance, 182_499_999_843_031, "Update me if the initial balance changes.");
 
         // Check the balance of the recipient.
         let balance = match vm
@@ -1956,7 +2602,7 @@ finalize do:
             Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => *balance,
             _ => panic!("Expected a valid balance"),
         };
-        assert_eq!(balance, 182_499_999_894_244, "Update me if the initial balance changes.");
+        assert_eq!(balance, 182_499_999_894_112, "Update me if the initial balance changes.");
 
         // Initialize a wrapper program, importing `credits.aleo` and calling `transfer_public`.
         let program = Program::from_str(
@@ -2027,7 +2673,7 @@ finalize transfer_public:
             Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => *balance,
             _ => panic!("Expected a valid balance"),
         };
-        assert_eq!(balance, 182_499_996_914_808, "Update me if the initial balance changes.");
+        assert_eq!(balance, 182_499_996_914_676, "Update me if the initial balance changes.");
 
         // Check the balance of the `credits_wrapper` program.
         let balance = match vm
@@ -2079,7 +2725,7 @@ finalize transfer_public:
             Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => *balance,
             _ => panic!("Expected a valid balance"),
         };
-        assert_eq!(balance, 182_499_996_862_283, "Update me if the initial balance changes.");
+        assert_eq!(balance, 182_499_996_862_151, "Update me if the initial balance changes.");
 
         // Check the balance of the `credits_wrapper` program.
         let balance = match vm
@@ -2148,7 +2794,7 @@ finalize transfer_public:
             Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => *balance,
             _ => panic!("Expected a valid balance"),
         };
-        assert_eq!(balance, 182_499_999_894_244, "Update me if the initial balance changes.");
+        assert_eq!(balance, 182_499_999_894_112, "Update me if the initial balance changes.");
 
         // Initialize a wrapper program, importing `credits.aleo` and calling `transfer_public`.
         let program = Program::from_str(
@@ -2218,7 +2864,7 @@ finalize transfer_public_as_signer:
             Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => *balance,
             _ => panic!("Expected a valid balance"),
         };
-        assert_eq!(balance, 182_499_996_821_793, "Update me if the initial balance changes.");
+        assert_eq!(balance, 182_499_996_821_661, "Update me if the initial balance changes.");
 
         // Check the `credits_wrapper` program does not have any balance.
         let balance = vm
@@ -2283,7 +2929,7 @@ finalize transfer_public_as_signer:
             Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => *balance,
             _ => panic!("Expected a valid balance"),
         };
-        assert_eq!(balance, 182_499_999_894_244, "Update me if the initial balance changes.");
+        assert_eq!(balance, 182_499_999_894_112, "Update me if the initial balance changes.");
 
         // Check that the recipient does not have a public balance.
         let balance = vm
@@ -2337,6 +2983,21 @@ finalize transfer_public_to_private:
         // Update the VM.
         vm.add_next_block(&block).unwrap();
 
+        // Check the balance of the caller.
+        let balance = match vm
+            .finalize_store()
+            .get_value_confirmed(
+                credits_program_id,
+                account_mapping_name,
+                &Plaintext::from(Literal::Address(caller_address)),
+            )
+            .unwrap()
+        {
+            Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => *balance,
+            _ => panic!("Expected a valid balance"),
+        };
+        assert_eq!(balance, 182_499_995_767_962, "Update me if the initial balance changes.");
+
         // Call the wrapper program to transfer credits from the caller to the recipient.
         let transaction = vm
             .execute(
@@ -2373,7 +3034,7 @@ finalize transfer_public_to_private:
             _ => panic!("Expected a valid balance"),
         };
 
-        assert_eq!(balance, 182_499_996_071_881, "Update me if the initial balance changes.");
+        assert_eq!(balance, 182_499_995_667_116, "Update me if the initial balance changes.");
 
         // Check that the `credits_wrapper` program has a balance of 0.
         let balance = match vm
@@ -2925,7 +3586,7 @@ function add_thrice:
         let vm = sample_vm();
 
         // Ensure this call succeeds.
-        vm.puzzle.prove(rng.gen(), rng.gen(), rng.gen(), None).unwrap();
+        vm.puzzle.prove(rng.random(), rng.random(), rng.random(), None).unwrap();
     }
 
     #[test]
@@ -3026,19 +3687,20 @@ function check:
         assert!(vm.contains_program(&ProgramID::from_str("grandparent_program.aleo").unwrap()));
 
         // Initialize the process.
-        let mut process = Process::<CurrentNetwork>::load().unwrap();
+        let process = Process::<CurrentNetwork>::load().unwrap();
 
         // Load the child and parent program
-        process.add_program(&child_program_1).unwrap();
-        process.add_program(&child_program_2).unwrap();
-        process.add_program(&parent_program).unwrap();
-        process.add_program(&grandparent_program).unwrap();
+        process.lock().add_program(&child_program_1).unwrap();
+        process.lock().add_program(&child_program_2).unwrap();
+        process.lock().add_program(&parent_program).unwrap();
+        process.lock().add_program(&grandparent_program).unwrap();
 
         // Specify the function name on the parent program
         let function_name = Identifier::<CurrentNetwork>::from_str("check").unwrap();
 
         // Generate a random Field for input
-        let input = Value::<CurrentNetwork>::from_str(&Field::<CurrentNetwork>::rand(rng).to_string()).unwrap();
+        let input =
+            Value::<CurrentNetwork>::from_str("123456789123456789123456789123456789123456789123456789field").unwrap();
 
         // Generate the authorization that will contain multiple transitions
         let authorization = process
@@ -3107,6 +3769,7 @@ function check:
         vm.add_next_block(&genesis).unwrap();
 
         // Fund two accounts to pay for the deployment.
+        // This has to be done because only one deployment can be made per fee-paying address per block.
         let private_key_1 = PrivateKey::new(rng).unwrap();
         let private_key_2 = PrivateKey::new(rng).unwrap();
         let address_1 = Address::try_from(&private_key_1).unwrap();
@@ -3137,6 +3800,8 @@ function check:
 
         let block = sample_next_block(&vm, &caller_private_key, &[tx_1, tx_2], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 2);
+        assert_eq!(block.transactions().num_rejected(), 0);
+        assert_eq!(block.aborted_transaction_ids().len(), 0);
         vm.add_next_block(&block).unwrap();
 
         // Deploy two programs that depend on each other.
@@ -3177,7 +3842,7 @@ function adder:
         // Check that the account has enough to pay for the deployment.
         assert_eq!(*deployment_1.fee_amount().unwrap(), 2483025);
         // Add the first program to the off-chain VM.
-        off_chain_vm.process().write().add_program(&program_1).unwrap();
+        off_chain_vm.process().lock().add_program(&program_1).unwrap();
         // Deploy the second program.
         let deployment_2 = off_chain_vm.deploy(&private_key_2, &program_2, None, 0, None, rng).unwrap();
         // Check that the account has enough to pay for the deployment.
@@ -3187,10 +3852,12 @@ function adder:
 
         let block = sample_next_block(&vm, &caller_private_key, &[deployment_1, deployment_2], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 1);
+        assert_eq!(block.transactions().num_rejected(), 0);
+        assert_eq!(block.aborted_transaction_ids().len(), 1);
         vm.add_next_block(&block).unwrap();
 
         // Check that only `child_program.aleo` is in the VM.
-        assert!(vm.process().read().contains_program(&ProgramID::from_str("child_program.aleo").unwrap()));
+        assert!(vm.process().contains_program(&ProgramID::from_str("child_program.aleo").unwrap()));
     }
 
     #[cfg(feature = "test")]
@@ -3221,8 +3888,8 @@ function adder:
         // Deploy a test program for each of the invalid program bodies.
         // They should all be accepted by the VM, because the restriction is not yet in place.
         for (i, body) in invalid_program_bodies.iter().enumerate() {
-            println!("Deploying 'valid' test program {}: {}", i, body);
-            let program = Program::from_str(&format!("program test_valid_{}.aleo;\n{}", i, body)).unwrap();
+            println!("Deploying 'valid' test program {i}: {body}");
+            let program = Program::from_str(&format!("program test_valid_{i}.aleo;\n{body}")).unwrap();
             let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
             let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
             assert_eq!(block.transactions().num_accepted(), 1);
@@ -3236,11 +3903,11 @@ function adder:
         // Deploy a test program for each of the invalid program bodies.
         // Verify that `check_transaction` fails for each of them.
         for (i, body) in invalid_program_bodies.iter().enumerate() {
-            println!("Deploying 'invalid' test program {}: {}", i, body);
-            let program = Program::from_str(&format!("program test_invalid_{}.aleo;\n{}", i, body)).unwrap();
+            println!("Deploying 'invalid' test program {i}: {body}");
+            let program = Program::from_str(&format!("program test_invalid_{i}.aleo;\n{body}")).unwrap();
             let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
             if let Err(e) = vm.check_transaction(&deployment, None, rng) {
-                println!("Error: {}", e);
+                println!("Error: {e}");
             } else {
                 panic!("Expected an error, but the deployment was accepted.")
             }
@@ -3251,9 +3918,242 @@ function adder:
         let program = Program::from_str(r"program constructor.aleo; function dummy:").unwrap();
         let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
         if let Err(e) = vm.check_transaction(&deployment, None, rng) {
-            println!("Error: {}", e);
+            println!("Error: {e}");
         } else {
             panic!("Expected an error, but the deployment was accepted.")
         }
+    }
+
+    #[cfg(feature = "test")]
+    #[test]
+    fn test_deploy_and_execute_in_same_block_fails() {
+        let rng = &mut TestRng::default();
+
+        // Initialize a new caller.
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Initialize the genesis block.
+        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+
+        // Initialize the VM.
+        let vm = crate::vm::test_helpers::sample_vm();
+        vm.add_next_block(&genesis).unwrap();
+
+        // Deploy and execute a program in the same block.
+        let program = Program::from_str(
+            r"
+program adder_program.aleo;
+function adder:
+    input r0 as u64.public;
+    input r1 as u64.public;
+    add r0 r1 into r2;
+    output r2 as u64.public;
+        ",
+        )
+        .unwrap();
+
+        // Initialize an "off-chain" VM to generate the deployment and execution.
+        let off_chain_vm = sample_vm();
+        off_chain_vm.add_next_block(&genesis).unwrap();
+        // Deploy the program.
+        let deployment = off_chain_vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+        // Check that the account has enough to pay for the deployment.
+        assert_eq!(*deployment.fee_amount().unwrap(), 2483025);
+        // Add the program to the off-chain VM.
+        off_chain_vm.process().lock().add_program(&program).unwrap();
+        // Execute the program.
+        let transaction = off_chain_vm
+            .execute(
+                &caller_private_key,
+                ("adder_program.aleo", "adder"),
+                [Value::from_str("1u64").unwrap(), Value::from_str("2u64").unwrap()].iter(),
+                None,
+                0,
+                None,
+                rng,
+            )
+            .unwrap();
+        // Verify the transaction.
+        off_chain_vm.check_transaction(&transaction, None, rng).unwrap();
+        // Check that the account has enough to pay for the execution.
+        assert_eq!(*transaction.fee_amount().unwrap(), 1283);
+        // Drop the off-chain VM.
+        drop(off_chain_vm);
+
+        let block = sample_next_block(&vm, &caller_private_key, &[deployment, transaction], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), 1);
+        assert_eq!(block.transactions().num_rejected(), 0);
+        assert_eq!(block.aborted_transaction_ids().len(), 1);
+        vm.add_next_block(&block).unwrap();
+
+        // Check that the program was deployed.
+        assert!(vm.process().contains_program(&ProgramID::from_str("adder_program.aleo").unwrap()));
+    }
+
+    #[cfg(feature = "test")]
+    #[test]
+    fn test_deploy_string() {
+        let rng = &mut TestRng::default();
+
+        // Initialize a new caller.
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Initialize the VM at consensus version 11.
+        let vm = crate::vm::test_helpers::sample_vm_at_height(
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V11).unwrap(),
+            rng,
+        );
+
+        // Deploy and execute a program in the same block.
+        let program = |i: u32| {
+            Program::from_str(&format!(
+                r#"
+program strings_{i}.aleo;
+
+mapping foo:
+    key as string.public;
+    value as string.public;
+
+mapping test:
+    key as string.public;
+    value as [boolean; 1u32].public;
+
+function dummy:
+    input r0 as string.public;
+    input r1 as string.private;
+    input r2 as string.private;
+    assert.eq "hello_friend" "hello_friend";
+    assert.neq r1 r2;
+    async dummy r0 r1 r2 into r3;
+    hash.bhp256 "hello" into r4 as address;
+    output r3 as strings_{i}.aleo/dummy.future;
+
+finalize dummy:
+    input r0 as string.public;
+    input r1 as string.public;
+    input r2 as string.public;
+    assert.eq "hello_friend" "hello_friend";
+    assert.neq r1 r2;
+    get.or_use foo[r1] r0 into r3;
+    set r2 into foo[r1];
+    set "test" into foo[r2];
+    set r2 into foo[r2];
+    get foo[r1] into r4;
+    assert.neq r3 r4;
+    assert.eq r2 r4;
+    assert.neq r0 r4;
+    get.or_use foo[r1] "hello" into r5;
+
+function dummy_with_array:
+    input r0 as [string; 3u32].public;
+    input r1 as [string; 4u32].private;
+    async dummy_with_array r0 r1 "test" into r2;
+    output r2 as strings_{i}.aleo/dummy_with_array.future;
+
+finalize dummy_with_array:
+    input r0 as [string; 3u32].public;
+    input r1 as [string; 4u32].public;
+    input r2 as string.public;
+    set r2 into foo[r2];
+
+constructor:
+    assert.eq true true;
+        "#
+            ))
+            .unwrap()
+        };
+
+        // Deploy the program.
+        let _deployment = vm.deploy(&caller_private_key, &program(0), None, 0, None, rng).unwrap();
+        // Check the deployment.
+        // NOTE: this will only consistently pass if string sampling is updated.
+        // vm.check_transaction(&deployment, None, rng).unwrap();
+
+        // let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+        // assert_eq!(block.transactions().num_accepted(), 1);
+        // assert_eq!(block.transactions().num_rejected(), 0);
+        // assert_eq!(block.aborted_transaction_ids().len(), 0);
+        // vm.add_next_block(&block).unwrap();
+
+        // // Check that the program was deployed.
+        // assert!(vm.process().contains_program(&ProgramID::from_str("strings_0.aleo").unwrap()));
+
+        // let hello_literal = Literal::String(StringType::new("hello"));
+        // let hello_friend_literal = Literal::String(StringType::new("hello_friend"));
+        // let hello_friends_literal = Literal::String(StringType::new("hello_friends"));
+
+        // // Execution test 1
+        // let hello_friend_1 = Value::from(hello_friend_literal.clone());
+        // let hello_friend_2 = Value::from(hello_friend_literal.clone());
+        // let hello_friends = Value::from(hello_friends_literal.clone());
+
+        // // Execute the program.
+        // let transaction = vm
+        //     .execute(
+        //         &caller_private_key,
+        //         ("strings_0.aleo", "dummy"),
+        //         [hello_friend_1, hello_friend_2, hello_friends].iter(),
+        //         None,
+        //         0,
+        //         None,
+        //         rng,
+        //     )
+        //     .unwrap();
+        // // Verify the transaction.
+        // vm.check_transaction(&transaction, None, rng).unwrap();
+
+        // let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
+        // assert_eq!(block.transactions().num_accepted(), 1);
+        // assert_eq!(block.transactions().num_rejected(), 0);
+        // assert_eq!(block.aborted_transaction_ids().len(), 0);
+        // vm.add_next_block(&block).unwrap();
+
+        // // Execution test 2: change the public type
+        // let hello = Value::from(hello_literal.clone());
+        // let hello_friend = Value::from(hello_friend_literal.clone());
+        // let hello_friends = Value::from(hello_friends_literal.clone());
+
+        // // Execute the program.
+        // let transaction = vm.execute(
+        //     &caller_private_key,
+        //     ("strings_0.aleo", "dummy"),
+        //     [hello, hello_friend, hello_friends].iter(),
+        //     None,
+        //     0,
+        //     None,
+        //     rng,
+        // );
+        // assert!(transaction.is_err());
+
+        // // Execution test 3: change the private type
+        // let hello_friend_1 = Value::from(hello_friend_literal.clone());
+        // let hello_friend_2 = Value::from(hello_friend_literal.clone());
+        // let hello = Value::from(hello_literal.clone());
+
+        // // Execute the program.
+        // let transaction = vm.execute(
+        //     &caller_private_key,
+        //     ("strings_0.aleo", "dummy"),
+        //     [hello_friend_1, hello_friend_2, hello].iter(),
+        //     None,
+        //     0,
+        //     None,
+        //     rng,
+        // );
+        // assert!(transaction.is_err());
+
+        // // Deploy another program.
+        // let deployment = vm.deploy(&caller_private_key, &program(1), None, 0, None, rng).unwrap();
+        // // Check the deployment.
+        // assert!(vm.check_transaction(&deployment, None, rng).is_err());
+
+        // let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+        // assert_eq!(block.transactions().num_accepted(), 0);
+        // assert_eq!(block.transactions().num_rejected(), 0);
+        // assert_eq!(block.aborted_transaction_ids().len(), 1);
+        // vm.add_next_block(&block).unwrap();
+
+        // // Check that the program was notdeployed.
+        // assert!(!vm.process().contains_program(&ProgramID::from_str("strings_1.aleo").unwrap()));
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-narwhal"
-version = "3.8.0"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Data structures for a Narwhal-style memory pool in a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -21,7 +21,7 @@ categories = [
 ]
 include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = [
@@ -32,69 +32,57 @@ default = [
   "transmission",
   "transmission-id"
 ]
-async = [ "narwhal-data/async" ]
+async = [ "snarkvm-ledger-narwhal-data/async" ]
 serial = [
-  "narwhal-batch-certificate/serial",
-  "narwhal-batch-header/serial",
-  "narwhal-subdag/serial",
-  "narwhal-transmission/serial",
-  "narwhal-transmission-id/serial"
+  "snarkvm-ledger-narwhal-batch-certificate/serial",
+  "snarkvm-ledger-narwhal-batch-header/serial",
+  "snarkvm-ledger-narwhal-subdag/serial",
+  "snarkvm-ledger-narwhal-transmission/serial",
+  "snarkvm-ledger-narwhal-transmission-id/serial"
 ]
 wasm = [
-  "narwhal-batch-certificate/wasm",
-  "narwhal-batch-header/wasm",
-  "narwhal-subdag/wasm",
-  "narwhal-transmission/wasm",
-  "narwhal-transmission-id/wasm"
+  "snarkvm-ledger-narwhal-batch-certificate/wasm",
+  "snarkvm-ledger-narwhal-batch-header/wasm",
+  "snarkvm-ledger-narwhal-subdag/wasm",
+  "snarkvm-ledger-narwhal-transmission/wasm",
+  "snarkvm-ledger-narwhal-transmission-id/wasm"
 ]
 test-helpers = [
-  "narwhal-batch-certificate/test-helpers",
-  "narwhal-batch-header/test-helpers",
-  "narwhal-subdag/test-helpers",
-  "narwhal-transmission/test-helpers",
-  "narwhal-transmission-id/test-helpers"
+  "snarkvm-ledger-narwhal-batch-certificate/test-helpers",
+  "snarkvm-ledger-narwhal-batch-header/test-helpers",
+  "snarkvm-ledger-narwhal-subdag/test-helpers",
+  "snarkvm-ledger-narwhal-transmission/test-helpers",
+  "snarkvm-ledger-narwhal-transmission-id/test-helpers"
 ]
-batch-certificate = [ "narwhal-batch-certificate" ]
-batch-header = [ "narwhal-batch-header" ]
-data = [ "narwhal-data" ]
-subdag = [ "narwhal-subdag" ]
-transmission = [ "narwhal-transmission" ]
-transmission-id = [ "narwhal-transmission-id" ]
+batch-certificate = [ "snarkvm-ledger-narwhal-batch-certificate" ]
+batch-header = [ "snarkvm-ledger-narwhal-batch-header" ]
+data = [ "snarkvm-ledger-narwhal-data" ]
+subdag = [ "snarkvm-ledger-narwhal-subdag" ]
+transmission = [ "snarkvm-ledger-narwhal-transmission" ]
+transmission-id = [ "snarkvm-ledger-narwhal-transmission-id" ]
 
-[dependencies.narwhal-batch-certificate]
-package = "snarkvm-ledger-narwhal-batch-certificate"
-path = "./batch-certificate"
-version = "=3.8.0"
+[dependencies.snarkvm-ledger-narwhal-batch-certificate]
+workspace = true
 optional = true
 
-[dependencies.narwhal-batch-header]
-package = "snarkvm-ledger-narwhal-batch-header"
-path = "./batch-header"
-version = "=3.8.0"
+[dependencies.snarkvm-ledger-narwhal-batch-header]
+workspace = true
 optional = true
 
-[dependencies.narwhal-data]
-package = "snarkvm-ledger-narwhal-data"
-path = "./data"
-version = "=3.8.0"
+[dependencies.snarkvm-ledger-narwhal-data]
+workspace = true
 optional = true
 
-[dependencies.narwhal-subdag]
-package = "snarkvm-ledger-narwhal-subdag"
-path = "./subdag"
-version = "=3.8.0"
+[dependencies.snarkvm-ledger-narwhal-subdag]
+workspace = true
 optional = true
 
-[dependencies.narwhal-transmission]
-package = "snarkvm-ledger-narwhal-transmission"
-path = "./transmission"
-version = "=3.8.0"
+[dependencies.snarkvm-ledger-narwhal-transmission]
+workspace = true
 optional = true
 
-[dependencies.narwhal-transmission-id]
-package = "snarkvm-ledger-narwhal-transmission-id"
-path = "./transmission-id"
-version = "=3.8.0"
+[dependencies.snarkvm-ledger-narwhal-transmission-id]
+workspace = true
 optional = true
 
 [dev-dependencies.snarkvm-ledger-narwhal]

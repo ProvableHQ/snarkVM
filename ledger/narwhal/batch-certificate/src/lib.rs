@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,6 +16,8 @@
 #![forbid(unsafe_code)]
 #![warn(clippy::cast_possible_truncation)]
 
+extern crate snarkvm_console as console;
+
 mod bytes;
 mod serialize;
 mod string;
@@ -25,8 +27,8 @@ use console::{
     prelude::*,
     types::Field,
 };
-use narwhal_batch_header::BatchHeader;
-use narwhal_transmission_id::TransmissionID;
+use snarkvm_ledger_narwhal_batch_header::BatchHeader;
+use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
 
 use core::hash::{Hash, Hasher};
 use indexmap::IndexSet;
@@ -45,7 +47,7 @@ pub struct BatchCertificate<N: Network> {
 
 impl<N: Network> BatchCertificate<N> {
     /// The maximum number of signatures in a batch certificate.
-    pub fn max_signatures() -> Result<u16> {
+    pub fn max_signatures() -> u16 {
         N::LATEST_MAX_CERTIFICATES()
     }
 }
@@ -54,7 +56,7 @@ impl<N: Network> BatchCertificate<N> {
     /// Initializes a new batch certificate.
     pub fn from(batch_header: BatchHeader<N>, signatures: IndexSet<Signature<N>>) -> Result<Self> {
         // Ensure that the number of signatures is within bounds.
-        ensure!(signatures.len() <= Self::max_signatures()? as usize, "Invalid number of signatures");
+        ensure!(signatures.len() <= Self::max_signatures() as usize, "Invalid number of signatures");
 
         // Ensure that the signature is from a unique signer and not from the author.
         let signature_authors = signatures.iter().map(|signature| signature.to_address()).collect::<HashSet<_>>();
@@ -161,7 +163,7 @@ pub mod test_helpers {
 
     /// Returns a sample batch certificate, sampled at random.
     pub fn sample_batch_certificate(rng: &mut TestRng) -> BatchCertificate<CurrentNetwork> {
-        sample_batch_certificate_for_round(rng.gen(), rng)
+        sample_batch_certificate_for_round(rng.random(), rng)
     }
 
     /// Returns a sample batch certificate with a given round; the rest is sampled at random.
@@ -198,7 +200,7 @@ pub mod test_helpers {
     ) -> BatchCertificate<CurrentNetwork> {
         // Sample a batch header.
         let batch_header =
-            narwhal_batch_header::test_helpers::sample_batch_header_for_round_and_key_with_previous_certificate_ids(
+            snarkvm_ledger_narwhal_batch_header::test_helpers::sample_batch_header_for_round_and_key_with_previous_certificate_ids(
                 round,
                 author,
                 previous_certificate_ids,

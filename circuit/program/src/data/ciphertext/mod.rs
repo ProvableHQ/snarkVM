@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +31,6 @@ use core::ops::Deref;
 #[derive(Clone)]
 pub struct Ciphertext<A: Aleo>(Vec<Field<A>>);
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Inject for Ciphertext<A> {
     type Primitive = console::Ciphertext<A::Network>;
 
@@ -45,7 +44,6 @@ impl<A: Aleo> Inject for Ciphertext<A> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Eject for Ciphertext<A> {
     type Primitive = console::Ciphertext<A::Network>;
 

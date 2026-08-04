@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -91,8 +91,9 @@ mod tests {
     #[test]
     fn test_msm() {
         use snarkvm_curves::ProjectiveCurve;
+
+        let mut rng = TestRng::default();
         for msm_size in [1, 5, 10, 50, 100, 500, 1000] {
-            let mut rng = TestRng::default();
             let (bases, scalars) = create_scalar_bases::<G1Affine, Fr>(&mut rng, msm_size);
 
             let naive_a = VariableBase::msm_naive(bases.as_slice(), scalars.as_slice()).to_affine();

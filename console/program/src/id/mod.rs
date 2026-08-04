@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -115,6 +115,11 @@ impl<N: Network> ProgramID<N> {
     #[inline]
     pub fn is_aleo(&self) -> bool {
         self.network() == &Identifier::from_str("aleo").expect("Failed to parse Aleo domain")
+    }
+
+    /// Returns the `credits.aleo` program ID.
+    pub fn credits() -> Self {
+        Self::from_str("credits.aleo").expect("Failed to parse credits.aleo as a program ID")
     }
 }
 

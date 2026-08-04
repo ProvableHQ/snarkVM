@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,8 +17,15 @@ mod bytes;
 mod serialize;
 mod string;
 
-use console::{network::prelude::*, program::Request, types::Field};
-use ledger_block::{Transaction, Transition};
+use crate::Output;
+
+use console::{
+    network::prelude::*,
+    program::{Identifier, ProgramID, Request, ValueType},
+    types::Field,
+};
+use snarkvm_ledger_block::{Input, Transaction, Transition};
+use snarkvm_synthesizer_program::StackTrait;
 
 use indexmap::IndexMap;
 #[cfg(feature = "locktick")]
@@ -37,6 +44,16 @@ pub struct Authorization<N: Network> {
     /// The authorized transitions.
     transitions: Arc<RwLock<IndexMap<N::TransitionID, Transition<N>>>>,
 }
+
+/// A tracker for the names of all static records passed as inputs to requests in a given transaction.
+/// Entry `(n, m) -> r_name` indicates that the `m`-th input of the `n`-th request in the transaction
+/// is a static `Record` with name `r_name`.
+pub type RecordNameTracker<N> = HashMap<(usize, usize), Identifier<N>>;
+
+/// A tracker for the program checksums of requests in a given transaction. Entry `n -> c` indicates
+/// that the `n`-th request in the transaction corresponds to a program with program checksum `c`.
+/// Requests corresponding to programs without checksum do not have an entry in this map.
+pub type ProgramChecksumTracker<N> = HashMap<usize, Field<N>>;
 
 impl<N: Network> Authorization<N> {
     /// Initialize a new `Authorization` instance, with the given request.
@@ -134,6 +151,114 @@ impl<N: Network> Authorization<N> {
             _ => false,
         }
     }
+
+    /// Returns `true` if the authorization is for call to `credits.aleo/upgrade`.
+    pub fn is_upgrade(&self) -> bool {
+        let requests = self.requests.read();
+        match requests.len() {
+            1 => {
+                let program_id = requests[0].program_id().to_string();
+                let function_name = requests[0].function_name().to_string();
+                &program_id == "credits.aleo" && &function_name == "upgrade"
+            }
+            _ => false,
+        }
+    }
+
+    /// Checks whether the authorization is for a valid program edition.
+    pub fn check_valid_edition(&self, process: &crate::Process<N>, _consensus_version: ConsensusVersion) -> Result<()> {
+        // Determine the root transition's program ID.
+        let transitions = self.transitions.read();
+        let program_ids = transitions.iter().map(|(_, t)| t.program_id());
+        for program_id in program_ids {
+            // There is only one credits.aleo edition, so we can safely skip this case.
+            if program_id.to_string() != "credits.aleo" {
+                // Get the stack.
+                let stack = process.get_stack(program_id)?;
+                // Get the program edition.
+                let _program_edition = *stack.program_edition();
+                // If we're past `ConsensusVersion::V8` but before `ConsensusVersion::V9`, ensure new stacks are not on edition 0.
+                // Note. This check does not apply to programs with constructors.
+                #[cfg(not(any(test, feature = "test")))]
+                if _consensus_version >= ConsensusVersion::V8
+                    && _program_edition == 0
+                    && !stack.program().contains_constructor()
+                {
+                    bail!("Cannot execute {program_id} on edition {_program_edition}");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks whether the authorization creates valid records.
+    pub fn check_valid_records(&self, consensus_version: ConsensusVersion) -> Result<()> {
+        let transitions = self.transitions.read();
+        // Collect the transition's output records.
+        let output_records = transitions
+            .values()
+            .flat_map(|transition| transition.outputs().iter().filter_map(|output| output.record()));
+        // Ensure the records are valid.
+        for (_, record) in output_records {
+            // if the consensus version is on or after `ConsensusVersion::V8`, ensure the output record is on Version 1.
+            if consensus_version >= ConsensusVersion::V8 {
+                ensure!(record.version().is_one(), "Output record must be Version 1 on or after Consensus V8");
+            }
+            // We do not impose checks on record versions before
+            // `ConsensusVersion::V8`, to avoid:
+            // - breaking snarkOS tests which have version 1 records in their genesis blocks.
+            // - breaking production wallets which use version 0 records before ConsensusVersion::V8.
+        }
+        Ok(())
+    }
+
+    /// Returns the names of all static record inputs to any request in the authorization as a
+    /// [`RecordNameTracker`], i.e. keyed by the request index and input index.
+    pub fn collect_record_names(&self, root_stack: &crate::Stack<N>) -> Result<RecordNameTracker<N>> {
+        let mut record_names = HashMap::new();
+
+        for (request_index, request) in self.to_vec_deque().iter().enumerate() {
+            let request_program_id = request.program_id();
+
+            let program_stack = if request_program_id == root_stack.program_id() {
+                root_stack
+            } else {
+                &*root_stack.get_stack_global(request_program_id)?
+            };
+
+            let input_types = program_stack.get_function(request.function_name())?.input_types();
+
+            for (input_index, input_type) in input_types.iter().enumerate() {
+                if let ValueType::Record(record_name) = input_type {
+                    record_names.insert((request_index, input_index), *record_name);
+                }
+            }
+        }
+
+        Ok(record_names)
+    }
+
+    /// Returns the program checksums of each request in the authorization, if any.
+    pub fn collect_program_checksums(&self, root_stack: &crate::Stack<N>) -> Result<ProgramChecksumTracker<N>> {
+        let mut program_checksums = HashMap::new();
+
+        for (request_index, request) in self.to_vec_deque().iter().enumerate() {
+            let request_program_id = request.program_id();
+
+            // Resolve the stack via the process-level map rather than `get_external_stack` (see doc comment).
+            let program_stack = if request_program_id == root_stack.program_id() {
+                root_stack
+            } else {
+                &*root_stack.get_stack_global(request_program_id)?
+            };
+
+            if program_stack.program().contains_constructor() {
+                program_checksums.insert(request_index, program_stack.program_checksum_as_field()?);
+            }
+        }
+
+        Ok(program_checksums)
+    }
 }
 
 impl<N: Network> Authorization<N> {
@@ -224,6 +349,85 @@ impl<N: Network> PartialEq for Authorization<N> {
 
 impl<N: Network> Eq for Authorization<N> {}
 
+impl<N: Network> Authorization<N> {
+    /// Returns the total number of inputs to the passed `Transition`s that have
+    /// a serial number (i.e., `Input::Record` or `Input::RecordWithDynamicID`).
+    // This method is used to ensure consistency between `prepare_verifier_inputs`
+    // and the batch-size calculation used in `execution_cost_for_authorization`.
+    #[inline]
+    pub fn number_of_input_records<'a>(transitions: impl ExactSizeIterator<Item = &'a Transition<N>>) -> usize {
+        transitions
+            .map(|transition| transition.inputs().iter().filter(|input| input.serial_number().is_some()).count())
+            .sum()
+    }
+
+    /// Computes the number of different translation circuits resulting from the
+    /// given `Transition`s as well as the number of translations for each such
+    /// circuit.
+    pub fn translation_batch_sizes<'a>(
+        transitions: impl ExactSizeIterator<Item = &'a Transition<N>>,
+        execution_stacks: &IndexMap<ProgramID<N>, Arc<crate::Stack<N>>>,
+    ) -> Result<Vec<usize>> {
+        let mut batches = HashMap::new();
+
+        for transition in transitions {
+            let stack = execution_stacks
+                .get(transition.program_id())
+                .ok_or_else(|| anyhow!("Missing stack for program '{}'", transition.program_id()))?;
+            let function = stack.get_function(transition.function_name())?;
+
+            let input_types = function.input_types();
+            let output_types = function.output_types();
+
+            // Ensure the transition inputs and outputs match the function signature.
+            ensure!(
+                transition.inputs().len() == input_types.len(),
+                "The number of transition inputs ({}) does not match the function input types ({})",
+                transition.inputs().len(),
+                input_types.len()
+            );
+            ensure!(
+                transition.outputs().len() == output_types.len(),
+                "The number of transition outputs ({}) does not match the function output types ({})",
+                transition.outputs().len(),
+                output_types.len()
+            );
+
+            // Account for input translations.
+            for (input, input_type) in transition.inputs().iter().zip_eq(input_types.iter()) {
+                if input.dynamic_id().is_some() {
+                    match (input, input_type) {
+                        (Input::RecordWithDynamicID(..), ValueType::Record(record_name)) => {
+                            *batches.entry((*transition.program_id(), *record_name)).or_insert(0) += 1;
+                        }
+                        (Input::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(locator)) => {
+                            *batches.entry((*locator.program_id(), *locator.resource())).or_insert(0) += 1;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            // Account for output translations.
+            for (output, output_type) in transition.outputs().iter().zip_eq(output_types.iter()) {
+                if output.dynamic_id().is_some() {
+                    match (output, output_type) {
+                        (Output::RecordWithDynamicID(..), ValueType::Record(record_name)) => {
+                            *batches.entry((*transition.program_id(), *record_name)).or_insert(0) += 1;
+                        }
+                        (Output::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(locator)) => {
+                            *batches.entry((*locator.program_id(), *locator.resource())).or_insert(0) += 1;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        Ok(batches.into_values().collect())
+    }
+}
+
 /// Ensures the given request and transition correspond to one another.
 fn ensure_request_and_transition_matches<N: Network>(
     index: usize,
@@ -275,6 +479,20 @@ fn ensure_request_and_transition_matches<N: Network>(
     Ok(())
 }
 
+#[cfg(feature = "test")]
+impl<N: Network> Authorization<N> {
+    /// Initialize an `Authorization` instance with the given requests and
+    /// transitions without performing any consistency checks between them.
+    pub fn from_unchecked((requests, transitions): (Vec<Request<N>>, Vec<Transition<N>>)) -> Self {
+        Authorization {
+            requests: Arc::new(RwLock::new(VecDeque::from(requests))),
+            transitions: Arc::new(RwLock::new(IndexMap::from_iter(
+                transitions.into_iter().map(|transition| (*transition.id(), transition)),
+            ))),
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use super::*;
@@ -292,9 +510,9 @@ pub(crate) mod test_helpers {
         // Sample a private key.
         let private_key = PrivateKey::new(rng).unwrap();
         // Sample a base fee in microcredits.
-        let base_fee_in_microcredits = rng.gen_range(1_000_000..u64::MAX / 2);
+        let base_fee_in_microcredits = rng.random_range(1_000_000..u64::MAX / 2);
         // Sample a priority fee in microcredits.
-        let priority_fee_in_microcredits = rng.gen_range(0..u64::MAX / 2);
+        let priority_fee_in_microcredits = rng.random_range(0..u64::MAX / 2);
         // Sample a deployment or execution ID.
         let deployment_or_execution_id = Field::rand(rng);
 

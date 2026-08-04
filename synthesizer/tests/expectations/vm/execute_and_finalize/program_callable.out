@@ -1,23 +1,6 @@
 errors: []
 outputs:
-- execute: 'Failed to evaluate instruction (assert.neq self.caller self.signer;): ''assert.neq'' failed: ''aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx'' is equal to ''aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx'' (should not be equal)'
+- execute: 'Process execution failed: Stack execution failed: Instruction (assert.neq self.caller self.signer;) at index 0 failed: Failed to evaluate: ''assert.neq'' failed: ''aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx'' is equal to ''aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx'' (should not be equal)'
 - verified: true
-  execute:
-    parent.aleo/foo:
-      outputs:
-      - '{"type":"public","id":"3914637036303864526243159286220007976533170083569928638487262238892809970742field","value":"aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy"}'
-      - '{"type":"public","id":"937398777111453785192036425221737880852307156425401363223955833596768256674field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
-      - '{"type":"public","id":"3760234756062381156062268377754871790067277250188262172583636143907064923470field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
-      - '{"type":"public","id":"5488414192083883572281689896150580843935493231906795299005325757111494763599field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
-additional:
-- {}
-- child_outputs:
-    child.aleo/foo:
-      outputs:
-      - '{"type":"public","id":"7280898116097274651284715158779545453186426181228488452909864525015787112960field","value":"aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy"}'
-      - '{"type":"public","id":"4075151575211412636182527473997668377132540629423063277503775378409385373898field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"7802751002421695323881906367190483603442707786944479318276597578348108753232field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    2187u64\n  ]\n}"}'

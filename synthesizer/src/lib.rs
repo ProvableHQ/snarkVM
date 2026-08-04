@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,35 +22,29 @@
 #[macro_use]
 extern crate tracing;
 
-#[cfg(feature = "process")]
-pub use synthesizer_process as process;
-#[cfg(feature = "program")]
-pub use synthesizer_program as program;
-#[cfg(feature = "snark")]
-pub use synthesizer_snark as snark;
+extern crate snarkvm_circuit as circuit;
+extern crate snarkvm_console as console;
 
-#[cfg(feature = "process")]
-pub use crate::process::{Authorization, CallMetrics, Process, Stack, Trace};
-#[cfg(feature = "program")]
-pub use crate::program::{Closure, Command, Finalize, Function, Instruction, Program};
+pub use snarkvm_synthesizer_process as process;
+pub use snarkvm_synthesizer_program as program;
+pub use snarkvm_synthesizer_snark as snark;
 
-#[cfg(all(feature = "process", feature = "program", feature = "snark"))]
+pub use crate::{
+    process::{Authorization, CallMetrics, Process, Stack, Trace},
+    program::{Closure, Command, Finalize, Function, Instruction, Program},
+};
+
 mod restrictions;
-#[cfg(all(feature = "process", feature = "program", feature = "snark"))]
 pub use restrictions::*;
 
-#[cfg(all(feature = "process", feature = "program", feature = "snark"))]
 pub mod vm;
-#[cfg(all(feature = "process", feature = "program", feature = "snark"))]
 pub use vm::*;
 
 pub mod prelude {
-    #[cfg(feature = "process")]
-    pub use crate::process::*;
-    #[cfg(feature = "program")]
-    pub use crate::program::{Closure, Finalize, Function, Instruction, Mapping, Program};
-    #[cfg(feature = "snark")]
-    pub use crate::snark::{Certificate, Proof, ProvingKey, UniversalSRS, VerifyingKey};
-    #[cfg(all(feature = "process", feature = "program", feature = "snark"))]
-    pub use crate::vm::*;
+    pub use crate::{
+        process::*,
+        program::{Closure, Finalize, Function, Instruction, Mapping, Program},
+        snark::{Certificate, Proof, ProvingKey, UniversalSRS, VerifyingKey},
+        vm::*,
+    };
 }

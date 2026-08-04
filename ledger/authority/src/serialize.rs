@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,7 +59,7 @@ impl<'de, N: Network> Deserialize<'de> for Authority<N> {
                     _ => Err(de::Error::custom(error("Invalid authority type"))),
                 }
             }
-            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "authority"),
+            false => FromBytesUncheckedDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "authority"),
         }
     }
 }

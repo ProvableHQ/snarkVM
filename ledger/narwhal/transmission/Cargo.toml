@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-narwhal-transmission"
-version = "3.8.0"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A transmission for a Narwhal-style memory pool in a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -21,40 +21,32 @@ categories = [
 ]
 include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = [ ]
-serial = [ "console/serial" ]
-wasm = [ "console/wasm" ]
+serial = [ "snarkvm-console/serial" ]
+wasm = [ "snarkvm-console/wasm" ]
 test-helpers = [ ]
 
-[dependencies.console]
-package = "snarkvm-console"
-path = "../../../console"
-version = "=3.8.0"
+[dependencies.snarkvm-console]
+workspace = true
 
-[dependencies.ledger-block]
-package = "snarkvm-ledger-block"
-path = "../../block"
-version = "=3.8.0"
+[dependencies.snarkvm-ledger-block]
+workspace = true
 
-[dependencies.ledger-narwhal-data]
-package = "snarkvm-ledger-narwhal-data"
-path = "../data"
-version = "=3.8.0"
+[dependencies.snarkvm-ledger-narwhal-data]
+workspace = true
 
-[dependencies.ledger-puzzle]
-package = "snarkvm-ledger-puzzle"
-path = "../../puzzle"
-version = "=3.8.0"
+[dependencies.snarkvm-ledger-puzzle]
+workspace = true
 
 [dependencies.bytes]
-version = "1"
+workspace = true
 
 [dependencies.serde_json]
-version = "1.0"
+workspace = true
 features = [ "preserve_order" ]
 
 [dev-dependencies.bincode]
-version = "1.3"
+workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-fields"
-version = "3.8.0"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Fields for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -21,7 +21,7 @@ categories = [
 ]
 include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [[bench]]
 name = "fields"
@@ -29,50 +29,45 @@ path = "benches/fields.rs"
 harness = false
 
 [dependencies.snarkvm-utilities]
-path = "../utilities"
-version = "=3.8.0"
-default-features = false
+workspace = true
 
 [dependencies.aleo-std]
-version = "1.0.1"
-default-features = false
+workspace = true
 
 [dependencies.anyhow]
-version = "1.0"
+workspace = true
 
 [dependencies.itertools]
-version = "0.11.0"
+workspace = true
 
 [dependencies.num-traits]
-version = "0.2"
+workspace = true
 
 [dependencies.rand]
-version = "0.8"
-default-features = false
+workspace = true
 
 [dependencies.rayon]
-version = "1"
+workspace = true
 
 [dependencies.serde]
-version = "1.0"
-default-features = false
+workspace = true
 features = [ "derive" ]
 
 [dependencies.thiserror]
-version = "2.0.11"
+workspace = true
 
 [dependencies.zeroize]
-version = "1"
+workspace = true
 features = [ "derive" ]
 
 [dev-dependencies.criterion]
-version = "0.5"
+workspace = true
 
 [dev-dependencies.snarkvm-curves]
 path = "../curves"
 default-features = false
 
 [features]
-default = [ "snarkvm-utilities/default" ]
 profiler = [ "aleo-std/profiler" ]
 serial = [ ]
+dev-print = [ "snarkvm-utilities/dev-print" ]

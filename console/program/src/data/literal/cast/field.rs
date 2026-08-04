@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -82,5 +82,13 @@ impl<E: Environment> Cast<Scalar<E>> for Field<E> {
     #[inline]
     fn cast(&self) -> Result<Scalar<E>> {
         Scalar::from_field(self)
+    }
+}
+
+impl<E: Environment> Cast<IdentifierLiteral<E>> for Field<E> {
+    /// Casts a `Field` to an `IdentifierLiteral`.
+    #[inline]
+    fn cast(&self) -> Result<IdentifierLiteral<E>> {
+        IdentifierLiteral::from_field(self)
     }
 }

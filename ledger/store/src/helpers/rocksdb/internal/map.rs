@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,10 +18,12 @@
 use super::*;
 use crate::helpers::{Map, MapRead};
 
+use snarkvm_utilities::{bytes::unchecked_deserialize, flatten_error};
+
 use core::{fmt, fmt::Debug, hash::Hash, mem};
 use indexmap::IndexMap;
 use smallvec::SmallVec;
-use std::{borrow::Cow, ops::Deref, sync::atomic::Ordering};
+use std::{borrow::Cow, ops::Deref, path::Path, sync::atomic::Ordering};
 use tracing::error;
 
 #[derive(Clone)]
@@ -48,10 +50,17 @@ pub struct InnerDataMap<K: Serialize + DeserializeOwned, V: Serialize + Deserial
     pub(super) checkpoints: Mutex<Vec<usize>>,
 }
 
+impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> InnerDataMap<K, V> {
+    pub fn backup_database<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+        let checkpoint = rocksdb::checkpoint::Checkpoint::new(&self.database)?;
+        checkpoint.create_checkpoint(path).map_err(|e| e.into_string())
+    }
+}
+
 impl<
     'a,
-    K: 'a + Copy + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
-    V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned + Send + Sync,
+    K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
+    V: 'a + Clone + Serialize + DeserializeOwned + Send + Sync,
 > Map<'a, K, V> for DataMap<K, V>
 {
     ///
@@ -84,7 +93,7 @@ impl<
         match self.is_atomic_in_progress() {
             // If a batch is in progress, add the key to the batch.
             true => {
-                self.atomic_batch.lock().push((*key, None));
+                self.atomic_batch.lock().push((key.clone(), None));
             }
             // Otherwise, remove the key-value pair directly from the map.
             false => {
@@ -108,11 +117,17 @@ impl<
         self.database.atomic_depth.fetch_add(1, Ordering::SeqCst);
 
         // Ensure that the atomic batch is empty.
-        assert!(self.atomic_batch.lock().is_empty());
+        assert!(
+            self.atomic_batch.lock().is_empty(),
+            "Cannot start an atomic batch operation while another one is already in progress"
+        );
         // Ensure that the database atomic batch is empty; skip this check if the atomic
         // writes are paused, as there may be pending operations.
         if !self.database.are_atomic_writes_paused() {
-            assert!(self.database.atomic_batch.lock().is_empty());
+            assert!(
+                self.database.atomic_batch.lock().is_empty(),
+                "Cannot start a database atomic batch operation while another one is already in progress"
+            );
         }
     }
 
@@ -220,7 +235,10 @@ impl<
 
         // Ensure that the value of `atomic_depth` doesn't overflow, meaning that all the
         // calls to `start_atomic` have corresponding calls to `finish_atomic`.
-        assert!(previous_atomic_depth != 0);
+        assert_ne!(
+            previous_atomic_depth, 0,
+            "Atomic depth underflow: finish_atomic called without corresponding start_atomic"
+        );
 
         // If we're at depth 0, it is the final call to `finish_atomic` and the
         // atomic write batch can be physically executed. This is skipped if the
@@ -231,7 +249,10 @@ impl<
             // Execute all the operations atomically.
             self.database.rocksdb.write(batch)?;
             // Ensure that the database atomic batch is empty.
-            assert!(self.database.atomic_batch.lock().is_empty());
+            assert!(
+                self.database.atomic_batch.lock().is_empty(),
+                "The database atomic batch must be empty when finishing a write batch operation"
+            );
         }
 
         Ok(())
@@ -257,8 +278,8 @@ impl<
 
 impl<
     'a,
-    K: 'a + Copy + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
-    V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned + Send + Sync,
+    K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
+    V: 'a + Clone + Serialize + DeserializeOwned + Send + Sync,
 > MapRead<'a, K, V> for DataMap<K, V>
 {
     type Iterator = Iter<'a, K, V>;
@@ -342,7 +363,7 @@ impl<
         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
     {
         match self.get_raw(key) {
-            Ok(Some(bytes)) => Ok(Some(Cow::Owned(bincode::deserialize(&bytes)?))),
+            Ok(Some(bytes)) => Ok(Some(Cow::Owned(unchecked_deserialize(&bytes)?))),
             Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
@@ -368,6 +389,41 @@ impl<
         } else {
             None
         }
+    }
+
+    ///
+    /// Returns the (key, value) pair for the greatest confirmed key ≤ the given key,
+    /// or `None` if no such entry exists in this map.
+    ///
+    /// Uses RocksDB `seek_for_prev` for O(log n) performance.
+    ///
+    fn get_floor_confirmed<Q>(&'a self, key: &Q) -> Result<Option<(Cow<'a, K>, Cow<'a, V>)>>
+    where
+        K: Borrow<Q>,
+        Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+    {
+        let raw_key = self.create_prefixed_key(key)?;
+
+        let mut iter = self.database.raw_iterator();
+        iter.seek_for_prev(&raw_key);
+
+        if !iter.valid() {
+            return Ok(None);
+        }
+
+        let (k_bytes, v_bytes) = match iter.item() {
+            Some(item) => item,
+            None => return Ok(None),
+        };
+
+        // Verify this entry belongs to the same map (compare the map-ID bytes in the context).
+        if k_bytes.len() < PREFIX_LEN || k_bytes[2..][..2] != self.context[2..][..2] {
+            return Ok(None);
+        }
+
+        let k: K = unchecked_deserialize(&k_bytes[PREFIX_LEN..])?;
+        let v: V = unchecked_deserialize(v_bytes)?;
+        Ok(Some((Cow::Owned(k), Cow::Owned(v))))
     }
 
     ///
@@ -398,23 +454,48 @@ impl<
     fn values_confirmed(&'a self) -> Self::Values {
         Values::new(self.database.prefix_iterator(&self.context))
     }
+
+    ///
+    /// Returns the confirmed keys whose serialized form begins with the serialized `prefix`.
+    ///
+    fn get_keys_confirmed_with_prefix<Q>(&'a self, prefix: &Q) -> Result<Vec<K>>
+    where
+        Q: Serialize,
+    {
+        // Build the raw prefix: the map context (network ID + map ID) followed by the serialized prefix.
+        let mut raw_prefix = self.context.clone();
+        bincode::serialize_into(&mut raw_prefix, prefix)?;
+
+        // Seek to the prefix and collect every key sharing it. The fixed-prefix extractor only spans
+        // the map context, so the boundary of the longer prefix is checked explicitly.
+        let mut iter = self.database.raw_iterator();
+        iter.seek(&raw_prefix);
+
+        let mut keys = Vec::new();
+        while iter.valid() {
+            let Some(key) = iter.key() else { break };
+            if !key.starts_with(&raw_prefix) {
+                break;
+            }
+            keys.push(unchecked_deserialize(&key[PREFIX_LEN..])?);
+            iter.next();
+        }
+        Ok(keys)
+    }
 }
 
 /// An iterator over all key-value pairs in a data map.
 pub struct Iter<
     'a,
     K: 'a + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned,
-    V: 'a + PartialEq + Eq + Serialize + DeserializeOwned,
+    V: 'a + Serialize + DeserializeOwned,
 > {
     db_iter: rocksdb::DBRawIterator<'a>,
     _phantom: PhantomData<(K, V)>,
 }
 
-impl<
-    'a,
-    K: 'a + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned,
-    V: 'a + PartialEq + Eq + Serialize + DeserializeOwned,
-> Iter<'a, K, V>
+impl<'a, K: 'a + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned, V: 'a + Serialize + DeserializeOwned>
+    Iter<'a, K, V>
 {
     pub(super) fn new(db_iter: rocksdb::DBIterator<'a>) -> Self {
         Self { db_iter: db_iter.into(), _phantom: PhantomData }
@@ -424,7 +505,7 @@ impl<
 impl<
     'a,
     K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned,
-    V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned,
+    V: 'a + Clone + Serialize + DeserializeOwned,
 > Iterator for Iter<'a, K, V>
 {
     type Item = (Cow<'a, K>, Cow<'a, V>);
@@ -437,14 +518,16 @@ impl<
         let (key, value) = self.db_iter.item()?;
 
         // Deserialize the key and value.
-        let key = bincode::deserialize(&key[PREFIX_LEN..])
-            .map_err(|e| {
-                error!("RocksDB Iter deserialize(key) error: {e}");
+        let key = unchecked_deserialize(&key[PREFIX_LEN..])
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB Iter deserialize(key) error")));
             })
             .ok()?;
-        let value = bincode::deserialize(value)
-            .map_err(|e| {
-                error!("RocksDB Iter deserialize(value) error: {e}");
+        let value = unchecked_deserialize(value)
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB Iter deserialize(value) error")));
             })
             .ok()?;
 
@@ -475,9 +558,10 @@ impl<'a, K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + Deserialize
         }
 
         // Deserialize the key.
-        let key = bincode::deserialize(&self.db_iter.key()?[PREFIX_LEN..])
-            .map_err(|e| {
-                error!("RocksDB Keys deserialize(key) error: {e}");
+        let key = unchecked_deserialize(&self.db_iter.key()?[PREFIX_LEN..])
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB Keys deserialize(key) error")));
             })
             .ok()?;
 
@@ -488,18 +572,18 @@ impl<'a, K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + Deserialize
 }
 
 /// An iterator over the values of a prefix.
-pub struct Values<'a, V: 'a + PartialEq + Eq + Serialize + DeserializeOwned> {
+pub struct Values<'a, V: 'a + Serialize + DeserializeOwned> {
     db_iter: rocksdb::DBRawIterator<'a>,
     _phantom: PhantomData<V>,
 }
 
-impl<'a, V: 'a + PartialEq + Eq + Serialize + DeserializeOwned> Values<'a, V> {
+impl<'a, V: 'a + Serialize + DeserializeOwned> Values<'a, V> {
     pub(crate) fn new(db_iter: rocksdb::DBIterator<'a>) -> Self {
         Self { db_iter: db_iter.into(), _phantom: PhantomData }
     }
 }
 
-impl<'a, V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned> Iterator for Values<'a, V> {
+impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for Values<'a, V> {
     type Item = Cow<'a, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -508,9 +592,10 @@ impl<'a, V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned> Iterator
         }
 
         // Deserialize the value.
-        let value = bincode::deserialize(self.db_iter.value()?)
-            .map_err(|e| {
-                error!("RocksDB Values deserialize(value) error: {e}");
+        let value = unchecked_deserialize(self.db_iter.value()?)
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB Values deserialize(value) error")));
             })
             .ok()?;
 
@@ -638,6 +723,11 @@ mod tests {
             self.extra_maps.finish_atomic()
         }
 
+        fn abort_atomic(&self) {
+            self.own_map.abort_atomic();
+            self.extra_maps.abort_atomic();
+        }
+
         // While the methods above mimic the typical snarkVM ones, this method is purely for testing.
         fn is_atomic_in_progress_everywhere(&self) -> bool {
             self.own_map.is_atomic_in_progress()
@@ -697,6 +787,12 @@ mod tests {
             self.own_map2.finish_atomic()?;
             self.extra_maps.finish_atomic()
         }
+
+        fn abort_atomic(&self) {
+            self.own_map1.abort_atomic();
+            self.own_map2.abort_atomic();
+            self.extra_maps.abort_atomic();
+        }
     }
 
     struct TestStorage3 {
@@ -730,6 +826,10 @@ mod tests {
 
         fn finish_atomic(&self) -> Result<()> {
             self.own_map.finish_atomic()
+        }
+
+        fn abort_atomic(&self) {
+            self.own_map.abort_atomic();
         }
     }
 

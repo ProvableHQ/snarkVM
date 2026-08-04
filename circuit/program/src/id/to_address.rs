@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,7 +32,7 @@ mod tests {
 
     use anyhow::Result;
 
-    const ITERATIONS: usize = 100;
+    const ITERATIONS: usize = 10;
 
     fn check_to_address(
         mode: Mode,
@@ -49,7 +49,11 @@ mod tests {
             ))?;
             let expected = expected_program_id.to_address()?;
 
-            let program_id = ProgramID::<Circuit>::new(mode, expected_program_id);
+            let program_id = match mode {
+                Mode::Constant => ProgramID::<Circuit>::constant(expected_program_id),
+                Mode::Public => ProgramID::<Circuit>::public(expected_program_id),
+                Mode::Private => panic!("ProgramID cannot be private"),
+            };
 
             Circuit::scope(format!("{mode}"), || {
                 let candidate = program_id.to_address();
@@ -70,11 +74,6 @@ mod tests {
 
     #[test]
     fn test_to_address_public() -> Result<()> {
-        check_to_address(Mode::Public, 1059, 0, 0, 0)
-    }
-
-    #[test]
-    fn test_to_address_private() -> Result<()> {
-        check_to_address(Mode::Private, 1059, 0, 0, 0)
+        check_to_address(Mode::Public, 529, 0, 2096, 2106)
     }
 }

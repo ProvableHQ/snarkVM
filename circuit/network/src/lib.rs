@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,6 +16,8 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
 
+extern crate snarkvm_console_network as console;
+
 pub mod canary_v0;
 pub use canary_v0::*;
 
@@ -28,13 +30,16 @@ pub use v0::*;
 use snarkvm_circuit_collections::merkle_tree::MerklePath;
 use snarkvm_circuit_types::{Boolean, Field, Group, Scalar, environment::Environment};
 
-/// Attention: Do not use `Send + Sync` on this trait, as it is not thread-safe.
+// Note: The functions of this trait are not thread safe.
 pub trait Aleo: Environment {
     /// The maximum number of field elements in data (must not exceed u16::MAX).
     const MAX_DATA_SIZE_IN_FIELDS: u32 = <Self::Network as console::Network>::MAX_DATA_SIZE_IN_FIELDS;
 
     /// Initializes the global constants for the Aleo environment.
     fn initialize_global_constants();
+
+    /// Returns the commitment domain as a constant field element.
+    fn commitment_domain() -> Field<Self>;
 
     /// Returns the encryption domain as a constant field element.
     fn encryption_domain() -> Field<Self>;
@@ -44,6 +49,9 @@ pub trait Aleo: Environment {
 
     /// Returns the serial number domain as a constant field element.
     fn serial_number_domain() -> Field<Self>;
+
+    /// Returns the powers of `G`.
+    fn g_powers() -> Vec<Group<Self>>;
 
     /// Returns the scalar multiplication on the generator `G`.
     fn g_scalar_multiply(scalar: &Scalar<Self>) -> Group<Self>;

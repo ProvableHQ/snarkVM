@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,6 +41,8 @@ lazy_static! {
     /// The Varuna sponge parameters.
     static ref VARUNA_FS_PARAMETERS: FiatShamirParameters<TestnetV0> = FiatShamir::<TestnetV0>::sample_parameters();
 
+    /// The commitment domain as a constant field element.
+    static ref COMMITMENT_DOMAIN: Field<TestnetV0> = Field::<TestnetV0>::new_domain_separator("AleoCommitment0");
     /// The encryption domain as a constant field element.
     static ref ENCRYPTION_DOMAIN: Field<TestnetV0> = Field::<TestnetV0>::new_domain_separator("AleoSymmetricEncryption0");
     /// The graph key domain as a constant field element.
@@ -68,6 +70,22 @@ lazy_static! {
     pub static ref TESTNET_POSEIDON_4: Poseidon4<TestnetV0> = Poseidon4::<TestnetV0>::setup("AleoPoseidon4").expect("Failed to setup Poseidon4");
     /// The Poseidon hash function, using a rate of 8.
     pub static ref TESTNET_POSEIDON_8: Poseidon8<TestnetV0> = Poseidon8::<TestnetV0>::setup("AleoPoseidon8").expect("Failed to setup Poseidon8");
+
+    /// The Poseidon leaf hasher for dynamic records, using a rate of 8.
+    pub static ref TESTNET_DYNAMIC_RECORD_LEAF_HASHER: Poseidon8<TestnetV0> = Poseidon8::<TestnetV0>::setup("DynamicRecordLeafHasher").expect("Failed to setup DynamicRecordLeafHasher");
+    /// The Poseidon path hasher for dynamic records, using a rate of 2.
+    pub static ref TESTNET_DYNAMIC_RECORD_PATH_HASHER: Poseidon2<TestnetV0> = Poseidon2::<TestnetV0>::setup("DynamicRecordPathHasher").expect("Failed to setup DynamicRecordPathHasher");
+
+    pub static ref TESTNET_CREDITS_V0_PROVING_KEYS: IndexMap<String, Arc<VarunaProvingKey<Console>>> = {
+        let mut map = IndexMap::new();
+        snarkvm_parameters::insert_testnet_credit_v0_keys!(map, VarunaProvingKey<Console>, Prover);
+        map
+    };
+    pub static ref TESTNET_CREDITS_V0_VERIFYING_KEYS: IndexMap<String, Arc<VarunaVerifyingKey<Console>>> = {
+        let mut map = IndexMap::new();
+        snarkvm_parameters::insert_testnet_credit_v0_keys!(map, VarunaVerifyingKey<Console>, Verifier);
+        map
+    };
 
     pub static ref TESTNET_CREDITS_PROVING_KEYS: IndexMap<String, Arc<VarunaProvingKey<Console>>> = {
         let mut map = IndexMap::new();
@@ -133,32 +151,6 @@ impl Network for TestnetV0 {
     /// The transmission checksum type.
     type TransmissionChecksum = u128;
 
-    /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
-    /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
-    #[cfg(not(any(test, feature = "test", feature = "test_consensus_heights")))]
-    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 7] = [
-        (ConsensusVersion::V1, 0),
-        (ConsensusVersion::V2, 2_950_000),
-        (ConsensusVersion::V3, 4_800_000),
-        (ConsensusVersion::V4, 6_625_000),
-        (ConsensusVersion::V5, 6_765_000),
-        (ConsensusVersion::V6, 7_600_000),
-        (ConsensusVersion::V7, 8_365_000),
-    ];
-    /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
-    /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
-    #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
-    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 7] = [
-        (ConsensusVersion::V1, 0),
-        (ConsensusVersion::V2, 10),
-        (ConsensusVersion::V3, 11),
-        (ConsensusVersion::V4, 12),
-        (ConsensusVersion::V5, 13),
-        (ConsensusVersion::V6, 14),
-        (ConsensusVersion::V7, 15),
-    ];
-    /// The network edition.
-    const EDITION: u16 = 0;
     /// The genesis block coinbase target.
     #[cfg(not(feature = "test_targets"))]
     const GENESIS_COINBASE_TARGET: u64 = (1u64 << 29).saturating_sub(1);
@@ -174,25 +166,40 @@ impl Network for TestnetV0 {
     /// The network ID.
     const ID: u16 = 1;
     /// The function name for the inclusion circuit.
-    const INCLUSION_FUNCTION_NAME: &'static str = MainnetV0::INCLUSION_FUNCTION_NAME;
+    const INCLUSION_FUNCTION_NAME: &'static str = snarkvm_parameters::testnet::NETWORK_INCLUSION_FUNCTION_NAME;
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
     #[cfg(not(any(test, feature = "test")))]
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 4] = [
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 5] = [
         (ConsensusVersion::V1, 100),
         (ConsensusVersion::V3, 100),
         (ConsensusVersion::V5, 100),
         (ConsensusVersion::V6, 100),
+        (ConsensusVersion::V9, 100),
     ];
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
     #[cfg(any(test, feature = "test"))]
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 4] = [
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 5] = [
         (ConsensusVersion::V1, 25),
         (ConsensusVersion::V3, 25),
         (ConsensusVersion::V5, 25),
         (ConsensusVersion::V6, 25),
+        (ConsensusVersion::V9, 25),
     ];
-    /// The network name.
+    /// The (long) network name.
     const NAME: &'static str = "Aleo Testnet (v0)";
+    /// The short network name.
+    const SHORT_NAME: &'static str = "testnet";
+    /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
+    /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
+    /// Do not read this directly outside of tests, use `N::CONSENSUS_VERSION_HEIGHTS()` instead.
+    const _CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] =
+        TESTNET_V0_CONSENSUS_VERSION_HEIGHTS;
+
+    /// Returns the block height where the the inclusion proof will be updated.
+    #[allow(non_snake_case)]
+    fn INCLUSION_UPGRADE_HEIGHT() -> Result<u32> {
+        Self::CONSENSUS_HEIGHT(ConsensusVersion::V8)
+    }
 
     /// Returns the genesis block bytes.
     fn genesis_bytes() -> &'static [u8] {
@@ -202,6 +209,20 @@ impl Network for TestnetV0 {
     /// Returns the restrictions list as a JSON-compatible string.
     fn restrictions_list_as_str() -> &'static str {
         snarkvm_parameters::testnet::RESTRICTIONS_LIST
+    }
+
+    /// Returns the proving key for the given function name in the v0 version of `credits.aleo`.
+    fn get_credits_v0_proving_key(function_name: String) -> Result<&'static Arc<VarunaProvingKey<Self>>> {
+        TESTNET_CREDITS_V0_PROVING_KEYS
+            .get(&function_name)
+            .ok_or_else(|| anyhow!("Proving key (v0) for credits.aleo/{function_name}' not found"))
+    }
+
+    /// Returns the verifying key for the given function name in the v0 version of `credits.aleo`.
+    fn get_credits_v0_verifying_key(function_name: String) -> Result<&'static Arc<VarunaVerifyingKey<Self>>> {
+        TESTNET_CREDITS_V0_VERIFYING_KEYS
+            .get(&function_name)
+            .ok_or_else(|| anyhow!("Verifying key (v0) for credits_v0.aleo/{function_name}' not found"))
     }
 
     /// Returns the proving key for the given function name in `credits.aleo`.
@@ -218,9 +239,57 @@ impl Network for TestnetV0 {
             .ok_or_else(|| anyhow!("Verifying key for credits.aleo/{function_name}' not found"))
     }
 
+    #[cfg(not(feature = "wasm"))]
+    /// Returns the `proving key` for the inclusion_v0 circuit.
+    fn inclusion_v0_proving_key() -> &'static Arc<VarunaProvingKey<Self>> {
+        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| {
+            // Skipping the first byte, which is the encoded version.
+            Arc::new(
+                CircuitProvingKey::from_bytes_le(&snarkvm_parameters::testnet::INCLUSION_V0_PROVING_KEY[1..])
+                    .expect("Failed to load inclusion_v0 proving key."),
+            )
+        })
+    }
+
+    #[cfg(feature = "wasm")]
+    /// Returns the `proving key` for the inclusion_v0 circuit.
+    fn inclusion_v0_proving_key(inclusion_key_bytes: Option<Vec<u8>>) -> &'static Arc<VarunaProvingKey<Self>> {
+        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| {
+            inclusion_key_bytes
+                .map(|bytes| {
+                    snarkvm_parameters::testnet::InclusionV0Prover::verify_bytes(&bytes)
+                        .expect("Bytes provided did not match expected inclusion checksum.");
+                    Arc::new(
+                        CircuitProvingKey::from_bytes_le(&bytes[1..]).expect("Failed to load inclusion proving key."),
+                    )
+                })
+                .unwrap_or_else(|| {
+                    Arc::new(
+                        CircuitProvingKey::from_bytes_le(&snarkvm_parameters::testnet::INCLUSION_V0_PROVING_KEY[1..])
+                            .expect("Failed to load inclusion proving key."),
+                    )
+                })
+        })
+    }
+
+    /// Returns the `verifying key` for the inclusion circuit.
+    fn inclusion_v0_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>> {
+        static INSTANCE: OnceLock<Arc<VarunaVerifyingKey<Console>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| {
+            // Skipping the first byte, which is the encoded version.
+            Arc::new(
+                CircuitVerifyingKey::from_bytes_le(&snarkvm_parameters::testnet::INCLUSION_V0_VERIFYING_KEY[1..])
+                    .expect("Failed to load inclusion_v0 verifying key."),
+            )
+        })
+    }
+
+    #[cfg(not(feature = "wasm"))]
     /// Returns the `proving key` for the inclusion circuit.
     fn inclusion_proving_key() -> &'static Arc<VarunaProvingKey<Self>> {
-        static INSTANCE: OnceCell<Arc<VarunaProvingKey<Console>>> = OnceCell::new();
+        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
         INSTANCE.get_or_init(|| {
             // Skipping the first byte, which is the encoded version.
             Arc::new(
@@ -230,14 +299,89 @@ impl Network for TestnetV0 {
         })
     }
 
+    #[cfg(feature = "wasm")]
+    /// Returns the `proving key` for the inclusion circuit.
+    fn inclusion_proving_key(inclusion_key_bytes: Option<Vec<u8>>) -> &'static Arc<VarunaProvingKey<Self>> {
+        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| {
+            inclusion_key_bytes
+                .map(|bytes| {
+                    snarkvm_parameters::testnet::InclusionProver::verify_bytes(&bytes)
+                        .expect("Bytes provided did not match expected inclusion checksum.");
+                    Arc::new(
+                        CircuitProvingKey::from_bytes_le(&bytes[1..]).expect("Failed to load inclusion proving key."),
+                    )
+                })
+                .unwrap_or_else(|| {
+                    Arc::new(
+                        CircuitProvingKey::from_bytes_le(&snarkvm_parameters::testnet::INCLUSION_PROVING_KEY[1..])
+                            .expect("Failed to load inclusion proving key."),
+                    )
+                })
+        })
+    }
+
     /// Returns the `verifying key` for the inclusion circuit.
     fn inclusion_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>> {
-        static INSTANCE: OnceCell<Arc<VarunaVerifyingKey<Console>>> = OnceCell::new();
+        static INSTANCE: OnceLock<Arc<VarunaVerifyingKey<Console>>> = OnceLock::new();
         INSTANCE.get_or_init(|| {
             // Skipping the first byte, which is the encoded version.
             Arc::new(
                 CircuitVerifyingKey::from_bytes_le(&snarkvm_parameters::testnet::INCLUSION_VERIFYING_KEY[1..])
                     .expect("Failed to load inclusion verifying key."),
+            )
+        })
+    }
+
+    #[cfg(not(feature = "wasm"))]
+    /// Returns the `proving key` for the credits.aleo credits record translation circuit.
+    fn translation_credits_proving_key() -> &'static Arc<VarunaProvingKey<Self>> {
+        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| {
+            // Skipping the first byte, which is the encoded version.
+            Arc::new(
+                CircuitProvingKey::from_bytes_le(&snarkvm_parameters::testnet::TRANSLATION_CREDITS_PROVING_KEY[1..])
+                    .expect("Failed to load translation credits proving key."),
+            )
+        })
+    }
+
+    #[cfg(feature = "wasm")]
+    /// Returns the `proving key` for the translation credits circuit.
+    fn translation_credits_proving_key(
+        translation_credits_key_bytes: Option<Vec<u8>>,
+    ) -> &'static Arc<VarunaProvingKey<Self>> {
+        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| {
+            translation_credits_key_bytes
+                .map(|bytes| {
+                    snarkvm_parameters::testnet::TranslationCreditsProver::verify_bytes(&bytes)
+                        .expect("Bytes provided did not match expected translation credits checksum.");
+                    Arc::new(
+                        CircuitProvingKey::from_bytes_le(&bytes[1..])
+                            .expect("Failed to load translation credits proving key."),
+                    )
+                })
+                .unwrap_or_else(|| {
+                    Arc::new(
+                        CircuitProvingKey::from_bytes_le(
+                            &snarkvm_parameters::testnet::TRANSLATION_CREDITS_PROVING_KEY[1..],
+                        )
+                        .expect("Failed to load translation credits proving key."),
+                    )
+                })
+        })
+    }
+
+    /// Returns the `verifying key` for the translation circuit.
+    fn translation_credits_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>> {
+        static INSTANCE: OnceLock<Arc<VarunaVerifyingKey<Console>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| {
+            Arc::new(
+                CircuitVerifyingKey::from_bytes_le(
+                    &snarkvm_parameters::testnet::TRANSLATION_CREDITS_VERIFYING_KEY[1..],
+                )
+                .expect("Failed to load translation verifying key."),
             )
         })
     }
@@ -272,6 +416,11 @@ impl Network for TestnetV0 {
     /// Returns the sponge parameters used for the sponge in the Varuna SNARK.
     fn varuna_fs_parameters() -> &'static FiatShamirParameters<Self> {
         &VARUNA_FS_PARAMETERS
+    }
+
+    /// Returns the commitment domain as a constant field element.
+    fn commitment_domain() -> Field<Self> {
+        *COMMITMENT_DOMAIN
     }
 
     /// Returns the encryption domain as a constant field element.
@@ -504,6 +653,14 @@ impl Network for TestnetV0 {
         MerkleTree::new(&*TESTNET_BHP_1024, &*TESTNET_BHP_512, leaves)
     }
 
+    /// Recreates a Merkle tree with a BHP leaf hasher of 1024-bits and a BHP path hasher of
+    /// 512-bits from the given state, e.g. one that was previously cached on disk.
+    fn merkle_tree_bhp_from_state<const DEPTH: u8>(
+        state: MerkleTreeState<'_, Self>,
+    ) -> Result<BHPMerkleTree<Self, DEPTH>> {
+        MerkleTree::from_state(&*TESTNET_BHP_1024, &*TESTNET_BHP_512, state)
+    }
+
     /// Returns a Merkle tree with a Poseidon leaf hasher with input rate of 4 and a Poseidon path hasher with input rate of 2.
     fn merkle_tree_psd<const DEPTH: u8>(leaves: &[Vec<Field<Self>>]) -> Result<PoseidonMerkleTree<Self, DEPTH>> {
         MerkleTree::new(&*TESTNET_POSEIDON_4, &*TESTNET_POSEIDON_2, leaves)
@@ -525,6 +682,16 @@ impl Network for TestnetV0 {
         leaf: &Vec<Field<Self>>,
     ) -> bool {
         path.verify(&*TESTNET_POSEIDON_4, &*TESTNET_POSEIDON_2, root, leaf)
+    }
+
+    /// Returns the Poseidon leaf hasher for dynamic records (rate 8).
+    fn dynamic_record_leaf_hasher() -> &'static Poseidon8<Self> {
+        &TESTNET_DYNAMIC_RECORD_LEAF_HASHER
+    }
+
+    /// Returns the Poseidon path hasher for dynamic records (rate 2).
+    fn dynamic_record_path_hasher() -> &'static Poseidon2<Self> {
+        &TESTNET_DYNAMIC_RECORD_PATH_HASHER
     }
 }
 

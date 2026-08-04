@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,6 @@
 use crate::{Constant, Constraints, Measurement, Private, Public};
 
 use core::fmt::Debug;
-use once_cell::sync::{Lazy, OnceCell};
 use std::{
     cmp::Ordering,
     collections::{BTreeSet, HashMap},
@@ -25,11 +24,11 @@ use std::{
     fs,
     ops::Range,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{LazyLock, Mutex, OnceLock},
 };
 
-static FILES: Lazy<Mutex<HashMap<&'static str, FileUpdates>>> = Lazy::new(Default::default);
-static WORKSPACE_ROOT: OnceCell<PathBuf> = OnceCell::new();
+static FILES: LazyLock<Mutex<HashMap<&'static str, FileUpdates>>> = LazyLock::new(Default::default);
+static WORKSPACE_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
 /// To update the arguments to `count_is!`, run cargo test with the `UPDATE_COUNT` flag set to the name of the file containing the macro invocation.
 /// e.g. `UPDATE_COUNT=boolean cargo test
@@ -39,6 +38,17 @@ macro_rules! count_is {
     ($num_constants:literal, $num_public:literal, $num_private:literal, $num_constraints:literal) => {
         $crate::UpdatableCount {
             constant: $crate::Measurement::Exact($num_constants),
+            public: $crate::Measurement::Exact($num_public),
+            private: $crate::Measurement::Exact($num_private),
+            constraints: $crate::Measurement::Exact($num_constraints),
+            file: file!(),
+            line: line!(),
+            column: column!(),
+        }
+    };
+    (<=$num_constants:literal, $num_public:literal, $num_private:literal, $num_constraints:literal) => {
+        $crate::UpdatableCount {
+            constant: $crate::Measurement::UpperBound($num_constants),
             public: $crate::Measurement::Exact($num_public),
             private: $crate::Measurement::Exact($num_private),
             constraints: $crate::Measurement::Exact($num_constraints),
@@ -150,7 +160,7 @@ Constants: {}, Public: {}, Private: {}, Constraints: {}
                         num_constraints,
                     );
                     // Use resume_unwind instead of panic!() to prevent a backtrace, which is unnecessary noise.
-                    snarkvm_utilities::panic::resume_unwind(Box::new(()));
+                    std::panic::resume_unwind(Box::new(()));
                 }
             }
         }
@@ -287,19 +297,14 @@ impl FileUpdates {
             false => {
                 // Append `path` to the workspace root.
                 WORKSPACE_ROOT
-                    .get_or_try_init(|| {
+                    .get_or_init(|| {
                         // Heuristic, see https://github.com/rust-lang/cargo/issues/3946
-                        let workspace_root = Path::new(&env!("CARGO_MANIFEST_DIR"))
+                        Path::new(&env!("CARGO_MANIFEST_DIR"))
                             .ancestors()
                             .filter(|it| it.join("Cargo.toml").exists())
                             .last()
                             .unwrap()
-                            .to_path_buf();
-
-                        Ok(workspace_root)
-                    })
-                    .unwrap_or_else(|_: env::VarError| {
-                        panic!("No CARGO_MANIFEST_DIR env var and the path is relative: {}", path.display())
+                            .to_path_buf()
                     })
                     .join(path)
             }
@@ -499,7 +504,7 @@ mod test {
     fn check_position() {
         let count = count_is!(0, 0, 0, 0);
         assert_eq!(count.file, "circuit/environment/src/helpers/updatable_count.rs");
-        assert_eq!(count.line, 500);
+        assert_eq!(count.line, 505);
         assert_eq!(count.column, 21);
     }
 

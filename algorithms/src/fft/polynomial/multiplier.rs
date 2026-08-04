@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +19,7 @@ use crate::fft::domain::{FFTPrecomputation, IFFTPrecomputation};
 
 /// A struct that helps multiply a batch of polynomials
 use super::*;
-use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_iter, cfg_iter_mut, cfg_reduce_with};
+use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_iter, cfg_reduce_with};
 
 #[derive(Default)]
 pub struct PolyMultiplier<'a, F: PrimeField> {
@@ -123,7 +123,7 @@ impl<'a, F: PrimeField> PolyMultiplier<'a, F> {
                 let results = pool.execute_all();
                 let iter = cfg_into_iter!(results);
                 let mut result = cfg_reduce_with!(iter, |mut a, b| {
-                    cfg_iter_mut!(a).zip(b).for_each(|(a, b)| *a *= b);
+                    a.iter_mut().zip(b).for_each(|(a, b)| *a *= b);
                     a
                 })
                 .unwrap();

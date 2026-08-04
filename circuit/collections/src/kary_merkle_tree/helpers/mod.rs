@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +31,6 @@ impl<E: Environment, const VARIANT: usize> Default for BooleanHash<E, VARIANT> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment, const VARIANT: usize> Inject for BooleanHash<E, VARIANT> {
     type Primitive = console::kary_merkle_tree::BooleanHash<VARIANT>;
 
@@ -48,7 +47,6 @@ impl<E: Environment, const VARIANT: usize> Inject for BooleanHash<E, VARIANT> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<E: Environment, const VARIANT: usize> Eject for BooleanHash<E, VARIANT> {
     type Primitive = console::kary_merkle_tree::BooleanHash<VARIANT>;
 

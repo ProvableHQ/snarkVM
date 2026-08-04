@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,7 +26,6 @@ pub enum Owner<A: Aleo, Private: Visibility<A>> {
     Private(Private),
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Inject for Owner<A, Plaintext<A>> {
     type Primitive = console::Owner<A::Network, console::Plaintext<A::Network>>;
 
@@ -45,7 +44,6 @@ impl<A: Aleo> Inject for Owner<A, Plaintext<A>> {
     }
 }
 
-#[cfg(feature = "console")]
 impl<A: Aleo> Inject for Owner<A, Ciphertext<A>> {
     type Primitive = console::Owner<A::Network, console::Ciphertext<A::Network>>;
 
@@ -169,63 +167,5 @@ impl<A: Aleo> Owner<A, Ciphertext<A>> {
                 Owner::Private(Plaintext::from(Literal::Address(owner)))
             }
         }
-    }
-}
-
-impl<A: Aleo> ToBits for Owner<A, Plaintext<A>> {
-    type Boolean = Boolean<A>;
-
-    /// Returns `self` as a boolean vector in little-endian order.
-    fn write_bits_le(&self, vec: &mut Vec<Boolean<A>>) {
-        vec.push(self.is_private());
-        match self {
-            Self::Public(public) => public.write_bits_le(vec),
-            Self::Private(Plaintext::Literal(Literal::Address(address), ..)) => address.write_bits_le(vec),
-            _ => A::halt("Internal error: plaintext to_bits_le corrupted in record owner"),
-        };
-    }
-
-    /// Returns `self` as a boolean vector in big-endian order.
-    fn write_bits_be(&self, vec: &mut Vec<Boolean<A>>) {
-        vec.push(self.is_private());
-        match self {
-            Self::Public(public) => public.write_bits_be(vec),
-            Self::Private(Plaintext::Literal(Literal::Address(address), ..)) => address.write_bits_be(vec),
-            _ => A::halt("Internal error: plaintext to_bits_be corrupted in record owner"),
-        };
-    }
-}
-
-impl<A: Aleo> ToBits for Owner<A, Ciphertext<A>> {
-    type Boolean = Boolean<A>;
-
-    /// Returns `self` as a boolean vector in little-endian order.
-    fn write_bits_le(&self, vec: &mut Vec<Boolean<A>>) {
-        vec.push(self.is_private());
-        match self {
-            Self::Public(public) => public.write_bits_le(vec),
-            Self::Private(ciphertext) => {
-                // Ensure there is exactly one field element in the ciphertext.
-                match ciphertext.len() == 1 {
-                    true => ciphertext[0].write_bits_le(vec),
-                    false => A::halt("Internal error: ciphertext to_bits_le corrupted in record owner"),
-                }
-            }
-        };
-    }
-
-    /// Returns `self` as a boolean vector in big-endian order.
-    fn write_bits_be(&self, vec: &mut Vec<Boolean<A>>) {
-        vec.push(self.is_private());
-        match self {
-            Self::Public(public) => public.write_bits_be(vec),
-            Self::Private(ciphertext) => {
-                // Ensure there is exactly one field element in the ciphertext.
-                match ciphertext.len() == 1 {
-                    true => ciphertext[0].write_bits_be(vec),
-                    false => A::halt("Internal error: ciphertext to_bits_be corrupted in record owner"),
-                }
-            }
-        };
     }
 }

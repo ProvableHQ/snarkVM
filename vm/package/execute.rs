@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +14,9 @@
 // limitations under the License.
 
 use super::*;
+
+use anyhow::Context;
+use snarkvm_console::network::varuna_version_from_consensus;
 
 impl<N: Network> Package<N> {
     /// Executes a program function with the given inputs.
@@ -41,8 +44,12 @@ impl<N: Network> Package<N> {
         // Prepare the locator (even if logging is disabled, to sanity check the locator is well-formed).
         let locator = Locator::<N>::from_str(&format!("{program_id}/{function_name}"))?;
 
-        #[cfg(feature = "aleo-cli")]
-        println!("🚀 Executing '{}'...\n", locator.to_string().bold());
+        dev_println!("🚀 Executing '{}'...\n", locator.to_string());
+
+        // Prepare the query.
+        let query = Query::<_, BlockMemory<_>>::try_from(endpoint).with_context(|| "Failed to parse endpoint")?;
+        // Fetch the consensus version.
+        let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
 
         // Construct the process.
         let process = self.get_process()?;
@@ -56,6 +63,8 @@ impl<N: Network> Package<N> {
         let function = program.get_function(&function_name)?;
         // Save all the prover and verifier files for any function calls that are made.
         for instruction in function.instructions() {
+            // Note: `CallDynamic` is not handled here because its targets are resolved at runtime,
+            // so we cannot preload prover/verifier files for dynamic calls at execution time.
             if let Instruction::Call(call) = instruction {
                 // Retrieve the external stack and resource.
                 let (external_stack, resource) = match call.operator() {
@@ -108,17 +117,21 @@ impl<N: Network> Package<N> {
         // Retrieve the call metrics.
         let call_metrics = trace.call_metrics().to_vec();
 
-        // Prepare the query.
-        let query = Query::<_, BlockMemory<_>>::from(endpoint);
         // Determine which Varuna version to use.
-        let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
-        let varuna_version = if (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
-            VarunaVersion::V1
-        } else {
-            VarunaVersion::V2
-        };
+        let varuna_version = varuna_version_from_consensus(consensus_version);
+
         // Prepare the trace.
         trace.prepare(&query)?;
+
+        // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
+        // function in the execution, all DynamicRecords and ExternalRecords
+        // received as inputs or from callees exist on the ledger at the end of
+        // the execution (whether spent or not).
+        if consensus_version >= ConsensusVersion::V15 {
+            let include_direct_imports = consensus_version >= ConsensusVersion::V18;
+            let execution_stacks = process.get_stacks(trace.transitions().iter(), include_direct_imports)?;
+            Process::ensure_records_exist(trace.transitions().iter(), trace.call_graph(), &execution_stacks)?;
+        }
 
         // Prove the execution.
         let execution = trace.prove_execution::<A, R>(&locator.to_string(), varuna_version, rng)?;

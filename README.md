@@ -1,5 +1,5 @@
 <p align="center">
-    <img alt="snarkVM" width="1412" src="https://aleo.org/snarkVM.png">
+    <img alt="snarkVM" width="1412" src=".resources/snarkVM-banner.png">
 </p>
 
 <p align="center">
@@ -14,9 +14,8 @@
 
 * [1. Overview](#1-overview)
 * [2. Build Guide](#2-build-guide)
-* [3. Usage Guide](#3-usage-guide)
-* [4. Contributors](#4-contributors)
-* [5. License](#5-license)
+* [3. Contributors](#3-contributors)
+* [4. License](#4-license)
 
 ## 1. Overview
 
@@ -31,7 +30,7 @@
 | snarkvm-ledger      | [![crates.io](https://img.shields.io/crates/v/snarkvm-ledger)     ](https://crates.io/crates/snarkvm-ledger)      | [![docs.rs](https://img.shields.io/docsrs/snarkvm-ledger)     ](https://docs.rs/snarkvm-ledger)      | :white_check_mark: | :white_check_mark: | Ledger implementation for the Aleo blockchain |
 | snarkvm-parameters  | [![crates.io](https://img.shields.io/crates/v/snarkvm-parameters) ](https://crates.io/crates/snarkvm-parameters)  | [![docs.rs](https://img.shields.io/docsrs/snarkvm-parameters) ](https://docs.rs/snarkvm-parameters)  | :white_check_mark: | :white_check_mark: |                                               |
 | snarkvm-synthesizer | [![crates.io](https://img.shields.io/crates/v/snarkvm-synthesizer)](https://crates.io/crates/snarkvm-synthesizer) | [![docs.rs](https://img.shields.io/docsrs/snarkvm-synthesizer)](https://docs.rs/snarkvm-synthesizer) | :white_check_mark: | :white_check_mark: | Program synthesizer for snarkVM               |
-| snarkvm-utilities   | [![crates.io](https://img.shields.io/crates/v/snarkvm-utilities)  ](https://crates.io/crates/snarkvm-utilities)   | [![docs.rs](https://img.shields.io/docsrs/snarkvm-utilities)  ](https://docs.rs/snarkvm-utilities)   | :white_check_mark: | :white_check_mark: | Helper funtions for snarkVM                   |
+| snarkvm-utilities   | [![crates.io](https://img.shields.io/crates/v/snarkvm-utilities)  ](https://crates.io/crates/snarkvm-utilities)   | [![docs.rs](https://img.shields.io/docsrs/snarkvm-utilities)  ](https://docs.rs/snarkvm-utilities)   | :white_check_mark: | :white_check_mark: | Helper functions for snarkVM                   |
 | snarkvm-wasm        | [![crates.io](https://img.shields.io/crates/v/snarkvm-wasm)       ](https://crates.io/crates/snarkvm-wasm)        | [![docs.rs](https://img.shields.io/docsrs/snarkvm-wasm)       ](https://docs.rs/snarkvm-wasm)        | :white_check_mark: | :white_check_mark: | WASM bindings for snarkVM                     |
   
 For more information, visit [Welcome to Aleo](https://github.com/AleoNet/welcome) to get started.
@@ -47,45 +46,39 @@ We recommend installing Rust using [rustup](https://www.rustup.rs/). You can ins
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
   ```
 
+  For macOS users, you will need to subsequently install the following packages:
+  ```bash
+  brew install pkgconf
+  brew install openssl
+  ```
+
 - Windows (64-bit):
 
   Download the [Windows 64-bit executable](https://win.rustup.rs/x86_64) or
   [Windows 32-bit executable](https://win.rustup.rs/i686) and follow the on-screen instructions.
 
-### 2.2.1 Build from Crates.io
+### 2.2 Using snarkVM as a Library
 
-We recommend installing `snarkvm` this way. In your terminal, run:
+snarkVM is primarily designed to be used as a library in Rust projects. Add it to your `Cargo.toml` with your favourite published version:
 
-```bash
-cargo install snarkvm
+```toml
+[dependencies]
+snarkvm = "<major>.<minor>.<patch>"
 ```
 
-Now to use `snarkvm`, in your terminal, run:
-```bash
-snarkvm
-```
+### 2.3 Build from Source Code
 
-### 2.2.2 Build from Source Code
-
-Alternatively, you can install `snarkvm` by building from the source code as follows:
+You can also build snarkVM from source:
 
 ```bash
-# Download the source code
-git clone --branch mainnet --single-branch https://github.com/ProvableHQ/snarkVM.git 
+# Fetch the repository's development (staging) branch
+git clone --branch staging --single-branch https://github.com/ProvableHQ/snarkVM.git 
 cd snarkVM
-git checkout tags/testnet-beta
-# Install snarkVM
-cargo install --path .
+# Build the library
+cargo build --release
 ```
 
-Now to use `snarkvm`, in your terminal, run:
-```bash
-snarkvm
-```
-
-## 3. Usage Guide
-
-## 4. Contributors
+## 3. Contributors
 
 Thank you for helping make snarkVM better!  
 [🧐 What do the emojis mean?](https://allcontributors.org/docs/en/emoji-key)
@@ -167,6 +160,6 @@ Thank you for helping make snarkVM better!
 
 This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome!
 
-## 5. License
+## 4. License
 
 [![License: GPL v3](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE.md)

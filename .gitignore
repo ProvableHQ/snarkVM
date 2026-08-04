@@ -5,7 +5,9 @@
 **storage_db
 **/*.prover.*
 **/*.verifier.*
+**/varuna_verifier_artifacts/
 *.usrs
+flamegraph.svg
 !**/powers-of-beta-15.usrs*
 !**/shifted-powers-of-beta-15.usrs*
 !**/powers-of-beta-16.usrs*
@@ -14,3 +16,12 @@
 !**/beta-h.usrs
 !**/neg-powers-of-beta.usrs
 **/proptest-regressions/
+artifacts
+
+# Claude Code
+**/CLAUDE.md
+!.claude/CLAUDE.md
+.claude/*
+!.claude/CLAUDE.md
+!.claude/.gitignore
+!.claude/skills/

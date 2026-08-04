@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -113,7 +113,7 @@ mod tests {
 
         for _ in 0..ITERATIONS {
             let coinbase_target = u64::rand(rng);
-            let proof_target = rng.gen_range(0..coinbase_target);
+            let proof_target = rng.random_range(0..coinbase_target);
 
             let header = Header::<CurrentNetwork>::from(
                 Into::<<CurrentNetwork as Network>::StateRoot>::into(Field::rand(rng)),
@@ -131,10 +131,12 @@ mod tests {
                     coinbase_target,
                     proof_target,
                     u64::rand(rng),
-                    rng.gen_range(0..i64::MAX),
-                    rng.gen_range(0..i64::MAX),
-                )?,
-            )?;
+                    rng.random_range(0..i64::MAX),
+                    rng.random_range(0..i64::MAX),
+                )
+                .with_context(|| "Failed to generate block metadata")?,
+            )
+            .with_context(|| "Failed to create block header")?;
 
             // Compute the header root.
             let root = header.to_root()?;

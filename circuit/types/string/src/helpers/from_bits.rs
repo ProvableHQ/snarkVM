@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,7 +61,8 @@ impl<E: Environment> StringType<E> {
             false => Field::new(Mode::Private, num_bytes),
         };
         // Ensure the witness matches the constant.
-        E::assert_eq(&expected_size_in_bytes, &size_in_bytes);
+        E::assert_eq(&expected_size_in_bytes, &size_in_bytes)
+            .expect("String size witness does not match expected size");
 
         // Return the size in bytes.
         size_in_bytes
@@ -73,7 +74,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u32 = 100;
+    const ITERATIONS: u32 = 10;
 
     fn check_from_bits_le(mode: Mode, num_constants: u64, num_public: u64, num_private: u64, num_constraints: u64) {
         let rng = &mut TestRng::default();

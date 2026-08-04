@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -40,7 +40,7 @@ impl<N: Network> VerifierFile<N> {
         // Ensure the directory path exists.
         ensure!(directory.exists(), "The build directory does not exist: '{}'", directory.display());
         // Ensure the function name is valid.
-        ensure!(!Program::is_reserved_keyword(function_name), "Function name is invalid (reserved): {}", function_name);
+        ensure!(!Program::is_reserved_keyword(function_name), "Function name is invalid (reserved): {function_name}");
 
         // Create the candidate verifier file.
         let verifier_file = Self { function_name: *function_name, verifying_key };
@@ -228,9 +228,9 @@ function compute:
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
         // Construct the process.
-        let mut process = Process::load().unwrap();
+        let process = Process::load().unwrap();
         // Add the program to the process.
-        process.add_program(&program).unwrap();
+        process.lock().add_program(&program).unwrap();
 
         // Prepare the function name.
         let function_name = Identifier::from_str("compute").unwrap();
