@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - 'staging'
-      - 'fix_benchmark_pushing'
+      - 'fix/benchmark-ci'
   workflow_dispatch:
 
 jobs:
