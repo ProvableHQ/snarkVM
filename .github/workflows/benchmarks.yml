@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - 'staging'
-      - 'fix_benchmark_pushing'
+      - 'fix/benchmark-ci'
   workflow_dispatch:
 
 jobs:
@@ -15,6 +15,10 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+    env:
+      # Override .cargo/config.toml's target-cpu=native. Cached proc-macros and
+      # build scripts compiled for one runner CPU SIGILL on another. Keep lld.
+      RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -31,30 +35,35 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+          # Bump the key suffix when RUSTFLAGS change to invalidate poisoned caches.
+          key: ${{ runner.os }}-cargo-bench-v2-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Benchmark algorithms
         run: |
+          set -o pipefail
           cd algorithms
           cargo bench --locked --bench variable_base -- --output-format bencher | tee -a ../output.txt
           cargo bench --locked --bench poseidon_sponge -- --output-format bencher | tee -a ../output.txt
-          cargo bench --bench varuna -- --output-format bencher | tee -a ../output.txt
+          # Skip varuna: downloads multi-GB USRS params and regularly OOMs/kills the runner.
           cd ..
 
       - name: Benchmark circuit/environment
         run: |
+          set -o pipefail
           cd circuit/environment
           cargo bench --locked --bench linear_combination -- --output-format bencher | tee -a ../../output.txt
           cd ../..
 
       - name: Benchmark console/account
         run: |
+          set -o pipefail
           cd console/account
           cargo bench --locked --bench account -- --output-format bencher | tee -a ../../output.txt
           cd ../..
 
       - name: Benchmark console/algorithms
         run: |
+          set -o pipefail
           cd console/algorithms
           cargo bench --locked --bench poseidon -- --output-format bencher | tee -a ../../output.txt
           cargo bench --locked --bench elligator2 -- --output-format bencher | tee -a ../../output.txt
@@ -62,40 +71,48 @@ jobs:
 
       - name: Benchmark console/collections
         run: |
+          set -o pipefail
           cd console/collections
           cargo bench --locked --bench merkle_tree -- --output-format bencher | tee -a ../../output.txt
           cd ../..
-          
+
       - name: Benchmark console/types
         run: |
+          set -o pipefail
           cd console/types
           cargo bench --locked --bench group -- --output-format bencher | tee -a ../../output.txt
           cd ../..
 
       - name: Benchmark curves
         run: |
+          set -o pipefail
           cd curves
           cargo bench --locked --bench curves -- --output-format bencher | tee -a ../output.txt
           cd ..
 
       - name: Benchmark ledger (block)
         run: |
-          cargo bench --package=snarkvm-ledger --bench block  --features=rocks,test-helpers,test -- --output-format bencher | tee -a output.txt
+          set -o pipefail
+          cargo bench --package=snarkvm-ledger --bench block --features=rocks,test-helpers,test -- --output-format bencher | tee -a output.txt
 
       - name: Benchmark ledger (dag)
         run: |
-          cargo bench --package=snarkvm-ledger --bench dag -- --output-format bencher | tee -a output.txt
+          set -o pipefail
+          cargo bench --package=snarkvm-ledger --bench dag --features=test-helpers -- --output-format bencher | tee -a output.txt
 
       - name: Benchmark ledger (transaction)
         run: |
+          set -o pipefail
           cargo bench --package=snarkvm-ledger --bench transaction -- --output-format bencher | tee -a output.txt
 
       - name: Benchmark ledger (store)
         run: |
-          cargo bench --package=snarkvm-ledger --bench store -- --output-format bencher | tee -a output.txt
+          set -o pipefail
+          cargo bench --package=snarkvm-ledger --bench store --features=rocks,test-helpers -- --output-format bencher | tee -a output.txt
 
       - name: Benchmark ledger/puzzle
         run: |
+          set -o pipefail
           cargo bench --package=snarkvm-ledger-puzzle --bench puzzle --features=setup -- --output-format bencher | tee -a output.txt
 
       # Clean benchmark output to remove unnecessary lines
