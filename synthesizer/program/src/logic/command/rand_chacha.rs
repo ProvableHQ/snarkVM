@@ -82,9 +82,6 @@ impl<N: Network> RandChaCha<N> {
             bail!("The number of operands must be <= {MAX_ADDITIONAL_SEEDS}")
         }
 
-        // TODO (Antonio)
-        let interesting_stack = ["program_1.aleo", "program_2.aleo", "program_3.aleo", "program_4.aleo"].contains(&stack.program_id().to_string().as_str());
-
         // Load the operands values.
         let seeds: Vec<_> = self.operands.iter().map(|operand| registers.load(stack, operand)).try_collect()?;
 
@@ -125,28 +122,8 @@ impl<N: Network> RandChaCha<N> {
             ]
         };
 
-        println!("\nNAME: {}, destination type: {}, seed length: {}", stack.program_id().to_string(), self.destination_type, preimage.len());
-
         // Hash the preimage.
         let digest = N::hash_bhp1024(&preimage)?.to_bytes_le()?;
-
-        // TODO (Antonio)
-        let duration1 =if interesting_stack {
-            
-            let timer = std::time::Instant::now();
-
-            // TODO (Antonio)
-            for _ in 0..1000 {
-                let digest = N::hash_bhp1024(&preimage)?.to_bytes_le()?;
-            }
-
-            // TODO (Antonio)
-            let duration1 = timer.elapsed();
-            println!(" - 1000 x hash.bhp1024: {:?}", duration1);
-
-            duration1
-        } else { std::time::Duration::from_secs(0) };
-
         // Ensure the digest is 32-bytes.
         ensure!(digest.len() == 32, "The digest for the ChaChaRng seed must be 32-bytes");
 
@@ -178,43 +155,6 @@ impl<N: Network> RandChaCha<N> {
             LiteralType::String => bail!("Cannot 'rand.chacha' into a 'string'"),
             LiteralType::Identifier => bail!("Cannot 'rand.chacha' into an 'identifier'"),
         };
-        
-        // TODO (Antonio)
-        let duration2 = if interesting_stack {
-            let timer = std::time::Instant::now();
-            for _ in 0..1000 {
-                let output: Literal<N> = match self.destination_type {
-                    LiteralType::Address => Literal::Address(Address::new(Group::rand(&mut rng))),
-                    LiteralType::Boolean => Literal::Boolean(Boolean::rand(&mut rng)),
-                    LiteralType::Field => Literal::Field(Field::rand(&mut rng)),
-                    LiteralType::Group => Literal::Group(Group::rand(&mut rng)),
-                    LiteralType::I8 => Literal::I8(I8::rand(&mut rng)),
-                    LiteralType::I16 => Literal::I16(I16::rand(&mut rng)),
-                    LiteralType::I32 => Literal::I32(I32::rand(&mut rng)),
-                    LiteralType::I64 => Literal::I64(I64::rand(&mut rng)),
-                    LiteralType::I128 => Literal::I128(I128::rand(&mut rng)),
-                    LiteralType::U8 => Literal::U8(U8::rand(&mut rng)),
-                    LiteralType::U16 => Literal::U16(U16::rand(&mut rng)),
-                    LiteralType::U32 => Literal::U32(U32::rand(&mut rng)),
-                    LiteralType::U64 => Literal::U64(U64::rand(&mut rng)),
-                    LiteralType::U128 => Literal::U128(U128::rand(&mut rng)),
-                    LiteralType::Scalar => Literal::Scalar(Scalar::rand(&mut rng)),
-                    LiteralType::Signature => bail!("Cannot 'rand.chacha' into a 'signature'"),
-                    LiteralType::String => bail!("Cannot 'rand.chacha' into a 'string'"),
-                    LiteralType::Identifier => bail!("Cannot 'rand.chacha' into an 'identifier'"),
-                };
-            }
-            // TODO (Antonio)
-            let duration2 = timer.elapsed();
-            println!(" - 1000 x rand_chacha + output generation: {:?}", duration2);
-
-            duration2
-        } else { std::time::Duration::from_secs(0) };
-
-        // TODO (Antonio)
-        if interesting_stack {
-            println!(" - total time for 1000x [{:?}]: {:?}", self, duration1 + duration2);
-        }
 
         // Assign the value to the destination register.
         registers.store(stack, &self.destination, Value::Plaintext(Plaintext::from(output)))
@@ -425,9 +365,4 @@ mod tests {
             assert_eq!(rand.destination_type, *destination_type, "The destination type is incorrect");
         }
     }
-
-    // [rand.chacha into r2 as field;]                       | 13.371584ms | 78800
-    // hash.bhp1024 [HashBHP1024] with input length [919]    | 15.156791ms | 78800
-    // hash.bhp1024 [HashBHP1024] with input length [1804]   | 29.904625ms | 107600
-    // [rand.chacha into r5 as group;]                       | 43.82ms     | 193800
 }

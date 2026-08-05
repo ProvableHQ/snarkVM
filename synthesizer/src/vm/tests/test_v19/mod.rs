@@ -16,7 +16,4 @@
 // Tests that the translation-marked variants of Input and Output are checked correctly.
 mod translated_type_checks;
 
-// TODO (Antonio)
-mod rand_chacha_finalize;
-
 use super::*;

@@ -990,14 +990,19 @@ finalize test:
                     let consensus_version =
                         CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
 
-                    // TODO (Antonio) remove
-                    println!("2 consensus_version: {:?}", consensus_version);
-
                     // Aggregate the cost of all commands in the program.
                     finalize_logic
                         .commands()
                         .iter()
-                        .map(|command| cost_per_command(&stack, &finalize_types, command, ConsensusFeeVersion::V2, consensus_version))
+                        .map(|command| {
+                            cost_per_command(
+                                &stack,
+                                &finalize_types,
+                                command,
+                                ConsensusFeeVersion::V2,
+                                consensus_version,
+                            )
+                        })
                         .try_fold(0u64, |acc, res| {
                             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
                         })
@@ -1144,16 +1149,22 @@ constructor:
                 Some(finalize_logic) => {
                     // We derive the consensus version, as it may have changed due to the short
                     // block span of test consensus versions
-                    let consensus_version = CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
-
-                    // TODO (Antonio) remove
-                    println!("1 consensus_version: {:?}", consensus_version);
+                    let consensus_version =
+                        CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
 
                     // Aggregate the cost of all commands in the program.
                     finalize_logic
                         .commands()
                         .iter()
-                        .map(|command| cost_per_command(&stack, &finalize_types, command, ConsensusFeeVersion::V2, consensus_version))
+                        .map(|command| {
+                            cost_per_command(
+                                &stack,
+                                &finalize_types,
+                                command,
+                                ConsensusFeeVersion::V2,
+                                consensus_version,
+                            )
+                        })
                         .try_fold(0u64, |acc, res| {
                             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
                         })
