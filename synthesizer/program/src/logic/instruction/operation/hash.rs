@@ -607,7 +607,17 @@ impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
         let input = registers.load(stack, &self.operands[0])?;
 
         // Compute the output.
-        let output = evaluate_hash_internal(HashVariant::new(VARIANT), &input, &self.destination_type)?;
+        // TODO (Antonio): remove this dirty timing instrumentation.
+        let variant = HashVariant::new(VARIANT);
+        let output = evaluate_hash_internal(variant, &input, &self.destination_type)?;
+
+        if matches!(variant, HashVariant::HashBHP1024 | HashVariant::HashBHP1024Raw) {
+            let timer = std::time::Instant::now();
+            for _ in 0..1000 {
+                let output = evaluate_hash_internal(variant, &input, &self.destination_type)?;
+            }
+            println!(" 1000 x hash.bhp1024 [{:?}] with input length [{:?}] took {:?}", variant, input.to_bits_le().len(), timer.elapsed());
+        }
 
         // Store the output.
         registers.store(stack, &self.destination, Value::Plaintext(output))

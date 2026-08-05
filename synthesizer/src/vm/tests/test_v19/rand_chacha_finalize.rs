@@ -112,6 +112,30 @@ fn test_rand_chacha_times() {
         ",
     ).unwrap();
 
+    let program_4 = Program::from_str(
+        r"
+        program program_4.aleo;
+
+        function foo:
+            async foo into r0;
+            output r0 as program_4.aleo/foo.future;
+
+        finalize foo:
+            cast 1field 1field 1field into r0 as [field; 3u32];
+            hash.bhp1024.raw r0 into r1 as field;
+
+            rand.chacha into r2 as field;
+
+            cast 1field 1field 1field 1field 1field 1field into r3 as [field; 6u32];
+            hash.bhp1024 r3 into r4 as field;
+
+            rand.chacha into r5 as group;
+
+        constructor:
+            assert.eq true true;
+        ",
+    ).unwrap();
+
     println!("Sampling VM at consensus version V19");
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
 
@@ -125,36 +149,53 @@ fn test_rand_chacha_times() {
     let deployment_3 = vm.deploy(&caller_private_key, &program_3, None, 0, None, rng).unwrap();
     add_and_test_with_costs(&vm, &caller_private_key, None, &[deployment_3], rng);
 
+    let deployment_4 = vm.deploy(&caller_private_key, &program_4, None, 0, None, rng).unwrap();
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[deployment_4], rng);
+
     println!("Executing programs\n");
 
-    println!("************************* program 1 *************************");
+    // println!("************************* program 1 *************************");
 
-    let inputs = [Value::from_str("7u64").unwrap()];
+    // let inputs = [Value::from_str("7u64").unwrap()];
 
-    let transaction_1 = vm
-        .execute(&caller_private_key, ("program_1.aleo", "foo"), inputs.iter(), None, 0, None, rng)
-        .unwrap();
+    // let transaction_1 = vm
+    //     .execute(&caller_private_key, ("program_1.aleo", "foo"), inputs.iter(), None, 0, None, rng)
+    //     .unwrap();
 
-    println!("************************* program 2 *************************");
+    // println!("************************* program 2 *************************");
 
-    let transaction_2 = vm
+    // let transaction_2 = vm
+    //     .execute(
+    //         &caller_private_key,
+    //         ("program_2.aleo", "foo"),
+    //         Vec::<Value<CurrentNetwork>>::new().iter(),
+    //         None,
+    //         0,
+    //         None,
+    //         rng,
+    //     )
+    //     .unwrap();
+
+    // println!("************************* program 3 *************************");
+
+    // let transaction_3 = vm
+    //     .execute(
+    //         &caller_private_key,
+    //         ("program_3.aleo", "foo"),
+    //         Vec::<Value<CurrentNetwork>>::new().iter(),
+    //         None,
+    //         0,
+    //         None,
+    //         rng,
+    //     )
+    //     .unwrap();
+
+    println!("************************* program 4 *************************");
+
+    let transaction_4 = vm
         .execute(
             &caller_private_key,
-            ("program_2.aleo", "foo"),
-            Vec::<Value<CurrentNetwork>>::new().iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
-        .unwrap();
-
-    println!("************************* program 3 *************************");
-
-    let transaction_3 = vm
-        .execute(
-            &caller_private_key,
-            ("program_3.aleo", "foo"),
+            ("program_4.aleo", "foo"),
             Vec::<Value<CurrentNetwork>>::new().iter(),
             None,
             0,
@@ -167,7 +208,9 @@ fn test_rand_chacha_times() {
         &vm,
         &caller_private_key,
         None,
-        &[transaction_1, transaction_2, transaction_3],
+        &[transaction_4],
         rng,
     );
+
+
 }

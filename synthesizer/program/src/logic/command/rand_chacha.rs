@@ -83,7 +83,7 @@ impl<N: Network> RandChaCha<N> {
         }
 
         // TODO (Antonio)
-        let interesting_stack = ["program_1.aleo", "program_2.aleo", "program_3.aleo"].contains(&stack.program_id().to_string().as_str());
+        let interesting_stack = ["program_1.aleo", "program_2.aleo", "program_3.aleo", "program_4.aleo"].contains(&stack.program_id().to_string().as_str());
 
         // Load the operands values.
         let seeds: Vec<_> = self.operands.iter().map(|operand| registers.load(stack, operand)).try_collect()?;
@@ -131,7 +131,7 @@ impl<N: Network> RandChaCha<N> {
         let digest = N::hash_bhp1024(&preimage)?.to_bytes_le()?;
 
         // TODO (Antonio)
-        if interesting_stack {
+        let duration1 =if interesting_stack {
             
             let timer = std::time::Instant::now();
 
@@ -141,9 +141,11 @@ impl<N: Network> RandChaCha<N> {
             }
 
             // TODO (Antonio)
-            let duration = timer.elapsed();
-            println!(" - 1000 x hash.bhp1024: {:?}", duration);
-        }
+            let duration1 = timer.elapsed();
+            println!(" - 1000 x hash.bhp1024: {:?}", duration1);
+
+            duration1
+        } else { std::time::Duration::from_secs(0) };
 
         // Ensure the digest is 32-bytes.
         ensure!(digest.len() == 32, "The digest for the ChaChaRng seed must be 32-bytes");
@@ -178,7 +180,7 @@ impl<N: Network> RandChaCha<N> {
         };
         
         // TODO (Antonio)
-        if interesting_stack {
+        let duration2 = if interesting_stack {
             let timer = std::time::Instant::now();
             for _ in 0..1000 {
                 let output: Literal<N> = match self.destination_type {
@@ -203,8 +205,15 @@ impl<N: Network> RandChaCha<N> {
                 };
             }
             // TODO (Antonio)
-            let duration = timer.elapsed();
-            println!(" - 1000 x rand_chacha + output generation: {:?}", duration);
+            let duration2 = timer.elapsed();
+            println!(" - 1000 x rand_chacha + output generation: {:?}", duration2);
+
+            duration2
+        } else { std::time::Duration::from_secs(0) };
+
+        // TODO (Antonio)
+        if interesting_stack {
+            println!(" - total time for 1000x [{:?}]: {:?}", self, duration1 + duration2);
         }
 
         // Assign the value to the destination register.
@@ -416,4 +425,9 @@ mod tests {
             assert_eq!(rand.destination_type, *destination_type, "The destination type is incorrect");
         }
     }
+
+    // [rand.chacha into r2 as field;]                       | 13.371584ms | 78800
+    // hash.bhp1024 [HashBHP1024] with input length [919]    | 15.156791ms | 78800
+    // hash.bhp1024 [HashBHP1024] with input length [1804]   | 29.904625ms | 107600
+    // [rand.chacha into r5 as group;]                       | 43.82ms     | 193800
 }

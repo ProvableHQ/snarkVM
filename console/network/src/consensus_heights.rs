@@ -70,6 +70,7 @@ pub enum ConsensusVersion {
     ///      and enforces canonical subDAG certificate ordering.
     V18 = 18,
     /// V19: Adds more accurate type checking for the root call.
+    ///      Modifies the cost of the rand_chacha opcode to better reflect the associated workload.
     V19 = 19,
 }
 
