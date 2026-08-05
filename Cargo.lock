@@ -3542,6 +3542,7 @@ version = "4.9.0"
 dependencies = [
  "bincode",
  "serde_json",
+ "smallvec",
  "snarkvm-console-network-environment",
  "snarkvm-console-types-boolean",
  "zeroize",
