@@ -44,7 +44,7 @@ jobs:
           cd algorithms
           cargo bench --locked --bench variable_base -- --output-format bencher | tee -a ../output.txt
           cargo bench --locked --bench poseidon_sponge -- --output-format bencher | tee -a ../output.txt
-          cargo bench --locked --bench varuna --features=test -- --output-format bencher | tee -a ../output.txt
+          # Skip varuna: downloads multi-GB USRS params and regularly OOMs/kills the runner.
           cd ..
 
       - name: Benchmark circuit/environment
