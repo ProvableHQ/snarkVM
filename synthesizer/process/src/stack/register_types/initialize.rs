@@ -646,21 +646,49 @@ impl<N: Network> RegisterTypes<N> {
 impl<N: Network> RegisterTypes<N> {
     /// Ensure any struct referenced directly or otherwise exists.
     pub fn check_plaintext_type(stack: &Stack<N>, type_: &PlaintextType<N>) -> Result<()> {
+        // Track the `(program, struct)` pairs that have already been fully verified, so that a struct shared by
+        // many members is expanded at most once. Without this, a program in which every member of each struct
+        // refers to the same earlier struct forms an acyclic graph with exponentially many paths, and the walk
+        // below would make up to `MAX_STRUCT_ENTRIES ^ MAX_STRUCTS` recursive calls.
+        let mut visited = HashSet::new();
+        Self::check_plaintext_type_inner(stack, type_, &mut visited)
+    }
+
+    /// The memoized inner traversal for [`Self::check_plaintext_type`].
+    ///
+    /// `visited` is keyed on `(program_id, struct_name)` rather than `struct_name` alone, since an external struct
+    /// resolves against a different program whose struct names may collide with the current program's.
+    fn check_plaintext_type_inner(
+        stack: &Stack<N>,
+        type_: &PlaintextType<N>,
+        visited: &mut HashSet<(ProgramID<N>, Identifier<N>)>,
+    ) -> Result<()> {
         match type_ {
             PlaintextType::Literal(..) => Ok(()),
             PlaintextType::Struct(struct_name) => {
+                // If this struct has already been verified in the current traversal, there is nothing left to check.
+                // Insert before recursing; struct references are guaranteed acyclic by `Program::add_struct`, so this
+                // only short-circuits shared subgraphs and never hides an in-progress struct from itself.
+                if !visited.insert((*stack.program_id(), *struct_name)) {
+                    return Ok(());
+                }
                 // Retrieve the struct from the program.
                 let Ok(struct_) = stack.program().get_struct(struct_name) else {
                     bail!("Struct '{struct_name}' in '{}' is not defined.", stack.program_id())
                 };
-                struct_.members().values().try_for_each(|member| Self::check_plaintext_type(stack, member))
+                struct_
+                    .members()
+                    .values()
+                    .try_for_each(|member| Self::check_plaintext_type_inner(stack, member, visited))
             }
             PlaintextType::ExternalStruct(locator) => {
                 let external_stack = stack.get_external_stack(locator.program_id())?;
                 let struct_type = PlaintextType::Struct(*locator.resource());
-                Self::check_plaintext_type(&*external_stack, &struct_type)
+                Self::check_plaintext_type_inner(&external_stack, &struct_type, visited)
             }
-            PlaintextType::Array(array_type) => Self::check_plaintext_type(stack, array_type.base_element_type()),
+            PlaintextType::Array(array_type) => {
+                Self::check_plaintext_type_inner(stack, array_type.base_element_type(), visited)
+            }
         }
     }
 
@@ -1046,5 +1074,64 @@ impl<N: Network> RegisterTypes<N> {
             _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Process;
+
+    use std::{fmt::Write as _, sync::mpsc, thread, time::Duration};
+
+    type CurrentNetwork = MainnetV0;
+
+    /// Builds a program whose `depth` structs each have `MAX_STRUCT_ENTRIES` members, where every member of
+    /// `s{k}` refers to `s{k-1}` (and every member of `s0` is a `field`). A single function input of type
+    /// `s{depth - 1}` therefore references an acyclic struct graph with `MAX_STRUCT_ENTRIES ^ (depth - 1)`
+    /// distinct root-to-leaf paths — the shape exploited by the type-validation DoS.
+    fn sample_shared_struct_program(depth: usize) -> Program<CurrentNetwork> {
+        assert!(depth >= 1);
+        let mut source = String::from("program testing_dag.aleo;\n\n");
+        for level in 0..depth {
+            writeln!(source, "struct s{level}:").unwrap();
+            let member_type = if level == 0 { "field".to_string() } else { format!("s{}", level - 1) };
+            for member in 0..CurrentNetwork::MAX_STRUCT_ENTRIES {
+                writeln!(source, "    m{member} as {member_type};").unwrap();
+            }
+            source.push('\n');
+        }
+        writeln!(source, "function compute:\n    input r0 as s{}.private;", depth - 1).unwrap();
+        source.push_str("\nconstructor:\n    assert.eq true true;\n");
+        Program::from_str(&source).unwrap()
+    }
+
+    #[test]
+    fn test_check_plaintext_type_shared_struct_dag_terminates() {
+        // A 12-level, 32-member-per-struct program: without memoization this induces hundreds of trillions of
+        // calls in `check_plaintext_type`, so `Stack::new` would never return. With memoization each
+        // `(program, struct)` pair is expanded once, so validation completes near-instantly.
+        //
+        // The traversal is run on a detached thread so that the missing-memoization regression surfaces as a
+        // bounded timeout failure rather than hanging the test suite indefinitely.
+        let program = sample_shared_struct_program(12);
+
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let process = Process::<CurrentNetwork>::load().expect("Failed to load process");
+            // `Stack::new` runs `check_plaintext_type` over the `compute` input's struct graph.
+            let is_ok = Stack::new(&process, &program).is_ok();
+            let _ = sender.send(is_ok);
+        });
+
+        // 5 minutes is generous even if the CI machine is heavily loaded
+        match receiver.recv_timeout(Duration::from_secs(300)) {
+            Ok(true) => {}
+            Ok(false) => panic!("Stack::new rejected a well-formed shared-struct program"),
+            Err(_) => panic!(
+                "check_plaintext_type did not terminate within 30s: the shared-struct graph is being re-expanded \
+                 exponentially (memoization is missing)"
+            ),
+        }
     }
 }
