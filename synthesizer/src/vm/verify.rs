@@ -939,13 +939,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Verify the fee, if it has not been partially-verified before.
         let verification = match is_partially_verified {
             true => Ok(()),
-            false => self.process.verify_fee(
-                consensus_version,
-                varuna_version,
-                inclusion_version,
-                fee,
-                deployment_or_execution_id,
-            ),
+            false => match try_vm_runtime(|| {
+                self.process.verify_fee(
+                    consensus_version,
+                    varuna_version,
+                    inclusion_version,
+                    fee,
+                    deployment_or_execution_id,
+                )
+            }) {
+                Ok(result) => result,
+                Err(_) => bail!("VM safely halted during fee verification"),
+            },
         };
         lap!(timer, "Verify the fee");
 
