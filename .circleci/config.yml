@@ -942,7 +942,7 @@ jobs:
           # `history` enables the per-key historical update map that the `view` evaluation path
           # depends on; gating it here ensures the v15 view tests are exercised in CI.
           flags: >
-            --lib --bins --features test,history
+            --release --lib --bins --features test,history
             --partition count:1/2
             -- --test-threads 8
           cache_key_suffix: -test1
@@ -955,7 +955,7 @@ jobs:
       - run_test:
           workspace_member: snarkvm-synthesizer
           flags: >
-            --lib --bins --features test,history
+            --release --lib --bins --features test,history
             --partition count:2/2
             -- --test-threads 8
           cache_key_suffix: -test2
