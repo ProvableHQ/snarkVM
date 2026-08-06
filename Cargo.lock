@@ -3429,6 +3429,7 @@ name = "snarkvm-console-collections"
 version = "4.9.0"
 dependencies = [
  "aleo-std",
+ "bincode",
  "criterion",
  "indexmap 2.14.0",
  "locktick",
@@ -3541,6 +3542,7 @@ version = "4.9.0"
 dependencies = [
  "bincode",
  "serde_json",
+ "smallvec",
  "snarkvm-console-network-environment",
  "snarkvm-console-types-boolean",
  "zeroize",

@@ -2636,7 +2636,7 @@ function foo:
             if attempts >= ITERATIONS {
                 panic!("Failed to craft deployment after {ITERATIONS} attempts");
             }
-            match try_vm_runtime!(|| ledger.vm().deploy(&private_key, program, None, 0, None, rng)) {
+            match try_vm_runtime(|| ledger.vm().deploy(&private_key, program, None, 0, None, rng)) {
                 Ok(result) => break result.unwrap(),
                 Err(_) => attempts += 1,
             }
@@ -2653,17 +2653,15 @@ function foo:
         let process = ledger.vm().process().clone();
         // Create a helper method to verify the deployments.
         let verify_deployment = |deployment_tx: &Transaction<CurrentNetwork>, rng: &mut TestRng| {
-            let expected_result = match try_vm_runtime!(|| ledger.vm().check_transaction(deployment_tx, None, rng)) {
+            let expected_result = match try_vm_runtime(|| ledger.vm().check_transaction(deployment_tx, None, rng)) {
                 Ok(result) => result.is_ok(),
                 Err(_) => false,
             };
             let deployment = deployment_tx.deployment().unwrap().clone();
             for _ in 0..ITERATIONS {
-                let result = match try_vm_runtime!(|| process.verify_deployment::<CurrentAleo, _>(
-                    ConsensusVersion::V8,
-                    &deployment,
-                    rng
-                )) {
+                let result = match try_vm_runtime(|| {
+                    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng)
+                }) {
                     Ok(result) => result.is_ok(),
                     Err(_) => false,
                 };

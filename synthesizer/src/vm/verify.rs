@@ -644,7 +644,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Verify the deployment if it has not been verified before.
                 if !is_partially_verified {
                     // Verify the deployment.
-                    match try_vm_runtime!(|| self.check_deployment_internal(deployment, rng)) {
+                    match try_vm_runtime(|| self.check_deployment_internal(deployment, rng)) {
                         Ok(result) => result?,
                         Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
                     }
@@ -679,11 +679,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 );
 
                 // Verify the execution.
-                match try_vm_runtime!(|| self.check_execution_internal(
-                    execution,
-                    &execution_stacks,
-                    is_partially_verified
-                )) {
+                match try_vm_runtime(|| {
+                    self.check_execution_internal(execution, &execution_stacks, is_partially_verified)
+                }) {
                     Ok(result) => result?,
                     Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
                 }
@@ -941,13 +939,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Verify the fee, if it has not been partially-verified before.
         let verification = match is_partially_verified {
             true => Ok(()),
-            false => self.process.verify_fee(
-                consensus_version,
-                varuna_version,
-                inclusion_version,
-                fee,
-                deployment_or_execution_id,
-            ),
+            false => match try_vm_runtime(|| {
+                self.process.verify_fee(
+                    consensus_version,
+                    varuna_version,
+                    inclusion_version,
+                    fee,
+                    deployment_or_execution_id,
+                )
+            }) {
+                Ok(result) => result,
+                Err(_) => bail!("VM safely halted during fee verification"),
+            },
         };
         lap!(timer, "Verify the fee");
 
@@ -994,12 +997,9 @@ mod tests {
     use crate::vm::test_helpers::sample_finalize_state;
     use console::account::ViewKey;
 
-    use console::{account::Address, types::Field};
     #[cfg(feature = "test")]
-    use console::{
-        algorithms::{ECDSASignature, Keccak256},
-        types::U8,
-    };
+    use console::algorithms::{ECDSASignature, Keccak256};
+    use console::{account::Address, types::Field};
     use snarkvm_ledger_block::{Block, Header, Metadata, Transaction, Transition};
     #[cfg(feature = "test")]
     use snarkvm_utilities::bytes_from_bits_le;
