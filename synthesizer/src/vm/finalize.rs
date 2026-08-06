@@ -30,8 +30,11 @@ use snarkvm_utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
 
 /// Uniqueness tracking accumulated while assembling a candidate block's transactions.
 struct CandidateTransactionDetails<N: Network> {
+    /// The IDs of the transitions in this block.
     transition_ids: IndexSet<N::TransitionID>,
+    /// The IDs of the transition inputs in this block.
     input_ids: IndexSet<Field<N>>,
+    /// The IDs of the transition outputs in this block.
     output_ids: IndexSet<Field<N>>,
     /// The serial numbers spent by record inputs in this block.
     serial_numbers: IndexSet<Field<N>>,
@@ -41,11 +44,15 @@ struct CandidateTransactionDetails<N: Network> {
     commitments: IndexSet<Field<N>>,
     /// The record output nonces in this block.
     nonces: IndexSet<Group<N>>,
+    /// The transition public keys (`tpk`) in this block.
     tpks: IndexSet<Group<N>>,
     /// The transition commitments (`tcm`) in this block.
     tcms: IndexSet<Field<N>>,
+    /// The public fee payers of the deployments in this block.
     deployment_payers: IndexSet<Address<N>>,
+    /// The IDs of the programs deployed or upgraded in this block.
     deployments: IndexSet<ProgramID<N>>,
+    /// The combined density (variables and constraints) of the deployments in this block.
     block_combined_density: u64,
 }
 

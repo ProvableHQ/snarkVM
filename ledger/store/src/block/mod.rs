@@ -116,6 +116,7 @@ fn to_confirmed_transaction<N: Network>(
 ///
 /// Bump the trailing digits whenever the cached payload changes, so that a cache
 /// file written by an older version is discarded instead of failing to decode.
+#[cfg(feature = "rocks")]
 pub(crate) const BLOCK_TREE_CACHE_PREFIX: &[u8; 12] = b"aleo.tree.01";
 
 pub(crate) fn block_tree_cache_path<N: Network, B: BlockStorage<N>>(storage: &B) -> Option<std::path::PathBuf> {
