@@ -109,10 +109,8 @@ jobs:
           set -o pipefail
           cargo bench --package=snarkvm-ledger --bench transaction -- --output-format bencher | tee -a output.txt
 
-      - name: Benchmark ledger (store)
-        run: |
-          set -o pipefail
-          cargo bench --package=snarkvm-ledger --bench store --features=rocks,test-helpers -- --output-format bencher | tee -a output.txt
+      # Skip store/advance: require a pre-generated `test-ledger/` fixture
+      # (see `snarkvm-testchain-generator --no-ledger`).
 
       - name: Benchmark ledger/puzzle
         run: |
