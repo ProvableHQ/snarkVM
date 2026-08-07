@@ -15,14 +15,12 @@
 
 use super::*;
 
-// Checks that various instances of casts to external structs or from using external-structs members
+// Checks that various instances of casts to external structs or from external-struct members
 // function as expected. This is tested in both the function (i.e. private, RegisterType) setting as
 // well as the public (i.e. finalise, FinaliseType) one.
 #[test]
 fn test_cast_with_external_structs_only() {
     let rng = &mut TestRng::default();
-
-    let deployer_private_key = sample_genesis_private_key(rng);
 
     let program_a = Program::from_str(
         r"
@@ -104,7 +102,7 @@ fn test_cast_with_external_structs_only() {
 
             output r3 as struct_c.private;
 
-        // Case 2 / function: Similar to case 1 but with a cast involving a external-struct member read (r1.val) into an external-struct.
+        // Case 2 / function: Similar to case 1 but with a cast involving an external-struct member read (r1.val) into an external struct.
         function run_2:
             input r0 as u8.private;
 
@@ -161,7 +159,7 @@ fn test_cast_with_external_structs_only() {
 
             output r3 as u8.private;
 
-        // Case 8 / function: Tests a casts to external struct one of whose operands involves a two-level struct access.
+        // Case 8 / function: Tests a cast to external struct one of whose operands involves a two-level struct access.
         function run_8:
             cast 24u8 into r0 as program_a.aleo/struct_a;
             cast r0 into r1 as program_b.aleo/struct_b;
@@ -208,7 +206,7 @@ fn test_cast_with_external_structs_only() {
 
             cast r0 into r1 as program_b.aleo/struct_b;
             cast r0 r1 into r2 as struct_c;
-        
+
         // Case 12 / finalize: Finalize-side mirror of case 4.
         function run_12:
             input r0 as program_a.aleo/struct_a.public;
@@ -272,101 +270,11 @@ fn test_cast_with_external_structs_only() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
 
-    let transaction = vm.deploy(&deployer_private_key, &program_a, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
-    let transaction = vm.deploy(&deployer_private_key, &program_b, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
-    let transaction = vm.deploy(&deployer_private_key, &program_b2, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
-    let transaction = vm.deploy(&deployer_private_key, &program_c, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
-    let struct_a = "{ val: 5u8 }";
-
     // The cases are documented in the source of program_c.aleo above.
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "run_1"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "run_2"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str(struct_a).unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "run_3"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str(struct_a).unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "run_4"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str(struct_a).unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "run_5"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let transaction = vm
-        .execute(&deployer_private_key, ("program_c.aleo", "run_6"), Vec::<Value<_>>::new().iter(), None, 0, None, rng)
-        .unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&[]]), &[transaction], rng);
-
-    let transaction = vm
-        .execute(&deployer_private_key, ("program_c.aleo", "run_7"), Vec::<Value<_>>::new().iter(), None, 0, None, rng)
-        .unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&[]]), &[transaction], rng);
-
-    let transaction = vm
-        .execute(&deployer_private_key, ("program_c.aleo", "run_8"), Vec::<Value<_>>::new().iter(), None, 0, None, rng)
-        .unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&[]]), &[transaction], rng);
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "run_9"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "run_10"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str(struct_a).unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "run_11"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str(struct_a).unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "run_12"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str(struct_a).unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "run_13"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let transaction = vm
-        .execute(&deployer_private_key, ("program_c.aleo", "run_14"), Vec::<Value<_>>::new().iter(), None, 0, None, rng)
-        .unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&[]]), &[transaction], rng);
-
-    let transaction = vm
-        .execute(&deployer_private_key, ("program_c.aleo", "run_15"), Vec::<Value<_>>::new().iter(), None, 0, None, rng)
-        .unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&[]]), &[transaction], rng);
-
-    let transaction = vm
-        .execute(&deployer_private_key, ("program_c.aleo", "run_16"), Vec::<Value<_>>::new().iter(), None, 0, None, rng)
-        .unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&[]]), &[transaction], rng);
+    vm.process().lock().add_program(&program_a).unwrap();
+    vm.process().lock().add_program(&program_b).unwrap();
+    vm.process().lock().add_program(&program_b2).unwrap();
+    vm.process().lock().add_program(&program_c).unwrap();
 }
 
 // Checks that various instances of casts to arrays involving external structs and their members, as
@@ -375,8 +283,6 @@ fn test_cast_with_external_structs_only() {
 #[test]
 fn test_cast_with_external_structs_in_arrays() {
     let rng = &mut TestRng::default();
-
-    let deployer_private_key = sample_genesis_private_key(rng);
 
     let program_a = Program::from_str(
         r"
@@ -550,59 +456,11 @@ fn test_cast_with_external_structs_in_arrays() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
 
-    let transaction = vm.deploy(&deployer_private_key, &program_a, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
-    let transaction = vm.deploy(&deployer_private_key, &program_b, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
-    let transaction = vm.deploy(&deployer_private_key, &program_b2, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
-    let transaction = vm.deploy(&deployer_private_key, &program_c, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
     // The cases are documented in the source of program_c.aleo above.
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "fun_1"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "fun_2"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "fun_3"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "fun_4"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "fun_5"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "fun_6"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "fun_7"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "fun_8"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
+    vm.process().lock().add_program(&program_a).unwrap();
+    vm.process().lock().add_program(&program_b).unwrap();
+    vm.process().lock().add_program(&program_b2).unwrap();
+    vm.process().lock().add_program(&program_c).unwrap();
 }
 
 // Checks that various instances of casts to records involving external structs and their members
@@ -611,8 +469,6 @@ fn test_cast_with_external_structs_in_arrays() {
 #[test]
 fn test_cast_with_external_structs_in_records() {
     let rng = &mut TestRng::default();
-
-    let deployer_private_key = sample_genesis_private_key(rng);
 
     let program_a = Program::from_str(
         r"
@@ -767,44 +623,11 @@ fn test_cast_with_external_structs_in_records() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
 
-    let transaction = vm.deploy(&deployer_private_key, &program_a, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
-    let transaction = vm.deploy(&deployer_private_key, &program_b, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
-    let transaction = vm.deploy(&deployer_private_key, &program_b2, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
-    let transaction = vm.deploy(&deployer_private_key, &program_c, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
     // The cases are documented in the source of program_c.aleo above.
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "fun_1"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "fun_2"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "fun_3"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "fun_4"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    let inputs = [Value::from_str("5u8").unwrap()];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "fun_5"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
+    vm.process().lock().add_program(&program_a).unwrap();
+    vm.process().lock().add_program(&program_b).unwrap();
+    vm.process().lock().add_program(&program_b2).unwrap();
+    vm.process().lock().add_program(&program_c).unwrap();
 }
 
 #[test]
@@ -813,8 +636,6 @@ fn test_cast_with_external_structs_in_records() {
 // since at both points in time there is a separate, correct check.
 fn test_cast_with_external_structs_false_type() {
     let rng = &mut TestRng::default();
-
-    let deployer_private_key = sample_genesis_private_key(rng);
 
     let program_a = Program::from_str(
         r"
@@ -857,23 +678,128 @@ fn test_cast_with_external_structs_false_type() {
     let err_old = {
         let vm_old = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V17).unwrap(), rng);
 
-        let transaction = vm_old.deploy(&deployer_private_key, &program_a, None, 0, None, rng).unwrap();
-        add_and_test_with_costs(&vm_old, &deployer_private_key, None, &[transaction], rng);
-
-        vm_old.deploy(&deployer_private_key, &program_b, None, 0, None, rng).unwrap_err().to_string()
+        vm_old.process().lock().add_program(&program_a).unwrap();
+        vm_old.process().lock().add_program(&program_b).unwrap_err().to_string()
     };
 
     let err_new = {
         let vm_new = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
 
-        let transaction = vm_new.deploy(&deployer_private_key, &program_a, None, 0, None, rng).unwrap();
-        add_and_test_with_costs(&vm_new, &deployer_private_key, None, &[transaction], rng);
-
-        vm_new.deploy(&deployer_private_key, &program_b, None, 0, None, rng).unwrap_err().to_string()
+        vm_new.process().lock().add_program(&program_a).unwrap();
+        vm_new.process().lock().add_program(&program_b).unwrap_err().to_string()
     };
 
     assert_eq!(err_old, err_new);
     assert!(err_old.contains("expects a 'u8', but found a 'field'"))
+}
+
+#[test]
+// Test that a cast-to-external-struct instruction whose operands involve a member of a different
+// (from a different program) external struct with the same name does not confuse the two types.
+fn test_cast_with_same_name_external_structs() {
+    let rng = &mut TestRng::default();
+
+    let program_a = Program::from_str(
+        r"
+        program program_a.aleo;
+
+        struct my_struct:
+            val_1 as u8;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    let program_b = Program::from_str(
+        r"
+        import program_a.aleo;
+
+        program program_b.aleo;
+
+        struct struct_b:
+            member_1 as u8;
+            member_2 as program_a.aleo/my_struct;
+
+        function foo:
+            assert.eq true true;
+
+        function noop:
+        ",
+    )
+    .unwrap();
+
+    let program_b2 = Program::from_str(
+        r"
+        import program_a.aleo;
+
+        program program_b2.aleo;
+
+        struct struct_b:
+            member_1 as program_a.aleo/my_struct;
+            member_2 as u8;
+
+        function foo:
+            assert.eq true true;
+
+        function noop:
+        ",
+    )
+    .unwrap();
+
+    let program_c = Program::from_str(
+        r"
+        import program_a.aleo;
+        import program_b.aleo;
+        import program_b2.aleo;
+
+        program program_c.aleo;
+
+        function foo:
+            async foo into r0;
+            output r0 as program_c.aleo/foo.future;
+
+        finalize foo:
+            cast 0u8 into r0 as program_a.aleo/my_struct;
+            cast r0 0u8 into r1 as program_b2.aleo/struct_b;
+
+            // Here, if the program incorrectly interprets r1 as having the type
+            // program_b.aleo/struct_b (i.e. the instruction's destination type) as opposed to the
+            // correct one, the instruction will be accepted.
+
+            cast r1.member_1 r0 into r2 as program_b.aleo/struct_b;
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    // TODO (Antonio) document
+
+    let err_old = {
+        let vm_old = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V17).unwrap(), rng);
+
+        vm_old.process().lock().add_program(&program_a).unwrap();
+        vm_old.process().lock().add_program(&program_b).unwrap();
+        vm_old.process().lock().add_program(&program_b2).unwrap();
+        vm_old.process().lock().add_program(&program_c).unwrap_err().to_string()
+    };
+
+    let err_new = {
+        let vm_new = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
+
+        vm_new.process().lock().add_program(&program_a).unwrap();
+        vm_new.process().lock().add_program(&program_b).unwrap();
+        vm_new.process().lock().add_program(&program_b2).unwrap();
+        vm_new.process().lock().add_program(&program_c).unwrap_err().to_string()
+    };
+
+    assert_eq!(err_old, err_new);
+    assert!(err_old.contains("'struct_b.member_1' expects a 'u8', but found a 'program_a.aleo/my_struct'"))
 }
 
 // Tests similar cases to test_cast_with_external_structs_only, but where the casts occur in the
@@ -881,8 +807,6 @@ fn test_cast_with_external_structs_false_type() {
 #[test]
 fn test_cast_with_external_structs_in_constructor() {
     let rng = &mut TestRng::default();
-
-    let deployer_private_key = sample_genesis_private_key(rng);
 
     let program_a = Program::from_str(
         r"
@@ -973,18 +897,11 @@ fn test_cast_with_external_structs_in_constructor() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
 
-    let transaction = vm.deploy(&deployer_private_key, &program_a, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
-    let transaction = vm.deploy(&deployer_private_key, &program_b, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
-    let transaction = vm.deploy(&deployer_private_key, &program_b2, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
-    // Deploying program_c.aleo runs and type-checks the constructor's external-struct casts.
-    let transaction = vm.deploy(&deployer_private_key, &program_c, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
+    // The cases are documented in the source of program_c.aleo above.
+    vm.process().lock().add_program(&program_a).unwrap();
+    vm.process().lock().add_program(&program_b).unwrap();
+    vm.process().lock().add_program(&program_b2).unwrap();
+    vm.process().lock().add_program(&program_c).unwrap();
 }
 
 // Tests similar cases to test_cast_with_external_structs_in_records, but where the casts occur in the
@@ -992,8 +909,6 @@ fn test_cast_with_external_structs_in_constructor() {
 #[test]
 fn test_cast_with_external_structs_in_views() {
     let rng = &mut TestRng::default();
-
-    let deployer_private_key = sample_genesis_private_key(rng);
 
     let program_a = Program::from_str(
         r"
@@ -1107,16 +1022,9 @@ fn test_cast_with_external_structs_in_views() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
 
-    let transaction = vm.deploy(&deployer_private_key, &program_a, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
-    let transaction = vm.deploy(&deployer_private_key, &program_b, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
-    let transaction = vm.deploy(&deployer_private_key, &program_b2, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
-
-    // Deploying program_c.aleo type-checks each view's external-struct casts.
-    let transaction = vm.deploy(&deployer_private_key, &program_c, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
+    // The cases are documented in the source of program_c.aleo above.
+    vm.process().lock().add_program(&program_a).unwrap();
+    vm.process().lock().add_program(&program_b).unwrap();
+    vm.process().lock().add_program(&program_b2).unwrap();
+    vm.process().lock().add_program(&program_c).unwrap();
 }
