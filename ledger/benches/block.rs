@@ -92,7 +92,7 @@ fn signature_serialization(c: &mut Criterion) {
 
 criterion_group! {
     name = block;
-    config = Criterion::<WallTime>::default().sample_size(5).measurement_time(Duration::from_secs(2));
+    config = Criterion::<WallTime>::default().sample_size(10).measurement_time(Duration::from_secs(2));
     targets = block_and_nested_serialization, signature_serialization,
 }
 
