@@ -26,8 +26,12 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install required Debian pacakges
-        run: sudo apt install -y lld
+      # RocksDB benches need libclang (via bindgen); match CircleCI rocks deps.
+      - name: Install required Debian packages
+        run: |
+          DEBIAN_FRONTEND=noninteractive sudo apt-get update
+          DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends \
+            clang libclang-dev llvm-dev llvm lld pkg-config xz-utils make libssl-dev
 
       - uses: actions/cache@v4
         with:
