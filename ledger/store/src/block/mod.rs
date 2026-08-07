@@ -1597,6 +1597,15 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     }
 }
 
+#[cfg(all(feature = "rocks", feature = "metrics"))]
+impl<N: Network> BlockStore<N, crate::helpers::rocksdb::BlockDB<N>> {
+    /// Reads RocksDB internal properties and publishes them to the metrics registry.
+    /// This is a cheap, synchronous call — properties come from in-memory counters with no I/O.
+    pub fn export_rocksdb_metrics(&self) {
+        self.storage.export_rocksdb_metrics();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

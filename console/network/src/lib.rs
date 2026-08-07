@@ -210,6 +210,10 @@ pub trait Network:
     /// The maximum number of fields in data (must not exceed u16::MAX).
     #[allow(clippy::cast_possible_truncation)]
     const MAX_DATA_SIZE_IN_FIELDS: u32 = ((128 * 1024 * 8) / Field::<Self>::SIZE_IN_DATA_BITS) as u32;
+    /// A list of (consensus_version, size) pairs indicating the maximum size in bits of any single
+    /// `PlaintextType` declared in a program. This mirrors the runtime budget `to_fields` enforces.
+    const MAX_PLAINTEXT_TYPE_SIZE_IN_BITS: [(ConsensusVersion, usize); 1] =
+        [(ConsensusVersion::V19, Self::MAX_DATA_SIZE_IN_FIELDS as usize * Field::<Self>::SIZE_IN_DATA_BITS)];
 
     /// The minimum number of entries in a struct.
     const MIN_STRUCT_ENTRIES: usize = 1; // This ensures the struct is not empty.
@@ -354,6 +358,14 @@ pub trait Network:
     #[allow(non_snake_case)]
     fn LATEST_MAX_ARRAY_ELEMENTS() -> usize {
         Self::MAX_ARRAY_ELEMENTS.last().expect("MAX_ARRAY_ELEMENTS must have at least one entry").1
+    }
+    /// Returns the last `MAX_PLAINTEXT_TYPE_SIZE_IN_BITS` value.
+    #[allow(non_snake_case)]
+    fn LATEST_MAX_PLAINTEXT_TYPE_SIZE_IN_BITS() -> usize {
+        Self::MAX_PLAINTEXT_TYPE_SIZE_IN_BITS
+            .last()
+            .expect("MAX_PLAINTEXT_TYPE_SIZE_IN_BITS must have at least one entry")
+            .1
     }
     /// Returns the last `MAX_CERTIFICATES` value.
     #[allow(non_snake_case)]
