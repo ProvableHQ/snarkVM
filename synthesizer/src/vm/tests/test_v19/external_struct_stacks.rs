@@ -17,7 +17,7 @@ use super::*;
 
 // Checks that various instances of casts to external structs or from external-struct members
 // function as expected. This is tested in both the function (i.e. private, RegisterType) setting as
-// well as the public (i.e. finalise, FinaliseType) one.
+// well as the public (i.e. finalize, FinalizeType) one.
 #[test]
 fn test_cast_with_external_structs_only() {
     let rng = &mut TestRng::default();
@@ -268,18 +268,21 @@ fn test_cast_with_external_structs_only() {
         ",
     ).unwrap();
 
+    let caller_private_key = sample_genesis_private_key(rng);
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
 
     // The cases are documented in the source of program_c.aleo above.
     vm.process().lock().add_program(&program_a).unwrap();
     vm.process().lock().add_program(&program_b).unwrap();
     vm.process().lock().add_program(&program_b2).unwrap();
-    vm.process().lock().add_program(&program_c).unwrap();
+
+    let transaction = vm.deploy(&caller_private_key, &program_c, None, 0, None, rng).unwrap();
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction], rng);
 }
 
 // Checks that various instances of casts to arrays involving external structs and their members, as
 // well as structs having arrays as members, work as expected. This is tested in both the function
-// (i.e. private, RegisterType) setting as well as the public (i.e. finalise, FinaliseType) one.
+// (i.e. private, RegisterType) setting as well as the public (i.e. finalize, FinalizeType) one.
 #[test]
 fn test_cast_with_external_structs_in_arrays() {
     let rng = &mut TestRng::default();

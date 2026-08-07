@@ -247,7 +247,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 //   - the program does not include V13 syntax
                 //   - the program does not use the external struct syntax `some_program.aleo/Struct`
                 // If the `CONSENSUS_VERSION` is less than `V19`, ensure that
-                //   - the program does not break the pre-V19 version of `matches_struct` in casts to external structs within finalise-type scopes.
+                //   - the program does not break the pre-V19 version of `matches_struct` in casts to external structs within finalize-type scopes.
                 // If the `CONSENSUS_VERSION` is less than `V14`, ensure that
                 //   - the program does not include V14 syntax (snark.verify, aleo::GENERATOR, identifier literals/types)
                 //   - the argument bit size of futures does not exceed the maximum allowed size of u16::MAX.
