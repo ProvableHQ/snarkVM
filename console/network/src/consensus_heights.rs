@@ -69,7 +69,8 @@ pub enum ConsensusVersion {
     /// V18: Enables native credits record translation, introduces block-wide deployment limits,
     ///      and enforces canonical subDAG certificate ordering.
     V18 = 18,
-    /// V19: Adds more accurate type checking for the root call.
+    /// V19: Adds more accurate type checking for the root call, and bounds the size of every
+    /// `PlaintextType` declared in a deployed program.
     V19 = 19,
     /// V20: TBD
     V20 = 20,
