@@ -77,7 +77,7 @@ jobs:
         run: |
           set -o pipefail
           cd console/collections
-          cargo bench --locked --bench merkle_tree -- --output-format bencher | tee -a ../../output.txt
+          cargo bench --locked --bench merkle_tree -- --output-format bencher --sample-size 10 --measurement-time 2 | tee -a ../../output.txt
           cd ../..
 
       - name: Benchmark console/types
@@ -97,7 +97,7 @@ jobs:
       - name: Benchmark ledger (block)
         run: |
           set -o pipefail
-          cargo bench --package=snarkvm-ledger --bench block --features=rocks,test-helpers,test -- --output-format bencher | tee -a output.txt
+          cargo bench --package=snarkvm-ledger --bench block --features=rocks,test-helpers,test -- --output-format bencher --sample-size 5 --measurement-time 2 | tee -a output.txt
 
       - name: Benchmark ledger (dag)
         run: |
