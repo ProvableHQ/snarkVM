@@ -230,36 +230,6 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             }
         }
 
-        // Determine if the block timestamp should be included.
-        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
-            .then_some(block.timestamp());
-        // Determine the block's spend and synthesis limits.
-        // Beacon authorities use the min_certificates subdag limits.
-        let (block_spend_limit, block_synthesis_limit) =
-            (block.authority().spend_limit(block.height()), block.authority().synthesis_limit(block.height()));
-
-        // Construct the finalize state.
-        let state = FinalizeGlobalState::new::<N>(
-            block.round(),
-            block.height(),
-            block_timestamp,
-            block.cumulative_weight(),
-            block.cumulative_proof_target(),
-            block.previous_hash(),
-            block_spend_limit,
-            block_synthesis_limit,
-        )?;
-        // Ensure speculation over the unconfirmed transactions is correct and ensure each transaction is well-formed and unique.
-        let time_since_last_block = block.timestamp().saturating_sub(latest_block_timestamp);
-        let ratified_finalize_operations = self.vm.check_speculate(
-            state,
-            time_since_last_block,
-            block.ratifications(),
-            block.solutions(),
-            block.transactions(),
-            rng,
-        )?;
-
         // Retrieve the committee lookback.
         let committee_lookback = self
             .get_committee_lookback_for_round(block.round())?
