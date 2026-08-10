@@ -325,8 +325,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
         // Beacon authorities use the min_certificates subdag limits.
-        let (block_spend_limit, block_synthesis_limit) =
-            (block.authority().spend_limit(block.height()), block.authority().synthesis_limit(block.height()));
+        let (block_spend_limit, block_synthesis_limit) = block.authority().limits(block.height());
         FinalizeGlobalState::new::<N>(
             block.round(),
             block.height(),
@@ -611,8 +610,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .then_some(block.timestamp());
         // Determine the block spend and synthesis limits.
         // Beacon authorities use the min_certificates subdag limits.
-        let (block_spend_limit, block_synthesis_limit) =
-            (block.authority().spend_limit(block.height()), block.authority().synthesis_limit(block.height()));
+        let (block_spend_limit, block_synthesis_limit) = block.authority().limits(block.height());
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
             block.round(),

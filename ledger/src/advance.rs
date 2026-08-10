@@ -415,7 +415,10 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             (next_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default()).then_some(next_timestamp);
         // Beacon blocks have no subdag; enforce limits as if for a subdag with min_certificates.
         let (block_spend_limit, block_synthesis_limit) = match subdag {
+            #[cfg(not(feature = "test_limits"))]
             Some(subdag) => (subdag.spend_limit(next_height), subdag.synthesis_limit(next_height)),
+            #[cfg(feature = "test_limits")]
+            Some(_subdag) => (Subdag::<N>::min_spend_limit(next_height), Subdag::<N>::min_synthesis_limit(next_height)),
             None => (Subdag::<N>::min_spend_limit(next_height), Subdag::<N>::min_synthesis_limit(next_height)),
         };
         // Construct the finalize state.

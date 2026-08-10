@@ -308,11 +308,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
         // Determine the block's spend and synthesis limits.
-        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
-            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
-        } else {
-            (None, None)
-        };
+        let (block_spend_limit, block_synthesis_limit) = block.authority().limits(block.height());
         let state = FinalizeGlobalState::new::<N>(
             block.round(),
             block.height(),

@@ -116,26 +116,32 @@ impl<N: Network> Authority<N> {
         }
     }
 
-    /// Returns the block spend limit for this authority at `block_height`.
+    /// Returns the block spend and synthesis limits for this authority at `block_height`.
     ///
-    /// Quorum authorities use the subdag certificate count. Beacon authorities use the limit for
-    /// `min_certificates`, so block-wide spend limits are enforced on trusted/dev chains too.
-    pub fn spend_limit(&self, block_height: u32) -> Option<u64> {
+    /// Quorum authorities use the subdag certificate count. Beacon authorities use the limits for
+    /// `min_certificates`, so block-wide limits are enforced on trusted/dev chains too.
+    pub fn limits(&self, block_height: u32) -> (Option<u64>, Option<u64>) {
         match self {
-            Self::Quorum(subdag) => subdag.spend_limit(block_height),
-            Self::Beacon(_) => Subdag::<N>::min_spend_limit(block_height),
+            #[cfg(not(feature = "test_limits"))]
+            Self::Quorum(subdag) => (subdag.spend_limit(block_height), subdag.synthesis_limit(block_height)),
+            #[cfg(feature = "test_limits")]
+            Self::Quorum(_subdag) => {
+                (Subdag::<N>::min_spend_limit(block_height), Subdag::<N>::min_synthesis_limit(block_height))
+            }
+            Self::Beacon(_) => {
+                (Subdag::<N>::min_spend_limit(block_height), Subdag::<N>::min_synthesis_limit(block_height))
+            }
         }
     }
 
+    /// Returns the block spend limit for this authority at `block_height`.
+    pub fn spend_limit(&self, block_height: u32) -> Option<u64> {
+        self.limits(block_height).0
+    }
+
     /// Returns the block synthesis limit for this authority at `block_height`.
-    ///
-    /// Quorum authorities use the subdag certificate count. Beacon authorities use the limit for
-    /// `min_certificates`, so block-wide synthesis limits are enforced on trusted/dev chains too.
     pub fn synthesis_limit(&self, block_height: u32) -> Option<u64> {
-        match self {
-            Self::Quorum(subdag) => subdag.synthesis_limit(block_height),
-            Self::Beacon(_) => Subdag::<N>::min_synthesis_limit(block_height),
-        }
+        self.limits(block_height).1
     }
 }
 
@@ -160,5 +166,49 @@ pub mod test_helpers {
     /// Returns a list of sample authorities.
     pub fn sample_authorities(rng: &mut TestRng) -> Vec<Authority<CurrentNetwork>> {
         vec![sample_beacon_authority(rng), sample_quorum_authority(rng)]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use console::{network::MainnetV0, prelude::TestRng};
+    use snarkvm_ledger_narwhal_subdag::Subdag;
+
+    type CurrentNetwork = MainnetV0;
+
+    /// Beacon and (under `test_limits`) quorum authorities both return the paired min_* limits.
+    #[test]
+    fn test_authority_limits_pair_min_limits() {
+        let mut rng = TestRng::default();
+        let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(console::network::ConsensusVersion::V16).unwrap();
+        let v18_height = CurrentNetwork::CONSENSUS_HEIGHT(console::network::ConsensusVersion::V18).unwrap();
+
+        let expected = |height| {
+            (Subdag::<CurrentNetwork>::min_spend_limit(height), Subdag::<CurrentNetwork>::min_synthesis_limit(height))
+        };
+
+        let beacon = test_helpers::sample_beacon_authority(&mut rng);
+        for height in [v16_height, v18_height, u32::MAX] {
+            assert_eq!(beacon.limits(height), expected(height));
+            assert_eq!(beacon.spend_limit(height), expected(height).0);
+            assert_eq!(beacon.synthesis_limit(height), expected(height).1);
+        }
+
+        let quorum = test_helpers::sample_quorum_authority(&mut rng);
+        #[cfg(feature = "test_limits")]
+        for height in [v16_height, v18_height, u32::MAX] {
+            assert_eq!(quorum.limits(height), expected(height));
+        }
+
+        #[cfg(not(feature = "test_limits"))]
+        {
+            let Authority::Quorum(subdag) = &quorum else {
+                panic!("expected quorum authority");
+            };
+            for height in [v16_height, v18_height, u32::MAX] {
+                assert_eq!(quorum.limits(height), (subdag.spend_limit(height), subdag.synthesis_limit(height)));
+            }
+        }
     }
 }

@@ -115,6 +115,9 @@ test-helpers = [
 test_targets = [
   "snarkvm-console/test_targets",
 ]
+test_limits = [
+  "snarkvm-ledger-authority/test_limits",
+]
 dev-committee = []
 dev-print = [ "snarkvm-utilities/dev-print" ]
 timer = [ "aleo-std/timer" ]
