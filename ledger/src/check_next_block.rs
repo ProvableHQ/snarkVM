@@ -19,6 +19,8 @@ use crate::{narwhal::BatchHeader, puzzle::SolutionID};
 
 use anyhow::{Context, bail};
 
+use snarkvm_synthesizer_error::VmCheckBlockContentError;
+
 /// Wrapper for a block that has a valid subDAG, but where the block header,
 /// solutions, and transmissions have not been verified yet.
 ///
@@ -278,19 +280,27 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             None => self.get_epoch_hash(latest_block.height())?,
         };
 
-        // Ensure the block is correct.
-        let (expected_existing_solution_ids, expected_existing_transaction_ids) = block
-            .verify(
+        let (expected_existing_solution_ids, expected_existing_transaction_ids) =
+            match self.vm.check_block_content_inner(
+                block,
                 &latest_block,
+                latest_block_timestamp,
                 self.latest_state_root(),
                 &previous_committee_lookback,
                 &committee_lookback,
                 self.puzzle(),
                 latest_epoch_hash,
                 OffsetDateTime::now_utc().unix_timestamp(),
-                ratified_finalize_operations,
-            )
-            .map_err(|err| CheckBlockError::VerificationFailed { inner: err })?;
+                rng,
+            ) {
+                Ok(ids) => ids,
+                Err(VmCheckBlockContentError::Speculation(inner)) => {
+                    return Err(CheckBlockError::SpeculationFailed { inner });
+                }
+                Err(VmCheckBlockContentError::Verification(inner)) => {
+                    return Err(CheckBlockError::VerificationFailed { inner });
+                }
+            };
 
         // Ensure that the provers are within their stake bounds.
         if let Some(solutions) = block.solutions().deref() {

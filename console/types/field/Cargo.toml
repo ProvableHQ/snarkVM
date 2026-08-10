@@ -14,6 +14,11 @@ workspace = true
 [dependencies.snarkvm-console-types-boolean]
 workspace = true
 
+[dependencies.smallvec]
+version = "1.14"
+default-features = false
+features = ["const_generics"]
+
 [dependencies.zeroize]
 workspace = true
 features = [ "derive" ]
