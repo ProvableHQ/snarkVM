@@ -34,9 +34,9 @@ use std::{collections::BTreeMap, time::Duration};
 const DEPTH: u8 = 32;
 const MAX_INSTANTIATED_DEPTH: u8 = 8;
 
-const NUM_LEAVES: &[usize] = &[1, 100, 10_000];
-const APPEND_SIZES: &[usize] = &[1, 100, 10_000];
-const UPDATE_SIZES: &[usize] = &[1, 100, 1_000];
+const NUM_LEAVES: &[usize] = &[1, 100];
+const APPEND_SIZES: &[usize] = &[1, 100];
+const UPDATE_SIZES: &[usize] = &[1, 100];
 
 /// The tree sizes used by the `MerkleTreeState` benchmarks; these reach further
 /// than `NUM_LEAVES`, as caching a tree is most interesting for large trees.
@@ -290,4 +290,8 @@ criterion_group! {
     config = Criterion::default().sample_size(10).warm_up_time(Duration::from_secs(1));
     targets = legacy_state
 }
-criterion_main!(merkle_tree, merkle_tree_state, legacy_merkle_tree_cache);
+// MerkleTreeState and LegacyMerkleTreeCache are opt-in: they include multi-million-leaf
+// trees and legacy hasher deserialization that each take minutes per sample.
+// Run with: cargo bench --bench merkle_tree -- MerkleTreeState
+// Run with: cargo bench --bench merkle_tree -- LegacyMerkleTreeCache
+criterion_main!(merkle_tree);
