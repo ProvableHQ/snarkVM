@@ -20,6 +20,9 @@ mod translated_type_checks;
 // ConsensusVersion::V19-gated, but they were introduced at that point in time.
 mod closure_dynamic_targets;
 
+// Companion test covering the independent `get.record.dynamic` non-determinism source.
+mod get_record_dynamic_targets;
+
 use super::*;
 
 use super::test_v14::add_and_test_with_costs;

@@ -44,6 +44,8 @@ use console::{
         Value,
     },
 };
+use rand::SeedableRng;
+use rand_chacha::ChaChaRng;
 
 use indexmap::IndexMap;
 
@@ -396,8 +398,17 @@ impl<N: Network> GetRecordDynamic<N> {
             }
             None => {
                 // Sample an arbitrary value for the entry, consistent with the specified type.
+                // Note: This MUST be deterministic across all validators verifying the same deployment.
+                // The not-present branch is reached during `CheckDeployment` synthesis (a sampled dynamic
+                // record carries no data), and the sampled value is stored to a register that a program
+                // can feed into a `call.dynamic` target. Drawing it from the ambient `rand::rng()` would
+                // let the same deployment verify on some validators and fail on others. We therefore seed
+                // a deterministic RNG from the (deterministic) record root and entry identifier; the
+                // concrete value is a dummy witness used only for synthesis, so only its determinism matters.
                 let value = {
-                    let rng = &mut rand::rng();
+                    let root_seed = u64::from_bytes_le(&root.to_bytes_le()?[0..8])?;
+                    let entry_seed = u64::from_bytes_le(&entry_identifier.to_field()?.to_bytes_le()?[0..8])?;
+                    let rng = &mut ChaChaRng::seed_from_u64(root_seed ^ entry_seed);
                     let address = Address::<N>::rand(rng);
                     stack.sample_value(&address, &RegisterType::Plaintext(plaintext_type.clone()), rng)?
                 };
