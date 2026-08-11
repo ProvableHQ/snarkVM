@@ -69,8 +69,8 @@ pub enum ConsensusVersion {
     /// V18: Enables native credits record translation, introduces block-wide deployment limits,
     ///      and enforces canonical subDAG certificate ordering.
     V18 = 18,
-    /// V19: Adds more accurate type checking for the root call, and bounds the size of every
-    /// `PlaintextType` declared in a deployed program.
+    /// V19: Adds more accurate type checking for the root call, bounds the size of every
+    /// `PlaintextType` declared in a deployed program, and updates the number of validators.
     V19 = 19,
     /// V20: TBD
     V20 = 20,
@@ -490,10 +490,13 @@ mod tests {
 
     /// Ensure that `MAX_CERTIFICATES` increases and is correctly defined.
     /// See the constant declaration for an explanation why.
-    fn max_certificates_increasing<N: Network>() {
+    /// The versions in `exempt_versions` are permitted to decrease the value.
+    fn max_certificates_increasing<N: Network>(exempt_versions: &[ConsensusVersion]) {
         let mut previous_value = N::MAX_CERTIFICATES.first().unwrap().1;
-        for (_, value) in N::MAX_CERTIFICATES.iter().skip(1) {
-            assert!(*value >= previous_value);
+        for (version, value) in N::MAX_CERTIFICATES.iter().skip(1) {
+            if !exempt_versions.contains(version) {
+                assert!(*value >= previous_value, "MAX_CERTIFICATES must not decrease at {version:?}");
+            }
             previous_value = *value;
         }
     }
@@ -609,8 +612,10 @@ mod tests {
         consensus_config_returns_some::<TestnetV0>();
         consensus_config_returns_some::<CanaryV0>();
 
-        max_certificates_increasing::<MainnetV0>();
-        max_certificates_increasing::<CanaryV0>();
+        max_certificates_increasing::<MainnetV0>(&[]);
+        // Testnet lowers the maximum committee size at `V19`.
+        max_certificates_increasing::<TestnetV0>(&[ConsensusVersion::V19]);
+        max_certificates_increasing::<CanaryV0>(&[]);
 
         max_array_elements_increasing::<MainnetV0>();
         max_array_elements_increasing::<TestnetV0>();
