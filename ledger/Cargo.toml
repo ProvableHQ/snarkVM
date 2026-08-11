@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger"
-version = "4.8.1"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A node ledger for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -86,7 +86,7 @@ locktick = [
   "snarkvm-ledger-store/locktick",
   "snarkvm-synthesizer/locktick"
 ]
-metrics = [ "snarkvm-ledger-committee/metrics" ]
+metrics = [ "snarkvm-ledger-committee/metrics", "snarkvm-ledger-store/metrics" ]
 prop-tests = [ "snarkvm-ledger-committee/prop-tests" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
 serial = [

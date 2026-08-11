@@ -413,6 +413,7 @@ impl<N: Network> GetRecordDynamic<N> {
                     let mut rng = ChaChaRng::seed_from_u64(root_seed ^ entry_seed);
                     let address = Address::<N>::rand(&mut rng);
                     stack.sample_value(&address, &RegisterType::Plaintext(plaintext_type.clone()), &mut rng)?
+                };
 
                 let entry = match value {
                     // When visibility is specified, the visibility bits are injected as constants in the circuit.

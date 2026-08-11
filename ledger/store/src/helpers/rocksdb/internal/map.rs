@@ -55,6 +55,13 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> InnerData
         let checkpoint = rocksdb::checkpoint::Checkpoint::new(&self.database)?;
         checkpoint.create_checkpoint(path).map_err(|e| e.into_string())
     }
+
+    /// Reads RocksDB internal properties and publishes them to the metrics registry.
+    /// Any map can be used since they all share the same underlying `RocksDB` instance.
+    #[cfg(feature = "metrics")]
+    pub fn export_rocksdb_metrics(&self) {
+        self.database.export_rocksdb_metrics();
+    }
 }
 
 impl<

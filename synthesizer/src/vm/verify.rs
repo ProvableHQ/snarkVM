@@ -429,6 +429,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         }
                     }
                 }
+                if consensus_version >= ConsensusVersion::V19 {
+                    // Bound the size in bits of every plaintext type declared in the program. This runs
+                    // before deployment verification samples values, since sampling walks the leaves of
+                    // the declared type.
+                    let max_plaintext_type_bits =
+                        consensus_config_value!(N, MAX_PLAINTEXT_TYPE_SIZE_IN_BITS, current_block_height).ok_or_else(
+                            || anyhow!("Missing consensus config value: MAX_PLAINTEXT_TYPE_SIZE_IN_BITS"),
+                        )?;
+                    let stack = Stack::new(&self.process, deployment.program())?;
+                    check_program_plaintext_sizes(deployment.program(), &stack, max_plaintext_type_bits)?;
+                }
 
                 // Determine if any of the array types exceed the maximum array elements.
                 // Do not perform this check if the consensus version is beyond the latest version threshold for `MAX_ARRAY_ELEMENTS`.
@@ -644,7 +655,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Verify the deployment if it has not been verified before.
                 if !is_partially_verified {
                     // Verify the deployment.
-                    match try_vm_runtime!(|| self.check_deployment_internal(deployment, rng)) {
+                    match try_vm_runtime(|| self.check_deployment_internal(deployment, rng)) {
                         Ok(result) => result?,
                         Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
                     }
@@ -679,11 +690,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 );
 
                 // Verify the execution.
-                match try_vm_runtime!(|| self.check_execution_internal(
-                    execution,
-                    &execution_stacks,
-                    is_partially_verified
-                )) {
+                match try_vm_runtime(|| {
+                    self.check_execution_internal(execution, &execution_stacks, is_partially_verified)
+                }) {
                     Ok(result) => result?,
                     Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
                 }
@@ -941,13 +950,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Verify the fee, if it has not been partially-verified before.
         let verification = match is_partially_verified {
             true => Ok(()),
-            false => self.process.verify_fee(
-                consensus_version,
-                varuna_version,
-                inclusion_version,
-                fee,
-                deployment_or_execution_id,
-            ),
+            false => match try_vm_runtime(|| {
+                self.process.verify_fee(
+                    consensus_version,
+                    varuna_version,
+                    inclusion_version,
+                    fee,
+                    deployment_or_execution_id,
+                )
+            }) {
+                Ok(result) => result,
+                Err(_) => bail!("VM safely halted during fee verification"),
+            },
         };
         lap!(timer, "Verify the fee");
 

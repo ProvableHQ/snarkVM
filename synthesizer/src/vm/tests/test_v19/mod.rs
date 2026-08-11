@@ -16,6 +16,9 @@
 // Tests that the translation-marked variants of Input and Output are checked correctly.
 mod translated_type_checks;
 
+// Tests for the V19 plaintext-type size bound.
+mod plaintext_size;
+
 // Tests on the resolution of dynamic call targets involving closures. The relevant changes are not
 // ConsensusVersion::V19-gated, but they were introduced at that point in time.
 mod closure_dynamic_targets;
@@ -24,6 +27,3 @@ mod closure_dynamic_targets;
 mod get_record_dynamic_targets;
 
 use super::*;
-
-use super::test_v14::add_and_test_with_costs;
-use crate::vm::test_helpers::*;
