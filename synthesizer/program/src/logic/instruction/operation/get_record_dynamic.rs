@@ -406,12 +406,13 @@ impl<N: Network> GetRecordDynamic<N> {
                 // a deterministic RNG from the (deterministic) record root and entry identifier; the
                 // concrete value is a dummy witness used only for synthesis, so only its determinism matters.
                 let value = {
-                    let root_seed = u64::from_bytes_le(&root.to_bytes_le()?[0..8])?;
-                    let entry_seed = u64::from_bytes_le(&entry_identifier.to_field()?.to_bytes_le()?[0..8])?;
-                    let rng = &mut ChaChaRng::seed_from_u64(root_seed ^ entry_seed);
-                    let address = Address::<N>::rand(rng);
-                    stack.sample_value(&address, &RegisterType::Plaintext(plaintext_type.clone()), rng)?
-                };
+                    let root_bytes = root.to_bytes_le()?;
+                    let entry_bytes = entry_identifier.to_field()?.to_bytes_le()?;
+                    let root_seed = u64::from_bytes_le(&root_bytes[..8])?;
+                    let entry_seed = u64::from_bytes_le(&entry_bytes[..8])?;
+                    let mut rng = ChaChaRng::seed_from_u64(root_seed ^ entry_seed);
+                    let address = Address::<N>::rand(&mut rng);
+                    stack.sample_value(&address, &RegisterType::Plaintext(plaintext_type.clone()), &mut rng)?
 
                 let entry = match value {
                     // When visibility is specified, the visibility bits are injected as constants in the circuit.
