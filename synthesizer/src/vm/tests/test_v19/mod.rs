@@ -19,11 +19,8 @@ mod translated_type_checks;
 // Tests for the V19 plaintext-type size bound.
 mod plaintext_size;
 
-// Tests on the resolution of dynamic call targets involving closures. The relevant changes are not
-// ConsensusVersion::V19-gated, but they were introduced at that point in time.
-mod closure_dynamic_targets;
-
-// Companion test covering the independent `get.record.dynamic` non-determinism source.
-mod get_record_dynamic_targets;
+// Tests on the deployment of programs with non-deterministic dynamic-call targets. The relevant
+// changes are not ConsensusVersion::V19-gated, but they were introduced at that point in time.
+mod non_deterministic_dynamic_targets;
 
 use super::*;
