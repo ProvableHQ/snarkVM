@@ -203,7 +203,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             })
             .collect::<Result<Vec<_>>>()?;
         // Sort the deployment transaction IDs by their block heights.
-        deployment_ids.sort_unstable_by(|(_, a), (_, b)| a.cmp(b));
+        deployment_ids.sort_unstable_by_key(|(_, a)| *a);
 
         // Load the deployments in order of their block heights.
         const PARALLELIZATION_FACTOR: usize = 256;
@@ -1757,7 +1757,8 @@ function c:
             .unwrap();
 
         // Deploy the first program.
-        let deployment_block = sample_next_block(&vm, &caller_private_key, &[deployment_1.clone()], rng).unwrap();
+        let deployment_block =
+            sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&deployment_1), rng).unwrap();
         vm.add_next_block(&deployment_block).unwrap();
 
         // Create the deployment for the second program.
@@ -1777,7 +1778,8 @@ function b:
             .unwrap();
 
         // Deploy the second program.
-        let deployment_block = sample_next_block(&vm, &caller_private_key, &[deployment_2.clone()], rng).unwrap();
+        let deployment_block =
+            sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&deployment_2), rng).unwrap();
         vm.add_next_block(&deployment_block).unwrap();
 
         // Create the deployment for the third program.
@@ -3015,7 +3017,7 @@ finalize transfer_public_to_private:
         vm.check_transaction(&transaction, None, rng).unwrap();
 
         // Add the transaction to a block and update the VM.
-        let block = sample_next_block(&vm, &caller_private_key, &[transaction.clone()], rng).unwrap();
+        let block = sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&transaction), rng).unwrap();
 
         // Update the VM.
         vm.add_next_block(&block).unwrap();
@@ -3704,13 +3706,7 @@ function check:
 
         // Generate the authorization that will contain multiple transitions
         let authorization = process
-            .authorize::<CurrentAleo, _>(
-                &private_key,
-                grandparent_program.id(),
-                &function_name,
-                vec![input].iter(),
-                rng,
-            )
+            .authorize::<CurrentAleo, _>(&private_key, grandparent_program.id(), &function_name, [input].iter(), rng)
             .unwrap();
 
         // Assert the Authorization has more than 1 transitions

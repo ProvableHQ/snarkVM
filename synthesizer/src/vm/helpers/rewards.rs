@@ -276,7 +276,7 @@ mod tests {
         println!("staking_rewards: {}ms", timer.elapsed().as_millis());
         assert_eq!(next_stakers.len(), all_stakers.len());
         for ((staker, (validator, stake)), (next_staker, (next_validator, next_stake))) in
-            all_stakers.into_iter().zip(next_stakers.into_iter())
+            all_stakers.into_iter().zip(next_stakers)
         {
             assert_eq!(staker, next_staker);
             assert_eq!(validator, next_validator);
@@ -315,7 +315,7 @@ mod tests {
         println!("staking_rewards: {}ms", timer.elapsed().as_millis());
         assert_eq!(next_stakers.len(), stakers.len());
         for ((staker, (validator, stake)), (next_staker, (next_validator, next_stake))) in
-            stakers.clone().into_iter().zip(next_stakers.clone().into_iter())
+            stakers.clone().into_iter().zip(next_stakers.clone())
         {
             assert_eq!(staker, next_staker);
             assert_eq!(validator, next_validator);
@@ -384,7 +384,7 @@ mod tests {
         println!("staking_rewards: {}ms", timer.elapsed().as_millis());
         assert_eq!(next_stakers.len(), stakers.len());
         for ((staker, (validator, stake)), (next_staker, (next_validator, next_stake))) in
-            stakers.into_iter().zip(next_stakers.into_iter())
+            stakers.into_iter().zip(next_stakers)
         {
             assert_eq!(staker, next_staker);
             assert_eq!(validator, next_validator);
