@@ -679,17 +679,29 @@ fn test_cast_with_external_structs_false_type() {
     .unwrap();
 
     let err_old = {
-        let vm_old = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V17).unwrap(), rng);
+        let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap();
+        let vm_old = sample_vm_at_height(height, rng);
 
         vm_old.process().lock().add_program(&program_a).unwrap();
-        vm_old.process().lock().add_program(&program_b).unwrap_err().to_string()
+
+        // Ensure the `add_program` call did not change the VM's block height (and therefore
+        // the consensus version)
+        assert_eq!(vm_old.block_store().current_block_height(), height);
+
+        vm_old.deploy(&sample_genesis_private_key(rng), &program_b, None, 0, None, rng).unwrap_err().to_string()
     };
 
     let err_new = {
-        let vm_new = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
+        let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap();
+        let vm_new = sample_vm_at_height(height, rng);
 
         vm_new.process().lock().add_program(&program_a).unwrap();
-        vm_new.process().lock().add_program(&program_b).unwrap_err().to_string()
+
+        // Ensure the `add_program` call did not change the VM's block height (and therefore
+        // the consensus version)
+        assert_eq!(vm_new.block_store().current_block_height(), height);
+
+        vm_new.deploy(&sample_genesis_private_key(rng), &program_b, None, 0, None, rng).unwrap_err().to_string()
     };
 
     assert_eq!(err_old, err_new);
@@ -784,21 +796,33 @@ fn test_cast_with_same_name_external_structs() {
     // TODO (Antonio) document
 
     let err_old = {
-        let vm_old = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V17).unwrap(), rng);
+        let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap();
+        let vm_old = sample_vm_at_height(height, rng);
 
         vm_old.process().lock().add_program(&program_a).unwrap();
         vm_old.process().lock().add_program(&program_b).unwrap();
         vm_old.process().lock().add_program(&program_b2).unwrap();
-        vm_old.process().lock().add_program(&program_c).unwrap_err().to_string()
+
+        // Ensure the three `add_program` calls did not change the VM's block height (and therefore
+        // the consensus version)
+        assert_eq!(vm_old.block_store().current_block_height(), height);
+
+        vm_old.deploy(&sample_genesis_private_key(rng), &program_c, None, 0, None, rng).unwrap_err().to_string()
     };
 
     let err_new = {
-        let vm_new = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
+        let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap();
+        let vm_new = sample_vm_at_height(height, rng);
 
         vm_new.process().lock().add_program(&program_a).unwrap();
         vm_new.process().lock().add_program(&program_b).unwrap();
         vm_new.process().lock().add_program(&program_b2).unwrap();
-        vm_new.process().lock().add_program(&program_c).unwrap_err().to_string()
+
+        // Ensure the three `add_program` calls did not change the VM's block height (and therefore
+        // the consensus version)
+        assert_eq!(vm_new.block_store().current_block_height(), height);
+
+        vm_new.deploy(&sample_genesis_private_key(rng), &program_c, None, 0, None, rng).unwrap_err().to_string()
     };
 
     assert_eq!(err_old, err_new);
