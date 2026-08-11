@@ -625,7 +625,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         Ok(raw_key)
     }
 
-    fn get_raw<Q>(&self, key: &Q) -> Result<Option<rocksdb::DBPinnableSlice>>
+    fn get_raw<Q>(&self, key: &Q) -> Result<Option<rocksdb::DBPinnableSlice<'_>>>
     where
         K: Borrow<Q>,
         Q: Serialize + ?Sized,

@@ -1103,7 +1103,7 @@ constructor:
             .execute(
                 &caller_private_key,
                 (format!("test_{}.aleo", Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1), "test"),
-                vec![Value::from_str("0field").unwrap(), Value::from_str("1field").unwrap()].iter(),
+                [Value::from_str("0field").unwrap(), Value::from_str("1field").unwrap()].iter(),
                 None,
                 0,
                 None,

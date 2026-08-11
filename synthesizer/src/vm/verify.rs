@@ -623,13 +623,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         "Invalid deployment transaction '{id}' - the existing program does not have a constructor, but the deployment program does"
                                     );
                                     // If the consensus version is V10 or greater, then check that each function's **record** output registers match the existing program.
-                                    if consensus_version >= ConsensusVersion::V10 {
-                                        if let Err(e) = check_output_register_indices_unchanged(
+                                    if consensus_version >= ConsensusVersion::V10
+                                        && let Err(e) = check_output_register_indices_unchanged(
                                             existing_program,
                                             deployment.program(),
-                                        ) {
-                                            bail!("Invalid deployment transaction '{id}' - {e}")
-                                        }
+                                        )
+                                    {
+                                        bail!("Invalid deployment transaction '{id}' - {e}")
                                     }
                                 }
                             }
