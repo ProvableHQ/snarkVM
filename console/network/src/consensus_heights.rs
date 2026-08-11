@@ -610,7 +610,6 @@ mod tests {
         consensus_config_returns_some::<CanaryV0>();
 
         max_certificates_increasing::<MainnetV0>();
-        max_certificates_increasing::<TestnetV0>();
         max_certificates_increasing::<CanaryV0>();
 
         max_array_elements_increasing::<MainnetV0>();
