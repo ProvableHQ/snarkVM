@@ -17,6 +17,8 @@ use crate::{DynamicFuture, Identifier, StructType};
 
 use super::*;
 
+use std::collections::HashMap;
+
 impl<N: Network> FinalizeType<N> {
     /// Returns the number of bits of a finalize type.
     /// Note. The plaintext variant is assumed to be an argument of a `Future` and this does not have a "raw" serialization.
@@ -53,7 +55,9 @@ impl<N: Network> FinalizeType<N> {
 
         match self {
             Self::Plaintext(plaintext_type) => {
-                plaintext_type.size_in_bits_internal(get_struct, get_external_struct, depth)
+                // Memoize within this argument only; see `PlaintextType::size_in_bits` for why the walk needs it.
+                let mut memoized = HashMap::new();
+                Ok(plaintext_type.size_in_bits_internal(get_struct, get_external_struct, depth, &mut memoized)?.0)
             }
             Self::Future(locator) => {
                 // Initialize the size in bits.
