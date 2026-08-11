@@ -89,7 +89,10 @@ impl<N: Network> Stack<N> {
         &self,
         consensus_version: ConsensusVersion,
         deployment: &Deployment<N>,
-        rng: &mut R,
+        // Retained for API compatibility. Deployment verification is intentionally deterministic:
+        // all randomness is drawn from `seeded_rng` (seeded by the deployment ID) so that every
+        // validator computes the same result.
+        _rng: &mut R,
     ) -> Result<()> {
         let timer = timer!("Stack::verify_deployment");
 
@@ -202,7 +205,9 @@ impl<N: Network> Stack<N> {
                 is_root,
                 program_checksum,
                 false,
-                rng,
+                // Draw the request nonce from the seeded RNG as well, so no part of the
+                // `CheckDeployment` synthesis depends on the ambient RNG. See the burner note above.
+                &mut seeded_rng,
             )?;
             lap!(timer, "Compute the request for {}", function.name());
             // Initialize the assignments.
@@ -284,25 +289,33 @@ impl<N: Network> Stack<N> {
                 .iter()
                 .map(|(record_name, _record_type)| {
                     // Construct a random `TranslationAssignment`.
+                    // Note: All randomness here is drawn from `seeded_rng` (seeded by the deployment
+                    // ID), not the ambient `_rng`, so that the translation assignment — and thus the
+                    // certificate check below — is identical across all validators.
                     let program_id = *self.program_id();
-                    let function_id = Field::<N>::from_u64(Uniform::rand(rng));
+                    let function_id = Field::<N>::from_u64(Uniform::rand(&mut seeded_rng));
                     let record_name = *record_name;
-                    let record_static = self.sample_record(&Address::rand(rng), &record_name, Group::rand(rng), rng)?;
+                    let record_static = self.sample_record(
+                        &Address::rand(&mut seeded_rng),
+                        &record_name,
+                        Group::rand(&mut seeded_rng),
+                        &mut seeded_rng,
+                    )?;
                     let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
-                    let translation_index: u16 = Uniform::rand(rng);
-                    let tvk = Uniform::rand(rng);
-                    let record_register_index = Uniform::rand(rng);
-                    let record_view_key: Option<Field<N>> = UniformExt::rand_option(rng);
-                    let gamma: Option<Group<N>> = UniformExt::rand_option(rng);
+                    let translation_index: u16 = Uniform::rand(&mut seeded_rng);
+                    let tvk = Uniform::rand(&mut seeded_rng);
+                    let record_register_index = Uniform::rand(&mut seeded_rng);
+                    let record_view_key: Option<Field<N>> = UniformExt::rand_option(&mut seeded_rng);
+                    let gamma: Option<Group<N>> = UniformExt::rand_option(&mut seeded_rng);
                     let id_dynamic = compute_console_dynamic_or_external_record_id(
                         function_id,
                         record_dynamic.to_fields()?,
                         tvk,
                         U16::new(record_register_index),
                     )?;
-                    let is_to_static = Uniform::rand(rng);
-                    let is_external_record = Uniform::rand(rng);
-                    let id_static = Uniform::rand(rng);
+                    let is_to_static = Uniform::rand(&mut seeded_rng);
+                    let is_external_record = Uniform::rand(&mut seeded_rng);
+                    let id_static = Uniform::rand(&mut seeded_rng);
 
                     lap!(timer, "Sample the inputs to the translation circuit for record {record_name}");
 
