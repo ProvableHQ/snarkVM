@@ -1060,6 +1060,25 @@ impl<N: Network> ProgramCore<N> {
             || self.views.values().any(|view| view.contains_external_struct())
     }
 
+    /// Returns `true` if any of the finalize-type (finalize, constructor and view) contains a cast
+    /// to an external struct.
+    #[inline]
+    pub fn finalize_casts_external_struct(&self) -> bool {
+        // Check every finalize-type scope: function finalize blocks, the constructor, and views.
+        self.functions
+            .values()
+            .filter_map(|function| function.finalize_logic())
+            .flat_map(|finalize| finalize.commands())
+            .chain(self.constructor.iter().flat_map(|constructor| constructor.commands()))
+            .chain(self.views.values().flat_map(|view| view.commands()))
+            .any(|command| {
+                matches!(command, Command::Instruction(instruction)
+                    if matches!(instruction, Instruction::Cast(cast)
+                    if matches!(cast.cast_type(), CastType::Plaintext(PlaintextType::ExternalStruct(..))
+                )))
+            })
+    }
+
     /// Returns `true` if this program violates pre-V13 rules for external records
     /// or futures by containing registers with non-local struct types across program boundaries.
     ///

@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use console::network::varuna_version_from_consensus;
+use snarkvm_synthesizer_process::FinalizeTypes;
 
 use super::*;
 
@@ -245,8 +246,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // If the `CONSENSUS_VERSION` is less than `V13`, ensure that
                 //   - the program does not include V13 syntax
                 //   - the program does not use the external struct syntax `some_program.aleo/Struct`
-                // If the `CONSENSUS_VERSION` is greater than or equal to `V13`, then verify that:
-                //   - the program's mappings do not use non-existent structs.
+                // If the `CONSENSUS_VERSION` is less than `V19`, ensure that
+                //   - the program does not break the pre-V19 version of `matches_struct` in casts to external structs within finalize-type scopes.
                 // If the `CONSENSUS_VERSION` is less than `V14`, ensure that
                 //   - the program does not include V14 syntax (snark.verify, aleo::GENERATOR, identifier literals/types)
                 //   - the argument bit size of futures does not exceed the maximum allowed size of u16::MAX.
@@ -363,6 +364,84 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         !deployment.program().contains_v16_syntax(),
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V16`"
                     );
+                }
+                if consensus_version < ConsensusVersion::V19 {
+                    // Legacy check that mirrors pre-V19 checks on cast-to-external-struct
+                    // instructions, which performed a single-stack-only call to `matches_struct`.
+                    // Since this involves building stack and record-tracking machinery, we gate it
+                    // behind a cheap instruction-level condition.
+                    if deployment.program().finalize_casts_external_struct() {
+                        // Build a lightweight stack (skipping the full `initialize_and_check`) and
+                        // validate only the external-struct casts in the finalize-type scopes.
+                        let stack = Stack::new_raw(&self.process, deployment.program(), deployment.edition())?;
+
+                        // Auxiliary function which performs the pre-V19 version of
+                        // cast-to-external-struct checks.
+                        fn check_scope<'a, N: Network>(
+                            stack: &Stack<N>,
+                            inputs: impl IntoIterator<
+                                Item = (&'a console::program::Register<N>, &'a console::program::FinalizeType<N>),
+                            >,
+                            positions: &HashMap<Identifier<N>, usize>,
+                            commands: &[Command<N>],
+                        ) -> Result<()> {
+                            let mut finalize_types = FinalizeTypes::new();
+
+                            // Accumulate the input register types.
+                            for (register, finalize_type) in inputs {
+                                finalize_types.check_input(stack, register, finalize_type)?;
+                            }
+
+                            for command in commands {
+                                // This also helps accumulate the types of non-input registers.
+                                finalize_types.check_command(stack, positions, command)?;
+
+                                if let Command::Instruction(snarkvm_synthesizer_program::Instruction::Cast(cast)) =
+                                    command
+                                    && let snarkvm_synthesizer_program::CastType::Plaintext(
+                                        console::program::PlaintextType::ExternalStruct(locator),
+                                    ) = cast.cast_type()
+                                {
+                                    let external_stack = stack.get_external_stack(locator.program_id())?;
+                                    let struct_ = external_stack.program().get_struct(locator.resource())?;
+                                    // This call matches the pre-V19 `matches_struct` call, which only
+                                    // admitted one stack and to which `external_stack` was passed.
+                                    finalize_types.matches_struct(
+                                        &*external_stack,
+                                        &*external_stack,
+                                        cast.operands(),
+                                        struct_,
+                                    )?;
+                                }
+                            }
+                            Ok(())
+                        }
+
+                        // Run the legacy check on the constructor (which has no inputs).
+                        if let Some(constructor) = stack.program().constructor() {
+                            check_scope(&stack, [], constructor.positions(), constructor.commands())?;
+                        }
+                        // Run the legacy check on each function's finalize block.
+                        for function in stack.program().functions().values() {
+                            if let Some(finalize) = function.finalize_logic() {
+                                check_scope(
+                                    &stack,
+                                    finalize.inputs().iter().map(|input| (input.register(), input.finalize_type())),
+                                    finalize.positions(),
+                                    finalize.commands(),
+                                )?;
+                            }
+                        }
+                        // Run the legacy check on each view.
+                        for view in stack.program().views().values() {
+                            check_scope(
+                                &stack,
+                                view.inputs().iter().map(|input| (input.register(), input.finalize_type())),
+                                view.positions(),
+                                view.commands(),
+                            )?;
+                        }
+                    }
                 }
 
                 // Checks required for current and future consensus versions (>= V9).

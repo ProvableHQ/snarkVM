@@ -19,4 +19,7 @@ mod translated_type_checks;
 // Tests for the V19 plaintext-type size bound.
 mod plaintext_size;
 
+// Tests on stack fetching for external-struct type checks
+mod external_struct_stacks;
+
 use super::*;

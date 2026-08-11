@@ -1,0 +1,1057 @@
+// Copyright (c) 2019-2026 Provable Inc.
+// This file is part of the snarkVM library.
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at:
+
+// http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use super::*;
+
+// Checks that various instances of casts to external structs or from external-struct members
+// function as expected. This is tested in both the function (i.e. private, RegisterType) setting as
+// well as the public (i.e. finalize, FinalizeType) one.
+#[test]
+fn test_cast_with_external_structs_only() {
+    let rng = &mut TestRng::default();
+
+    let program_a = Program::from_str(
+        r"
+        program program_a.aleo;
+
+        struct struct_a:
+            val as u8;
+
+        struct struct_d:
+            a as address;
+            b as address;
+            c as address;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    let program_b = Program::from_str(
+        r"
+        import program_a.aleo;
+        program program_b.aleo;
+
+        struct struct_b:
+            a as program_a.aleo/struct_a;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    // This is a distinct program from program_b.aleo, but both declare a struct with the same name
+    // and member specification.
+    let program_b2 = Program::from_str(
+        r"
+        import program_a.aleo;
+        program program_b2.aleo;
+
+        struct struct_b:
+            a as program_a.aleo/struct_a;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    let program_c = Program::from_str(
+        r"
+        import program_a.aleo;
+        import program_b.aleo;
+        import program_b2.aleo;
+        program program_c.aleo;
+
+        struct struct_c:
+            a as program_a.aleo/struct_a;
+            b as program_b.aleo/struct_b;
+
+        struct struct_e:
+            a as address;
+            b as address;
+            c as address;
+
+        // Case 1 / function: The function casts external structs defined in program_a and program_b, then casts a struct_c.
+        function run_1:
+            input r0 as u8.private;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 into r2 as program_b.aleo/struct_b;
+            cast r1 r2 into r3 as struct_c;
+
+            output r3 as struct_c.private;
+
+        // Case 2 / function: Similar to case 1 but with a cast involving an external-struct member read (r1.val) into an external struct.
+        function run_2:
+            input r0 as u8.private;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1.val into r2 as program_a.aleo/struct_a;
+            cast r2 into r3 as program_b.aleo/struct_b;
+            cast r2 r3 into r4 as struct_c;
+
+            output r4 as struct_c.private;
+
+        // Case 3 / function: Here struct_c is cast from an external-struct member received as an argument and
+        //                    an external-struct member cast inside the function itself.
+        function run_3:
+            input r0 as program_a.aleo/struct_a.private;
+
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r0 r1 into r2 as struct_c;
+
+            output r2 as struct_c.private;
+
+        // Case 4 / function: Similar to case 2, but the target of the cast is the local struct_c.
+        // (`r1.a`) of the received external struct.
+        function run_4:
+            input r0 as program_a.aleo/struct_a.private;
+
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r1.a r1 into r2 as struct_c;
+
+            output r2 as struct_c.private;
+
+        // Case 5 / function: Here the same external struct struct_a is cast into a program_b/struct_b and a program_b2/struct_b.
+        function run_5:
+            input r0 as program_a.aleo/struct_a.private;
+
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r0 into r2 as program_b2.aleo/struct_b;
+            cast r2.a r1 into r3 as struct_c;
+
+            output r3 as struct_c.private;
+
+
+        // Case 6 / function: Tests casts involving the special, private-side-only operands signer, caller and program_id.
+        function run_6:
+            cast self.signer self.caller program_a.aleo into r0 as program_a.aleo/struct_d;
+            cast r0.a r0.b r0.c into r1 as struct_e;
+            output r1 as struct_e.private;
+
+        // Case 7 / function: Tests a three-level struct access involving external structs.
+        function run_7:
+            cast 24u8 into r0 as program_a.aleo/struct_a;
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r0 r1 into r2 as struct_c;
+            cast r2.b.a.val into r3 as u8;
+
+            output r3 as u8.private;
+
+        // Case 8 / function: Tests a cast to external struct one of whose operands involves a two-level struct access.
+        function run_8:
+            cast 24u8 into r0 as program_a.aleo/struct_a;
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r0 r1 into r2 as struct_c;
+            cast r2.b.a into r3 as program_b2.aleo/struct_b;
+
+            output r3 as program_b2.aleo/struct_b.private;
+
+        // Case 9 / finalize: Finalize-side mirror of case 1.
+        function run_9:
+            input r0 as u8.public;
+            async run_9 r0 into r1;
+            output r1 as program_c.aleo/run_9.future;
+
+        finalize run_9:
+            input r0 as u8.public;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 into r2 as program_b.aleo/struct_b;
+            cast r1 r2 into r3 as struct_c;
+
+        // Case 10 / finalize: Finalize-side mirror of case 2.
+        function run_10:
+            input r0 as u8.public;
+            async run_10 r0 into r1;
+            output r1 as program_c.aleo/run_10.future;
+
+        finalize run_10:
+            input r0 as u8.public;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1.val into r2 as program_a.aleo/struct_a;
+            cast r2 into r3 as program_b.aleo/struct_b;
+            cast r2 r3 into r4 as struct_c;
+
+        // Case 11 / finalize: Finalize-side mirror of case 3.
+        function run_11:
+            input r0 as program_a.aleo/struct_a.public;
+            async run_11 r0 into r1;
+            output r1 as program_c.aleo/run_11.future;
+
+        finalize run_11:
+            input r0 as program_a.aleo/struct_a.public;
+
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r0 r1 into r2 as struct_c;
+
+        // Case 12 / finalize: Finalize-side mirror of case 4.
+        function run_12:
+            input r0 as program_a.aleo/struct_a.public;
+            async run_12 r0 into r1;
+            output r1 as program_c.aleo/run_12.future;
+
+        finalize run_12:
+            input r0 as program_a.aleo/struct_a.public;
+
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r1.a r1 into r2 as struct_c;
+
+        // Case 13 / finalize: Finalize-side mirror of case 5.
+        function run_13:
+            input r0 as program_a.aleo/struct_a.public;
+            async run_13 r0 into r1;
+            output r1 as program_c.aleo/run_13.future;
+
+        finalize run_13:
+            input r0 as program_a.aleo/struct_a.public;
+
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r0 into r2 as program_b2.aleo/struct_b;
+            cast r2.a r1 into r3 as struct_c;
+
+        // Case 14 / finalize: Finalize-side mirror of case 6.
+        function run_14:
+            async run_14 into r0;
+            output r0 as program_c.aleo/run_14.future;
+
+        finalize run_14:
+            cast program_a.aleo program_b.aleo program_c.aleo into r0 as program_a.aleo/struct_d;
+            cast r0.a r0.b r0.c into r1 as struct_e;
+
+        // Case 15 / finalize: Finalize-side mirror of case 7.
+        function run_15:
+            async run_15 into r0;
+            output r0 as program_c.aleo/run_15.future;
+
+        finalize run_15:
+            cast 24u8 into r0 as program_a.aleo/struct_a;
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r0 r1 into r2 as struct_c;
+            cast r2.b.a.val into r3 as u8;
+
+        // Case 16 / finalize: Finalize-side mirror of case 8.
+        function run_16:
+            async run_16 into r0;
+            output r0 as program_c.aleo/run_16.future;
+
+        finalize run_16:
+            cast 24u8 into r0 as program_a.aleo/struct_a;
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r0 r1 into r2 as struct_c;
+            cast r2.b.a into r3 as program_b2.aleo/struct_b;
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    ).unwrap();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
+
+    // The cases are documented in the source of program_c.aleo above.
+    vm.process().lock().add_program(&program_a).unwrap();
+    vm.process().lock().add_program(&program_b).unwrap();
+    vm.process().lock().add_program(&program_b2).unwrap();
+
+    let transaction = vm.deploy(&caller_private_key, &program_c, None, 0, None, rng).unwrap();
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction], rng);
+}
+
+// Checks that various instances of casts to arrays involving external structs and their members, as
+// well as structs having arrays as members, work as expected. This is tested in both the function
+// (i.e. private, RegisterType) setting as well as the public (i.e. finalize, FinalizeType) one.
+#[test]
+fn test_cast_with_external_structs_in_arrays() {
+    let rng = &mut TestRng::default();
+
+    let program_a = Program::from_str(
+        r"
+        program program_a.aleo;
+
+        struct struct_a:
+            val as u8;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    let program_b = Program::from_str(
+        r"
+        import program_a.aleo;
+        program program_b.aleo;
+
+        struct struct_b:
+            a as program_a.aleo/struct_a;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    // This is a distinct program from program_b.aleo, but both declare a struct with the same name
+    // and member specification.
+    let program_b2 = Program::from_str(
+        r"
+        import program_a.aleo;
+        program program_b2.aleo;
+
+        struct struct_b:
+            a as program_a.aleo/struct_a;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    let program_c = Program::from_str(
+        r"
+        import program_a.aleo;
+        import program_b.aleo;
+        import program_b2.aleo;
+        program program_c.aleo;
+
+        struct struct_c:
+            a as program_a.aleo/struct_a;
+            b as program_b.aleo/struct_b;
+
+        // struct containing an array whose elements are external structs.
+        struct struct_arr:
+            arr as [program_a.aleo/struct_a; 2u32];
+
+        // Case 1 / function: Cast an [struct_c; 2] from a register holding a struct_c.
+        function fun_1:
+            input r0 as u8.private;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 into r2 as program_b.aleo/struct_b;
+            cast r1 r2 into r3 as struct_c;
+            cast r3 r3 into r4 as [struct_c; 2u32];
+
+            output r4 as [struct_c; 2u32].private;
+
+        // Case 2 / function: Cast a [program_b.aleo/struct_b; 2] one of whose elements involves a
+        //                   read of an external struct from a local struct.
+        function fun_2:
+            input r0 as u8.private;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 into r2 as program_b.aleo/struct_b;
+            cast r1 r2 into r3 as struct_c;
+            cast r2 r3.b into r4 as [program_b.aleo/struct_b; 2u32];
+
+            output r4 as [program_b.aleo/struct_b; 2u32].private;
+
+        // Case 3 / function: Cast a [program_a.aleo/struct_a; 5] from elements involving various levels of nested reads.
+        function fun_3:
+            input r0 as u8.private;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 into r2 as program_b.aleo/struct_b;
+            cast r1 into r3 as program_b2.aleo/struct_b;
+            cast r1 r2 into r4 as struct_c;
+            cast r1 r2.a r3.a r4.a r4.b.a into r5 as [program_a.aleo/struct_a; 5u32];
+
+            output r5 as [program_a.aleo/struct_a; 5u32].private;
+
+        // Case 4 / function: Cast a local struct containing an array of external structs.
+        function fun_4:
+            input r0 as u8.private;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 r1 into r2 as [program_a.aleo/struct_a; 2u32];
+            cast r2 into r3 as struct_arr;
+
+            output r3 as struct_arr.private;
+
+        // Case 5 / finalize: Finalize-side mirror of case 1.
+        function fun_5:
+            input r0 as u8.public;
+            async fun_5 r0 into r1;
+            output r1 as program_c.aleo/fun_5.future;
+
+        finalize fun_5:
+            input r0 as u8.public;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 into r2 as program_b.aleo/struct_b;
+            cast r1 r2 into r3 as struct_c;
+            cast r3 r3 into r4 as [struct_c; 2u32];
+
+        // Case 6 / finalize: Finalize-side mirror of case 2.
+        function fun_6:
+            input r0 as u8.public;
+            async fun_6 r0 into r1;
+            output r1 as program_c.aleo/fun_6.future;
+
+        finalize fun_6:
+            input r0 as u8.public;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 into r2 as program_b.aleo/struct_b;
+            cast r1 r2 into r3 as struct_c;
+            cast r2 r3.b into r4 as [program_b.aleo/struct_b; 2u32];
+
+        // Case 7 / finalize: Finalize-side mirror of case 3.
+        function fun_7:
+            input r0 as u8.public;
+            async fun_7 r0 into r1;
+            output r1 as program_c.aleo/fun_7.future;
+
+        finalize fun_7:
+            input r0 as u8.public;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 into r2 as program_b.aleo/struct_b;
+            cast r1 into r3 as program_b2.aleo/struct_b;
+            cast r1 r2 into r4 as struct_c;
+            cast r1 r2.a r3.a r4.a r4.b.a into r5 as [program_a.aleo/struct_a; 5u32];
+
+        // Case 8 / finalize: Finalize-side mirror of case 4.
+        function fun_8:
+            input r0 as u8.public;
+            async fun_8 r0 into r1;
+            output r1 as program_c.aleo/fun_8.future;
+
+        finalize fun_8:
+            input r0 as u8.public;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 r1 into r2 as [program_a.aleo/struct_a; 2u32];
+            cast r2 into r3 as struct_arr;
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    ).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
+
+    // The cases are documented in the source of program_c.aleo above.
+    vm.process().lock().add_program(&program_a).unwrap();
+    vm.process().lock().add_program(&program_b).unwrap();
+    vm.process().lock().add_program(&program_b2).unwrap();
+    vm.process().lock().add_program(&program_c).unwrap();
+}
+
+// Checks that various instances of casts to records involving external structs and their members
+// behave as expected. Tests only involve the function (i.e. non-finalize) scope, which records are
+// restricted to.
+#[test]
+fn test_cast_with_external_structs_in_records() {
+    let rng = &mut TestRng::default();
+
+    let program_a = Program::from_str(
+        r"
+        program program_a.aleo;
+
+        struct struct_a:
+            val as u8;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    let program_b = Program::from_str(
+        r"
+        import program_a.aleo;
+        program program_b.aleo;
+
+        struct struct_b:
+            a as program_a.aleo/struct_a;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    // This is a distinct program from program_b.aleo, but both declare a struct with the same name
+    // and member specification.
+    let program_b2 = Program::from_str(
+        r"
+        import program_a.aleo;
+        program program_b2.aleo;
+
+        struct struct_b:
+            a as program_a.aleo/struct_a;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    let program_c = Program::from_str(
+        r"
+        import program_a.aleo;
+        import program_b.aleo;
+        import program_b2.aleo;
+        program program_c.aleo;
+
+        struct struct_c:
+            a as program_a.aleo/struct_a;
+            b as program_b.aleo/struct_b;
+
+        record record_c:
+            owner as address.private;
+            a as struct_c.private;
+            b as struct_c.private;
+
+        record record_b:
+            owner as address.private;
+            a as program_b.aleo/struct_b.private;
+            b as program_b.aleo/struct_b.private;
+
+        record record_a:
+            owner as address.private;
+            a as program_a.aleo/struct_a.private;
+            b as program_a.aleo/struct_a.private;
+            c as program_a.aleo/struct_a.private;
+            d as program_a.aleo/struct_a.private;
+            e as program_a.aleo/struct_a.private;
+
+        record record_mixed:
+            owner as address.private;
+            entry_1 as program_a.aleo/struct_a.private;
+            entry_2 as program_b.aleo/struct_b.private;
+            entry_3 as program_b2.aleo/struct_b.private;
+            entry_4 as struct_c.private;
+
+        // Case 1: Cast a record_c with two entries from a register containing a local struct_c.
+        function fun_1:
+            input r0 as u8.private;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 into r2 as program_b.aleo/struct_b;
+            cast r1 r2 into r3 as struct_c;
+            cast self.signer r3 r3 into r4 as record_c.record;
+
+            output r4 as record_c.record;
+
+        // Case 2: Cast a record_b where the first entry is a register holding an external struct_b
+        //         and the second is a struct_b read from a register holding a struct_c (`r3.b`).
+        function fun_2:
+            input r0 as u8.private;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 into r2 as program_b.aleo/struct_b;
+            cast r1 r2 into r3 as struct_c;
+            cast self.signer r2 r3.b into r4 as record_b.record;
+
+            output r4 as record_b.record;
+
+        // Case 3: Cast a record_a whose five entries come from five different sources involving
+        //         various reads.
+        function fun_3:
+            input r0 as u8.private;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 into r2 as program_b.aleo/struct_b;
+            cast r1 into r3 as program_b2.aleo/struct_b;
+            cast r1 r2 into r4 as struct_c;
+            cast self.signer r1 r2.a r3.a r4.a r4.b.a into r5 as record_a.record;
+
+            output r5 as record_a.record;
+
+        // Case 4: Cast a record_mixed by reading each entry directly from a register of the matching type.
+        function fun_4:
+            input r0 as u8.private;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 into r2 as program_b.aleo/struct_b;
+            cast r1 into r3 as program_b2.aleo/struct_b;
+            cast r1 r2 into r4 as struct_c;
+            cast self.signer r1 r2 r3 r4 into r5 as record_mixed.record;
+
+            output r5 as record_mixed.record;
+
+        // Case 5: Cast a record_mixed by combining direct registers and register member reads.
+        function fun_5:
+            input r0 as u8.private;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 into r2 as program_b.aleo/struct_b;
+            cast r1 into r3 as program_b2.aleo/struct_b;
+            cast r1 r2 into r4 as struct_c;
+            cast self.signer r4.a r4.b r3 r4 into r5 as record_mixed.record;
+
+            output r5 as record_mixed.record;
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
+
+    // The cases are documented in the source of program_c.aleo above.
+    vm.process().lock().add_program(&program_a).unwrap();
+    vm.process().lock().add_program(&program_b).unwrap();
+    vm.process().lock().add_program(&program_b2).unwrap();
+    vm.process().lock().add_program(&program_c).unwrap();
+}
+
+#[test]
+// Checks that a cast-to-external-struct instruction whose operand-type resolution is incorrect in
+// the old version of the FinalizeType matches_struct check fails in the same way before after V19,
+// since at both points in time there is a separate, correct check.
+fn test_cast_with_external_structs_false_type() {
+    let rng = &mut TestRng::default();
+
+    let program_a = Program::from_str(
+        r"
+        program program_a.aleo;
+
+        struct my_struct:
+            val_1 as u8;
+            val_2 as field;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    let program_b = Program::from_str(
+        r"
+        import program_a.aleo;
+        program program_b.aleo;
+
+        struct my_struct:
+            val_1 as field;
+
+        function cast_external:
+            async cast_external into r0;
+            output r0 as program_b.aleo/cast_external.future;
+
+        finalize cast_external:
+            cast 42field into r0 as my_struct;
+            cast r0.val_1 1field into r1 as program_a.aleo/my_struct;
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    let err_old = {
+        let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap();
+        let vm_old = sample_vm_at_height(height, rng);
+
+        vm_old.process().lock().add_program(&program_a).unwrap();
+
+        // Ensure the `add_program` call did not change the VM's block height (and therefore
+        // the consensus version)
+        assert_eq!(vm_old.block_store().current_block_height(), height);
+
+        vm_old.deploy(&sample_genesis_private_key(rng), &program_b, None, 0, None, rng).unwrap_err().to_string()
+    };
+
+    let err_new = {
+        let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap();
+        let vm_new = sample_vm_at_height(height, rng);
+
+        vm_new.process().lock().add_program(&program_a).unwrap();
+
+        // Ensure the `add_program` call did not change the VM's block height (and therefore
+        // the consensus version)
+        assert_eq!(vm_new.block_store().current_block_height(), height);
+
+        vm_new.deploy(&sample_genesis_private_key(rng), &program_b, None, 0, None, rng).unwrap_err().to_string()
+    };
+
+    assert_eq!(err_old, err_new);
+    assert!(err_old.contains("expects a 'u8', but found a 'field'"))
+}
+
+#[test]
+// Test that a cast-to-external-struct instruction whose operands involve a member of a different
+// (from a different program) external struct with the same name does not confuse the two types.
+fn test_cast_with_same_name_external_structs() {
+    let rng = &mut TestRng::default();
+
+    let program_a = Program::from_str(
+        r"
+        program program_a.aleo;
+
+        struct my_struct:
+            val_1 as u8;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    let program_b = Program::from_str(
+        r"
+        import program_a.aleo;
+
+        program program_b.aleo;
+
+        struct struct_b:
+            member_1 as u8;
+            member_2 as program_a.aleo/my_struct;
+
+        function foo:
+            assert.eq true true;
+
+        function noop:
+        ",
+    )
+    .unwrap();
+
+    let program_b2 = Program::from_str(
+        r"
+        import program_a.aleo;
+
+        program program_b2.aleo;
+
+        struct struct_b:
+            member_1 as program_a.aleo/my_struct;
+            member_2 as u8;
+
+        function foo:
+            assert.eq true true;
+
+        function noop:
+        ",
+    )
+    .unwrap();
+
+    let program_c = Program::from_str(
+        r"
+        import program_a.aleo;
+        import program_b.aleo;
+        import program_b2.aleo;
+
+        program program_c.aleo;
+
+        function foo:
+            async foo into r0;
+            output r0 as program_c.aleo/foo.future;
+
+        finalize foo:
+            cast 0u8 into r0 as program_a.aleo/my_struct;
+            cast r0 0u8 into r1 as program_b2.aleo/struct_b;
+
+            // Here, if the program incorrectly interprets r1 as having the type
+            // program_b.aleo/struct_b (i.e. the instruction's destination type) as opposed to the
+            // correct one, the instruction will be accepted.
+
+            cast r1.member_1 r0 into r2 as program_b.aleo/struct_b;
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    // TODO (Antonio) document
+
+    let err_old = {
+        let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap();
+        let vm_old = sample_vm_at_height(height, rng);
+
+        vm_old.process().lock().add_program(&program_a).unwrap();
+        vm_old.process().lock().add_program(&program_b).unwrap();
+        vm_old.process().lock().add_program(&program_b2).unwrap();
+
+        // Ensure the three `add_program` calls did not change the VM's block height (and therefore
+        // the consensus version)
+        assert_eq!(vm_old.block_store().current_block_height(), height);
+
+        vm_old.deploy(&sample_genesis_private_key(rng), &program_c, None, 0, None, rng).unwrap_err().to_string()
+    };
+
+    let err_new = {
+        let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap();
+        let vm_new = sample_vm_at_height(height, rng);
+
+        vm_new.process().lock().add_program(&program_a).unwrap();
+        vm_new.process().lock().add_program(&program_b).unwrap();
+        vm_new.process().lock().add_program(&program_b2).unwrap();
+
+        // Ensure the three `add_program` calls did not change the VM's block height (and therefore
+        // the consensus version)
+        assert_eq!(vm_new.block_store().current_block_height(), height);
+
+        vm_new.deploy(&sample_genesis_private_key(rng), &program_c, None, 0, None, rng).unwrap_err().to_string()
+    };
+
+    assert_eq!(err_old, err_new);
+    assert!(err_old.contains("'struct_b.member_1' expects a 'u8', but found a 'program_a.aleo/my_struct'"))
+}
+
+// Tests similar cases to test_cast_with_external_structs_only, but where the casts occur in the
+// `constructor` scope.
+#[test]
+fn test_cast_with_external_structs_in_constructor() {
+    let rng = &mut TestRng::default();
+
+    let program_a = Program::from_str(
+        r"
+        program program_a.aleo;
+
+        struct struct_a:
+            val as u8;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    let program_b = Program::from_str(
+        r"
+        import program_a.aleo;
+        program program_b.aleo;
+
+        struct struct_b:
+            a as program_a.aleo/struct_a;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    // This is a distinct program from program_b.aleo, but both declare a struct with the same name
+    // and member specification.
+    let program_b2 = Program::from_str(
+        r"
+        import program_a.aleo;
+        program program_b2.aleo;
+
+        struct struct_b:
+            a as program_a.aleo/struct_a;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    // The constructor has no inputs, so every cast originates from a literal. The four cases below
+    // mirror the function/finalize cases but in the constructor scope.
+    let program_c = Program::from_str(
+        r"
+        import program_a.aleo;
+        import program_b.aleo;
+        import program_b2.aleo;
+        program program_c.aleo;
+
+        struct struct_c:
+            a as program_a.aleo/struct_a;
+            b as program_b.aleo/struct_b;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+
+            // Case 1: literal -> external struct -> external struct -> local struct.
+            cast 24u8 into r0 as program_a.aleo/struct_a;
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r0 r1 into r2 as struct_c;
+
+            // Case 2: cast involving an external-struct member read (`r0.val`).
+            cast r0.val into r3 as program_a.aleo/struct_a;
+            cast r3 into r4 as program_b.aleo/struct_b;
+            cast r3 r4 into r5 as struct_c;
+
+            // Case 3: the same struct_a cast into a program_b2/struct_b, then combined into struct_c.
+            cast r0 into r6 as program_b2.aleo/struct_b;
+            cast r6.a r1 into r7 as struct_c;
+
+            // Case 4: three-level nested access reaching through external structs.
+            cast r2.b.a.val into r8 as u8;
+        ",
+    )
+    .unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
+
+    // The cases are documented in the source of program_c.aleo above.
+    vm.process().lock().add_program(&program_a).unwrap();
+    vm.process().lock().add_program(&program_b).unwrap();
+    vm.process().lock().add_program(&program_b2).unwrap();
+    vm.process().lock().add_program(&program_c).unwrap();
+}
+
+// Tests similar cases to test_cast_with_external_structs_in_records, but where the casts occur in the
+// `view` scope.
+#[test]
+fn test_cast_with_external_structs_in_views() {
+    let rng = &mut TestRng::default();
+
+    let program_a = Program::from_str(
+        r"
+        program program_a.aleo;
+
+        struct struct_a:
+            val as u8;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    let program_b = Program::from_str(
+        r"
+        import program_a.aleo;
+        program program_b.aleo;
+
+        struct struct_b:
+            a as program_a.aleo/struct_a;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    // This is a distinct program from program_b.aleo, but both declare a struct with the same name
+    // and member specification.
+    let program_b2 = Program::from_str(
+        r"
+        import program_a.aleo;
+        program program_b2.aleo;
+
+        struct struct_b:
+            a as program_a.aleo/struct_a;
+
+        function noop:
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    // The four views below mirror the first four function cases, but in the view scope. Views
+    // share the finalize register model, so their inputs and casts type-check identically.
+    let program_c = Program::from_str(
+        r"
+        import program_a.aleo;
+        import program_b.aleo;
+        import program_b2.aleo;
+        program program_c.aleo;
+
+        struct struct_c:
+            a as program_a.aleo/struct_a;
+            b as program_b.aleo/struct_b;
+
+        function noop:
+
+        // Case 1 / view: cast external structs defined in program_a and program_b, then a struct_c.
+        view view_1:
+            input r0 as u8.public;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 into r2 as program_b.aleo/struct_b;
+            cast r1 r2 into r3 as struct_c;
+
+            output r3 as struct_c.public;
+
+        // Case 2 / view: similar to case 1 but with an external-struct member read (`r1.val`).
+        view view_2:
+            input r0 as u8.public;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1.val into r2 as program_a.aleo/struct_a;
+            cast r2 into r3 as program_b.aleo/struct_b;
+            cast r2 r3 into r4 as struct_c;
+
+            output r4 as struct_c.public;
+
+        // Case 3 / view: struct_c is cast from an external struct received as an input argument.
+        view view_3:
+            input r0 as program_a.aleo/struct_a.public;
+
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r0 r1 into r2 as struct_c;
+
+            output r2 as struct_c.public;
+
+        // Case 4 / view: the same input external struct is cast into program_b and program_b2 structs.
+        view view_4:
+            input r0 as program_a.aleo/struct_a.public;
+
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r0 into r2 as program_b2.aleo/struct_b;
+            cast r2.a r1 into r3 as struct_c;
+
+            output r3 as struct_c.public;
+
+        constructor:
+            assert.eq edition 0u16;
+        ",
+    )
+    .unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
+
+    // The cases are documented in the source of program_c.aleo above.
+    vm.process().lock().add_program(&program_a).unwrap();
+    vm.process().lock().add_program(&program_b).unwrap();
+    vm.process().lock().add_program(&program_b2).unwrap();
+    vm.process().lock().add_program(&program_c).unwrap();
+}

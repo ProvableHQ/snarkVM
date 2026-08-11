@@ -199,7 +199,12 @@ impl<N: Network> FinalizeTypes<N> {
 
 impl<N: Network> FinalizeTypes<N> {
     /// Ensure the given input register is well-formed.
-    fn check_input(&mut self, stack: &Stack<N>, register: &Register<N>, finalize_type: &FinalizeType<N>) -> Result<()> {
+    pub fn check_input(
+        &mut self,
+        stack: &Stack<N>,
+        register: &Register<N>,
+        finalize_type: &FinalizeType<N>,
+    ) -> Result<()> {
         // Ensure the register type is defined in the program.
         match finalize_type {
             FinalizeType::Plaintext(plaintext_type) => RegisterTypes::check_plaintext_type(stack, plaintext_type)?,
@@ -226,7 +231,7 @@ impl<N: Network> FinalizeTypes<N> {
 
     /// Ensures the given command is well-formed.
     #[inline]
-    fn check_command(
+    pub fn check_command(
         &mut self,
         stack: &Stack<N>,
         positions: &HashMap<Identifier<N>, usize>,
@@ -986,7 +991,7 @@ impl<N: Network> FinalizeTypes<N> {
                             // Retrieve the struct.
                             let struct_ = stack.program().get_struct(struct_name)?;
                             // Ensure the operand types match the struct.
-                            self.matches_struct(stack, instruction.operands(), struct_)?;
+                            self.matches_struct(stack, stack, instruction.operands(), struct_)?;
                         }
                         CastType::Plaintext(plaintext @ PlaintextType::ExternalStruct(locator)) => {
                             // Ensure that the type is valid.
@@ -996,7 +1001,7 @@ impl<N: Network> FinalizeTypes<N> {
                             // Retrieve the struct.
                             let struct_ = external_stack.program().get_struct(struct_name)?;
                             // Ensure the operand types match the struct.
-                            self.matches_struct(&*external_stack, instruction.operands(), struct_)?;
+                            self.matches_struct(stack, &*external_stack, instruction.operands(), struct_)?;
                         }
                         CastType::Plaintext(plaintext @ PlaintextType::Array(array_type)) => {
                             // Ensure that the type is valid.
