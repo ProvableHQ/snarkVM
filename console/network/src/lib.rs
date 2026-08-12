@@ -163,6 +163,9 @@ pub trait Network:
     /// when checking a deployment. From it, a per-proposal synthesis limit is enforced starting at consensus
     /// version V17 which overrides the two per-transaction limits above.
     const SYNTHESIS_PER_SECOND_OF_RUNTIME: u64 = 1_500_000;
+    /// Starting with consensus version V19, the synthesis limit is fixed at 15_000_000, roughly 10 seconds of
+    /// synthesis work.
+    const STATIC_SYNTHESIS_LIMIT: u64 = 10 * Self::SYNTHESIS_PER_SECOND_OF_RUNTIME;
     const MAX_BATCH_PROOF_INSTANCES: usize = 128;
     /// The maximum number of microcredits that can be spent as a fee.
     const MAX_FEE: u64 = 1_000_000_000_000_000;
