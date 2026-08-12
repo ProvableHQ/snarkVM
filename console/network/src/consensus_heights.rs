@@ -70,7 +70,8 @@ pub enum ConsensusVersion {
     ///      and enforces canonical subDAG certificate ordering.
     V18 = 18,
     /// V19: Adds more accurate type checking for the root call, and bounds the size of every
-    /// `PlaintextType` declared in a deployed program.
+    ///      `PlaintextType` declared in a deployed program. It introduces a fixed block-wide
+    ///      synthesis limit.
     V19 = 19,
     /// V20: TBD
     V20 = 20,
