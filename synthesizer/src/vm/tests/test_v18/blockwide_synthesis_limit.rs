@@ -128,7 +128,7 @@ fn test_blockwide_synthesis_limit() {
     let rng = &mut TestRng::default();
 
     let v18_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap();
-    let vm = sample_vm_at_height(v18_height, rng);
+    let mut vm = sample_vm_with_genesis_block(rng);
     let genesis_private_key = sample_genesis_private_key(rng);
 
     // Set to true to print the combined density of each individual deployment.
@@ -185,6 +185,10 @@ fn test_blockwide_synthesis_limit() {
     let num_deployer_keys = cases.iter().map(|(_, ds, _)| ds.len()).sum::<usize>();
 
     let mut deployer_keys = fund_deployer_keys(&vm, &genesis_private_key, num_deployer_keys, rng);
+
+    // Advance the tip to one block below V18 so that the block under test (tip + 1) lands exactly on
+    // V18, exercising the per-certificate synthesis limit rather than the static V19+ limit.
+    advance_vm_to_height(&mut vm, genesis_private_key, v18_height - 1, rng);
 
     let block_hash = vm.block_store().get_block_hash(vm.block_store().max_height().unwrap()).unwrap().unwrap();
     let previous_block = vm.block_store().get_block(&block_hash).unwrap().unwrap();
