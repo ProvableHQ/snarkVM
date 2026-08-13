@@ -158,12 +158,15 @@ impl<N: Network> Stack<N> {
         let seed = u64::from_bytes_le(&deployment.to_deployment_id()?.to_bytes_le()?[0..8])?;
         let mut seeded_rng = rand_chacha::ChaChaRng::seed_from_u64(seed);
 
+        // Seed a new RNG to sample some of the random values without altering `seeded_rng`.
+        let mut sub_seeded_rng = rand_chacha::ChaChaRng::seed_from_u64(seeded_rng.random());
+
         // Iterate through the program functions and construct the callstacks and corresponding assignments.
         for (function, (_, (verifying_key, _))) in
             deployment.program().functions().values().zip_eq(deployment.function_verifying_keys())
         {
             // Initialize a burner private key.
-            let burner_private_key = PrivateKey::new(&mut seeded_rng)?;
+            let burner_private_key = PrivateKey::new(&mut sub_seeded_rng)?;
             // Compute the burner address.
             let burner_address = Address::try_from(&burner_private_key)?;
             // Retrieve the input types.
@@ -205,9 +208,9 @@ impl<N: Network> Stack<N> {
                 is_root,
                 program_checksum,
                 false,
-                // Draw the request nonce from the seeded RNG as well, so no part of the
+                // Draw the request nonce from the secondary seeded RNG as well, so no part of the
                 // `CheckDeployment` synthesis depends on the ambient RNG. See the burner note above.
-                &mut seeded_rng,
+                &mut sub_seeded_rng,
             )?;
             lap!(timer, "Compute the request for {}", function.name());
             // Initialize the assignments.
@@ -293,29 +296,29 @@ impl<N: Network> Stack<N> {
                     // ID), not the ambient `_rng`, so that the translation assignment — and thus the
                     // certificate check below — is identical across all validators.
                     let program_id = *self.program_id();
-                    let function_id = Field::<N>::from_u64(Uniform::rand(&mut seeded_rng));
+                    let function_id = Field::<N>::from_u64(Uniform::rand(&mut sub_seeded_rng));
                     let record_name = *record_name;
                     let record_static = self.sample_record(
-                        &Address::rand(&mut seeded_rng),
+                        &Address::rand(&mut sub_seeded_rng),
                         &record_name,
-                        Group::rand(&mut seeded_rng),
-                        &mut seeded_rng,
+                        Group::rand(&mut sub_seeded_rng),
+                        &mut sub_seeded_rng,
                     )?;
                     let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
-                    let translation_index: u16 = Uniform::rand(&mut seeded_rng);
-                    let tvk = Uniform::rand(&mut seeded_rng);
-                    let record_register_index = Uniform::rand(&mut seeded_rng);
-                    let record_view_key: Option<Field<N>> = UniformExt::rand_option(&mut seeded_rng);
-                    let gamma: Option<Group<N>> = UniformExt::rand_option(&mut seeded_rng);
+                    let translation_index: u16 = Uniform::rand(&mut sub_seeded_rng);
+                    let tvk = Uniform::rand(&mut sub_seeded_rng);
+                    let record_register_index = Uniform::rand(&mut sub_seeded_rng);
+                    let record_view_key: Option<Field<N>> = UniformExt::rand_option(&mut sub_seeded_rng);
+                    let gamma: Option<Group<N>> = UniformExt::rand_option(&mut sub_seeded_rng);
                     let id_dynamic = compute_console_dynamic_or_external_record_id(
                         function_id,
                         record_dynamic.to_fields()?,
                         tvk,
                         U16::new(record_register_index),
                     )?;
-                    let is_to_static = Uniform::rand(&mut seeded_rng);
-                    let is_external_record = Uniform::rand(&mut seeded_rng);
-                    let id_static = Uniform::rand(&mut seeded_rng);
+                    let is_to_static = Uniform::rand(&mut sub_seeded_rng);
+                    let is_external_record = Uniform::rand(&mut sub_seeded_rng);
+                    let id_static = Uniform::rand(&mut sub_seeded_rng);
 
                     lap!(timer, "Sample the inputs to the translation circuit for record {record_name}");
 
