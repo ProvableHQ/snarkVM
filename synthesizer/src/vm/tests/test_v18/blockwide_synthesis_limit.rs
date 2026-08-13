@@ -127,8 +127,10 @@ fn test_blockwide_synthesis_limit() {
 
     let rng = &mut TestRng::default();
 
+    // Advance to the last V18 height so the next block remains in V18 (V19 is the subsequent height).
     let v18_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap();
-    let vm = sample_vm_at_height(v18_height, rng);
+    let v19_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap();
+    let vm = sample_vm_at_height(v19_height.saturating_sub(1).max(v18_height.saturating_sub(1)), rng);
     let genesis_private_key = sample_genesis_private_key(rng);
 
     // Set to true to print the combined density of each individual deployment.
@@ -195,7 +197,7 @@ fn test_blockwide_synthesis_limit() {
         let subdag = subdag_with_cert_count(num_certs as usize, rng);
         let num_deployments = deployment_specs.len();
 
-        let synthesis_limit = subdag.synthesis_limit(next_block_height).expect("Synthesis limit in >= V17");
+        let synthesis_limit = subdag.synthesis_limit(next_block_height).expect("Synthesis limit at V18");
 
         let name_prefix = &format!("test_synthesis_{i}");
 
