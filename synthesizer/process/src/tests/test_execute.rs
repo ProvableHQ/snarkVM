@@ -2153,12 +2153,12 @@ finalize a:
     // The extra 100 comes from the finalize command base costs
     let stack = process.get_stack(program2.id()).unwrap();
     let static_finalize_cost =
-        crate::cost::minimum_cost_in_microcredits_v2(&stack, &function_name, ConsensusVersion::V10).unwrap();
+        crate::cost::minimum_cost_in_microcredits_v2(&stack, &function_name, Some(ConsensusVersion::V10)).unwrap();
     let runtime_finalize_cost = crate::cost::execution_finalize_cost(
         &process,
         &execution,
         crate::cost::ConsensusFeeVersion::V2,
-        ConsensusVersion::V10,
+        Some(ConsensusVersion::V10),
     )
     .unwrap();
 
@@ -2442,12 +2442,12 @@ fn test_complex_execution_order() {
     // Total V2 cost: 30300 + 30300 + 22600 + 11900 + 11300 = 106400 + 100 (base) = 106500
     let stack = process.get_stack(program4.id()).unwrap();
     let static_finalize_cost =
-        crate::cost::minimum_cost_in_microcredits_v2(&stack, &function_name, ConsensusVersion::V10).unwrap();
+        crate::cost::minimum_cost_in_microcredits_v2(&stack, &function_name, Some(ConsensusVersion::V10)).unwrap();
     let runtime_finalize_cost = crate::cost::execution_finalize_cost(
         &process,
         &execution,
         crate::cost::ConsensusFeeVersion::V2,
-        ConsensusVersion::V10,
+        Some(ConsensusVersion::V10),
     )
     .unwrap();
 

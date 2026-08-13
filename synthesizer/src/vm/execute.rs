@@ -1000,7 +1000,7 @@ finalize test:
                                 &finalize_types,
                                 command,
                                 ConsensusFeeVersion::V2,
-                                consensus_version,
+                                Some(consensus_version),
                             )
                         })
                         .try_fold(0u64, |acc, res| {
@@ -1162,7 +1162,7 @@ constructor:
                                 &finalize_types,
                                 command,
                                 ConsensusFeeVersion::V2,
-                                consensus_version,
+                                Some(consensus_version),
                             )
                         })
                         .try_fold(0u64, |acc, res| {

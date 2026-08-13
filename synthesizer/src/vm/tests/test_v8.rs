@@ -443,10 +443,8 @@ function dummy:
         Some(address),
     )?;
 
-    let consensus_version = CurrentNetwork::CONSENSUS_VERSION(vm.store.block_store().current_block_height())?;
-
     // Note: This needs to be recalculated since the new deployment contains a checksum and owner.
-    let (base_fee_amount, _) = deployment_cost_v1(vm.process(), &deployment, consensus_version)?;
+    let (base_fee_amount, _) = deployment_cost_v1(vm.process(), &deployment)?;
     let fee_authorization = vm.authorize_fee_public(
         &other_private_key,
         base_fee_amount,
