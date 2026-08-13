@@ -122,12 +122,12 @@ impl<N: Network> Stack<N> {
 
         // Enforce per-transaction variable and constraint limits, except at V18 where a block-wide
         // synthesis limit is used instead.
-        let (variable_limit, constraint_limit) = if consensus_version < ConsensusVersion::V18 {
-            (Some(N::MAX_DEPLOYMENT_VARIABLES), Some(N::MAX_DEPLOYMENT_CONSTRAINTS))
-        } else if consensus_version >= ConsensusVersion::V19 {
+        let (variable_limit, constraint_limit) = if consensus_version >= ConsensusVersion::V19 {
             (Some(N::MAX_DEPLOYMENT_VARIABLES_V2), Some(N::MAX_DEPLOYMENT_CONSTRAINTS_V2))
-        } else {
+        } else if consensus_version >= ConsensusVersion::V18 {
             (None, None)
+        } else {
+            (Some(N::MAX_DEPLOYMENT_VARIABLES), Some(N::MAX_DEPLOYMENT_CONSTRAINTS))
         };
         if let Some(variable_limit) = variable_limit {
             ensure!(

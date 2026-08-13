@@ -70,7 +70,8 @@ pub enum ConsensusVersion {
     ///      and enforces canonical subDAG certificate ordering.
     V18 = 18,
     /// V19: Reverts from the V18 block-wide synthesis limit to per-transaction
-    ///      deployment variable and constraint limits.
+    ///      deployment variable and constraint limits. The first V19 block still
+    ///      uses the block-wide synthesis limit.
     V19 = 19,
 }
 

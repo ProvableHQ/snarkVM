@@ -233,12 +233,15 @@ impl<N: Network> Subdag<N> {
 
     /// Returns the synthesis limit for this subdag at `block_height`.
     // Note: This limit refers to the total number of non-zero entries across all circuits in all deployments in the subdag.
-    // It is enforced only at consensus version V18; from V19 the per-transaction variable and constraint limits apply instead.
+    // It is enforced for every V18 block and for the first V19 block. `check_transaction` reads the
+    // consensus version from the previous block, so the first V19 block would otherwise skip both
+    // the V18 block-wide limit and the V19 per-transaction limits. From the second V19 block,
+    // per-transaction variable and constraint limits apply instead.
     #[inline]
     #[allow(clippy::cast_possible_truncation)]
     pub fn synthesis_limit(&self, block_height: u32) -> Option<u64> {
         if block_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap()
-            && block_height < N::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap()
+            && block_height <= N::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap()
         {
             // One full round of consensus has a synthesis budget of 5 seconds.
             let synthesis_per_second_runtime = 5_f64 * N::SYNTHESIS_PER_SECOND_OF_RUNTIME as f64;
@@ -556,19 +559,19 @@ mod tests {
         }
     }
 
-    /// `synthesis_limit` must return `Some` at V18, when the V18 window is non-empty.
+    /// `synthesis_limit` must return `Some` from V18 through the first V19 block.
     #[test]
-    fn test_synthesis_limit_returns_some_at_v18() {
+    fn test_synthesis_limit_returns_some_from_v18_through_first_v19_block() {
         let v18_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap();
         let v19_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap();
-        // On networks where V18 and V19 share an unreleased height, the V18-only window is empty.
-        if v18_height >= v19_height {
-            return;
-        }
         let mut rng = TestRng::default();
         let subdag = test_helpers::sample_subdag(&mut rng);
 
         assert!(subdag.synthesis_limit(v18_height).is_some(), "height V18 must return Some");
+        assert!(
+            subdag.synthesis_limit(v19_height).is_some(),
+            "the first V19 block must retain the block-wide synthesis limit"
+        );
         if v19_height > v18_height.saturating_add(1) {
             assert!(
                 subdag.synthesis_limit(v18_height.saturating_add(1)).is_some(),
@@ -577,16 +580,18 @@ mod tests {
         }
     }
 
-    /// `synthesis_limit` must return `None` at and after V19.
+    /// `synthesis_limit` must return `None` after the first V19 block.
     #[test]
-    fn test_synthesis_limit_returns_none_at_and_after_v19() {
+    fn test_synthesis_limit_returns_none_after_first_v19_block() {
         let v19_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap();
+        // When V19 is unreleased (`u32::MAX`), there is no subsequent height to check.
+        if v19_height == u32::MAX {
+            return;
+        }
         let mut rng = TestRng::default();
         let subdag = test_helpers::sample_subdag(&mut rng);
 
-        assert!(subdag.synthesis_limit(v19_height).is_none(), "height V19 must return None");
         assert!(subdag.synthesis_limit(v19_height.saturating_add(1)).is_none(), "height V19+1 must return None");
-        assert!(subdag.synthesis_limit(u32::MAX).is_none(), "u32::MAX must return None");
     }
 
     /// `spend_limit` must return `None` for any block height that predates V16.
