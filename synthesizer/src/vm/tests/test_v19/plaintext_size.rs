@@ -19,16 +19,27 @@ use crate::Stack;
 
 use console::network::prelude::*;
 
-/// Builds a VM advanced to V19 height and runs `check_program_plaintext_sizes`
-/// against `program_text` using the V19 bit budget.
-fn run_check_at_v19(program_text: &str) -> Result<()> {
+/// Builds a VM advanced to V19 height, adds `imports` to the process, and runs
+/// `check_program_plaintext_sizes` against `program_text` using the V19 bit budget.
+fn run_check_at_v19_with_imports(imports: &[&str], program_text: &str) -> Result<()> {
     let rng = &mut TestRng::default();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
+
+    // Add the imported programs, in topological order, so that the program under test resolves.
+    for import in imports {
+        vm.process().lock().add_program(&Program::<CurrentNetwork>::from_str(import).unwrap()).unwrap();
+    }
 
     let program = Program::<CurrentNetwork>::from_str(program_text).unwrap();
     let stack = Stack::new(vm.process(), &program).unwrap();
     let max_bits = CurrentNetwork::LATEST_MAX_PLAINTEXT_TYPE_SIZE_IN_BITS();
     check_program_plaintext_sizes(&program, &stack, max_bits)
+}
+
+/// Builds a VM advanced to V19 height and runs `check_program_plaintext_sizes`
+/// against `program_text` using the V19 bit budget.
+fn run_check_at_v19(program_text: &str) -> Result<()> {
+    run_check_at_v19_with_imports(&[], program_text)
 }
 
 /// A triply-nested 2048x2048x2048 bool array, the largest array type the element limit permits.
@@ -189,4 +200,128 @@ constructor:
     )
     .expect_err("over-cap finalize input must be rejected");
     assert!(err.to_string().contains("exceeds the maximum allowed size in bits"), "unexpected error: {err}");
+}
+
+/// An external struct whose members refer to structs local to the external program is resolved
+/// against that program, and accepted when it fits under the cap.
+#[test]
+fn test_under_cap_external_struct_accepted() {
+    run_check_at_v19_with_imports(
+        &[r"
+program child.aleo;
+
+struct woo:
+    a as u32;
+    b as u32;
+
+struct boohoo:
+    woo as woo;
+
+function f:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+constructor:
+    assert.eq true true;
+"],
+        r"
+import child.aleo;
+program parent.aleo;
+
+function f:
+    input r0 as child.aleo/boohoo.private;
+    output r0 as child.aleo/boohoo.private;
+
+constructor:
+    assert.eq true true;
+",
+    )
+    .expect("under-cap external struct must pass");
+}
+
+/// An external struct whose local member type exceeds the per-type cap is rejected. The external
+/// program may predate V19, so its declarations are only bounded where an importer declares them.
+#[test]
+fn test_over_cap_external_struct_rejected() {
+    let err = run_check_at_v19_with_imports(
+        &[r"
+program child.aleo;
+
+struct huge:
+    huge as [[u64; 2048u32]; 9u32];
+
+struct boohoo:
+    huge as huge;
+
+function f:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+constructor:
+    assert.eq true true;
+"],
+        r"
+import child.aleo;
+program parent.aleo;
+
+function f:
+    input r0 as child.aleo/boohoo.private;
+    output r0 as child.aleo/boohoo.private;
+
+constructor:
+    assert.eq true true;
+",
+    )
+    .expect_err("over-cap external struct must be rejected");
+    assert!(err.to_string().contains("exceeds the maximum allowed size in bits"), "unexpected error: {err}");
+}
+
+/// An external struct may refer to a struct in a program that the importer does not import, so
+/// each struct reference must be resolved against the program that declares it.
+#[test]
+fn test_under_cap_transitive_external_struct_accepted() {
+    run_check_at_v19_with_imports(
+        &[
+            r"
+program grandchild.aleo;
+
+struct woo:
+    a as u32;
+    b as u32;
+
+function f:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+constructor:
+    assert.eq true true;
+",
+            r"
+import grandchild.aleo;
+program child.aleo;
+
+struct boohoo:
+    woo as grandchild.aleo/woo;
+
+function f:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+constructor:
+    assert.eq true true;
+",
+        ],
+        r"
+import child.aleo;
+program parent.aleo;
+
+function f:
+    input r0 as child.aleo/boohoo.private;
+    output r0 as child.aleo/boohoo.private;
+
+constructor:
+    assert.eq true true;
+",
+    )
+    .expect("under-cap transitive external struct must pass");
 }

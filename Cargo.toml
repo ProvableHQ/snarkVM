@@ -504,7 +504,7 @@ version = "1.4"
 version = "0.5"
 
 [workspace.dependencies.lru]
-version = "0.16"
+version = "0.18"
 
 [workspace.dependencies.num-traits]
 version = "0.2"
@@ -682,4 +682,3 @@ lto = "off"
 incremental = true
 debug = true
 debug-assertions = true
-

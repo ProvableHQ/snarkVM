@@ -109,17 +109,9 @@ pub fn check_program_plaintext_sizes<N: Network>(
     stack: &Stack<N>,
     max_bits: usize,
 ) -> Result<()> {
-    // Helper to get a struct declaration.
-    let get_struct = |id: &Identifier<N>| program.get_struct(id).cloned();
-
-    // Helper to get an external struct declaration.
-    let get_external_struct = |locator: &Locator<N>| {
-        stack.get_external_stack(locator.program_id())?.program().get_struct(locator.resource()).cloned()
-    };
-
     // Check a single plaintext type against the budget.
     let check = |pt: &PlaintextType<N>| -> Result<()> {
-        let bits = pt.size_in_bits_raw(&get_struct, &get_external_struct)?;
+        let bits = plaintext_size_in_bits_raw(stack, pt, 0)?;
         ensure!(
             bits <= max_bits,
             "Plaintext type '{pt}' exceeds the maximum allowed size in bits ({bits} > {max_bits})"
@@ -199,4 +191,41 @@ pub fn check_program_plaintext_sizes<N: Network>(
     }
 
     Ok(())
+}
+
+/// Returns the size in bits of the given plaintext type, excluding any type metadata.
+///
+/// Each struct reference is resolved against the program that declares it, since a struct declared
+/// in an external program may refer to structs local to that program, or to structs in programs
+/// that the current program does not import.
+fn plaintext_size_in_bits_raw<N: Network>(
+    stack: &Stack<N>,
+    plaintext_type: &PlaintextType<N>,
+    depth: usize,
+) -> Result<usize> {
+    // Ensure that the depth is within the maximum limit.
+    ensure!(depth <= N::MAX_DATA_DEPTH, "Plaintext depth exceeds maximum limit: {}", N::MAX_DATA_DEPTH);
+
+    match plaintext_type {
+        PlaintextType::Literal(literal_type) => Ok(literal_type.size_in_bits::<N>() as usize),
+        PlaintextType::Struct(struct_name) => {
+            // Add up the sizes of the members, which are declared in the same program.
+            stack.program().get_struct(struct_name)?.members().values().try_fold(0usize, |total, member_type| {
+                total
+                    .checked_add(plaintext_size_in_bits_raw(stack, member_type, depth + 1)?)
+                    .ok_or_else(|| anyhow!("`plaintext_size_in_bits_raw` overflowed"))
+            })
+        }
+        PlaintextType::ExternalStruct(locator) => {
+            // Resolve the struct, and therefore its members, against the external program.
+            let external_stack = stack.get_external_stack(locator.program_id())?;
+            plaintext_size_in_bits_raw(&external_stack, &PlaintextType::Struct(*locator.resource()), depth)
+        }
+        PlaintextType::Array(array_type) => {
+            // Multiply the size of an element by the length of the array.
+            plaintext_size_in_bits_raw(stack, array_type.next_element_type(), depth + 1)?
+                .checked_mul(**array_type.length() as usize)
+                .ok_or_else(|| anyhow!("`plaintext_size_in_bits_raw` overflowed"))
+        }
+    }
 }
