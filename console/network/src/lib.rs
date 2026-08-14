@@ -221,7 +221,7 @@ pub trait Network:
     /// A list of (consensus_version, size) pairs indicating the maximum size in bits of any single
     /// `PlaintextType` declared in a program. This mirrors the runtime budget `to_fields` enforces.
     const MAX_PLAINTEXT_TYPE_SIZE_IN_BITS: [(ConsensusVersion, usize); 1] =
-        [(ConsensusVersion::V19, Self::MAX_DATA_SIZE_IN_FIELDS as usize * Field::<Self>::SIZE_IN_DATA_BITS)];
+        [(ConsensusVersion::V20, Self::MAX_DATA_SIZE_IN_FIELDS as usize * Field::<Self>::SIZE_IN_DATA_BITS)];
 
     /// The minimum number of entries in a struct.
     const MIN_STRUCT_ENTRIES: usize = 1; // This ensures the struct is not empty.
