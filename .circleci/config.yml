@@ -942,7 +942,7 @@ jobs:
           # `history` enables the per-key historical update map that the `view` evaluation path
           # depends on; gating it here ensures the v15 view tests are exercised in CI.
           flags: >
-            --lib --bins --features test,history
+            --release --lib --bins --features test,history
             --partition count:1/2
             -- --test-threads 8
           cache_key_suffix: -test1
@@ -955,7 +955,7 @@ jobs:
       - run_test:
           workspace_member: snarkvm-synthesizer
           flags: >
-            --lib --bins --features test,history
+            --release --lib --bins --features test,history
             --partition count:2/2
             -- --test-threads 8
           cache_key_suffix: -test2
@@ -1324,8 +1324,7 @@ workflows:
       or pipeline.git.branch == "canary"
       or pipeline.git.branch == "testnet"
       or pipeline.git.branch == "mainnet"
-      or pipeline.git.branch == "profile_verifier_multirecord_compatible"
-      or pipeline.git.branch == "revert_density_checks"
+      or pipeline.git.branch == "fix_ci_integration"
     jobs:
       - check-unused-dependencies # This can be cleaned up before releases
       - check-cargo-semver-checks # This can be cleaned up before releases
@@ -1354,7 +1353,6 @@ workflows:
     when: pipeline.git.branch == "canary"
       or pipeline.git.branch == "testnet"
       or pipeline.git.branch == "mainnet"
-      or pipeline.git.branch == "main_net_v48"
     jobs:
       - verify-windows: # Windows has never failed us when linux passed
           matrix:

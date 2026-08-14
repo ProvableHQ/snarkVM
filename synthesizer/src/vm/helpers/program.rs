@@ -16,7 +16,7 @@
 use crate::Stack;
 use console::{
     prelude::{Network, cfg_iter},
-    program::{Identifier, Locator, ValueType},
+    program::{EntryType, FinalizeType, Identifier, Locator, PlaintextType, RegisterType, ValueType},
 };
 use snarkvm_synthesizer_program::{Program, StackTrait};
 
@@ -101,4 +101,131 @@ pub fn check_future_argument_bit_size<N: Network>(
             Ok(())
         })
     })
+}
+
+/// Checks that every `PlaintextType` declared in the program does not exceed the specified maximum size in bits.
+pub fn check_program_plaintext_sizes<N: Network>(
+    program: &Program<N>,
+    stack: &Stack<N>,
+    max_bits: usize,
+) -> Result<()> {
+    // Check a single plaintext type against the budget.
+    let check = |pt: &PlaintextType<N>| -> Result<()> {
+        let bits = plaintext_size_in_bits_raw(stack, pt, 0)?;
+        ensure!(
+            bits <= max_bits,
+            "Plaintext type '{pt}' exceeds the maximum allowed size in bits ({bits} > {max_bits})"
+        );
+        Ok(())
+    };
+
+    // Check function inputs, outputs, and finalize arguments.
+    for (_, function) in program.functions() {
+        for input in function.inputs() {
+            if let ValueType::Constant(pt) | ValueType::Public(pt) | ValueType::Private(pt) = input.value_type() {
+                check(pt)?;
+            }
+        }
+        for output in function.outputs() {
+            if let ValueType::Constant(pt) | ValueType::Public(pt) | ValueType::Private(pt) = output.value_type() {
+                check(pt)?;
+            }
+        }
+        if let Some(finalize) = function.finalize_logic() {
+            for input in finalize.inputs() {
+                if let FinalizeType::Plaintext(pt) = input.finalize_type() {
+                    check(pt)?;
+                }
+            }
+        }
+    }
+
+    // Check view inputs and outputs.
+    for (_, view) in program.views() {
+        for input in view.inputs() {
+            if let FinalizeType::Plaintext(pt) = input.finalize_type() {
+                check(pt)?;
+            }
+        }
+        for output in view.outputs() {
+            if let FinalizeType::Plaintext(pt) = output.finalize_type() {
+                check(pt)?;
+            }
+        }
+    }
+
+    // Check each struct member.
+    for (_, struct_) in program.structs() {
+        for (_, pt) in struct_.members() {
+            check(pt)?;
+        }
+    }
+
+    // Check each record entry.
+    for (_, record) in program.records() {
+        for (_, entry) in record.entries() {
+            match entry {
+                EntryType::Constant(pt) | EntryType::Public(pt) | EntryType::Private(pt) => check(pt)?,
+            }
+        }
+    }
+
+    // Check each mapping key and value.
+    for (_, mapping) in program.mappings() {
+        check(mapping.key().plaintext_type())?;
+        check(mapping.value().plaintext_type())?;
+    }
+
+    // Check closure inputs and outputs.
+    for (_, closure) in program.closures() {
+        for input in closure.inputs() {
+            if let RegisterType::Plaintext(pt) = input.register_type() {
+                check(pt)?;
+            }
+        }
+        for output in closure.outputs() {
+            if let RegisterType::Plaintext(pt) = output.register_type() {
+                check(pt)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Returns the size in bits of the given plaintext type, excluding any type metadata.
+///
+/// Each struct reference is resolved against the program that declares it, since a struct declared
+/// in an external program may refer to structs local to that program, or to structs in programs
+/// that the current program does not import.
+fn plaintext_size_in_bits_raw<N: Network>(
+    stack: &Stack<N>,
+    plaintext_type: &PlaintextType<N>,
+    depth: usize,
+) -> Result<usize> {
+    // Ensure that the depth is within the maximum limit.
+    ensure!(depth <= N::MAX_DATA_DEPTH, "Plaintext depth exceeds maximum limit: {}", N::MAX_DATA_DEPTH);
+
+    match plaintext_type {
+        PlaintextType::Literal(literal_type) => Ok(literal_type.size_in_bits::<N>() as usize),
+        PlaintextType::Struct(struct_name) => {
+            // Add up the sizes of the members, which are declared in the same program.
+            stack.program().get_struct(struct_name)?.members().values().try_fold(0usize, |total, member_type| {
+                total
+                    .checked_add(plaintext_size_in_bits_raw(stack, member_type, depth + 1)?)
+                    .ok_or_else(|| anyhow!("`plaintext_size_in_bits_raw` overflowed"))
+            })
+        }
+        PlaintextType::ExternalStruct(locator) => {
+            // Resolve the struct, and therefore its members, against the external program.
+            let external_stack = stack.get_external_stack(locator.program_id())?;
+            plaintext_size_in_bits_raw(&external_stack, &PlaintextType::Struct(*locator.resource()), depth)
+        }
+        PlaintextType::Array(array_type) => {
+            // Multiply the size of an element by the length of the array.
+            plaintext_size_in_bits_raw(stack, array_type.next_element_type(), depth + 1)?
+                .checked_mul(**array_type.length() as usize)
+                .ok_or_else(|| anyhow!("`plaintext_size_in_bits_raw` overflowed"))
+        }
+    }
 }
