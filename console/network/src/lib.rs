@@ -152,16 +152,24 @@ pub trait Network:
     /// The cost in microcredits per constraint for the deployment transaction.
     const SYNTHESIS_FEE_MULTIPLIER: u64 = 25; // 25 microcredits per constraint
     /// The maximum number of variables in a deployment. This limit was enforced at the transaction level up to
-    /// consensus version V16 (inclusive). This corresponds to ~0.5 second single-threaded runtime at
-    /// mainnet launch reference validator hardware.
+    /// consensus version V16 (inclusive), skipped at V18 in favor of a block-wide synthesis limit, and
+    /// replaced by `MAX_DEPLOYMENT_VARIABLES_V2` from V19. This corresponds to ~0.5 second single-threaded
+    /// runtime at mainnet launch reference validator hardware.
     const MAX_DEPLOYMENT_VARIABLES: u64 = 1 << 21; // 2,097,152 variables
     /// The maximum number of constraints in a deployment. This limit was enforced at the transaction level up to
-    /// consensus version V16 (inclusive). This corresponds to ~0.5 second single-threaded runtime at mainnet
-    /// launch reference validator hardware.
+    /// consensus version V16 (inclusive), skipped at V18 in favor of a block-wide synthesis limit, and
+    /// replaced by `MAX_DEPLOYMENT_CONSTRAINTS_V2` from V19. This corresponds to ~0.5 second single-threaded
+    /// runtime at mainnet launch reference validator hardware.
     const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 21; // 2,097,152 constraints
+    /// The maximum number of variables in a deployment. Enforced at the transaction level from consensus
+    /// version V19.
+    const MAX_DEPLOYMENT_VARIABLES_V2: u64 = 1 << 22; // 4,194,304 variables
+    /// The maximum number of constraints in a deployment. Enforced at the transaction level from consensus
+    /// version V19.
+    const MAX_DEPLOYMENT_CONSTRAINTS_V2: u64 = 1 << 22; // 4,194,304 constraints
     /// Approximate conversion factor from non-zero circuit entries to seconds of certificate-verification work
-    /// when checking a deployment. From it, a per-proposal synthesis limit is enforced starting at consensus
-    /// version V17 which overrides the two per-transaction limits above.
+    /// when checking a deployment. From it, a per-proposal synthesis limit is enforced at consensus
+    /// version V18 which overrides the two per-transaction limits above.
     const SYNTHESIS_PER_SECOND_OF_RUNTIME: u64 = 1_500_000;
     const MAX_BATCH_PROOF_INSTANCES: usize = 128;
     /// The maximum number of microcredits that can be spent as a fee.
@@ -213,7 +221,7 @@ pub trait Network:
     /// A list of (consensus_version, size) pairs indicating the maximum size in bits of any single
     /// `PlaintextType` declared in a program. This mirrors the runtime budget `to_fields` enforces.
     const MAX_PLAINTEXT_TYPE_SIZE_IN_BITS: [(ConsensusVersion, usize); 1] =
-        [(ConsensusVersion::V19, Self::MAX_DATA_SIZE_IN_FIELDS as usize * Field::<Self>::SIZE_IN_DATA_BITS)];
+        [(ConsensusVersion::V20, Self::MAX_DATA_SIZE_IN_FIELDS as usize * Field::<Self>::SIZE_IN_DATA_BITS)];
 
     /// The minimum number of entries in a struct.
     const MIN_STRUCT_ENTRIES: usize = 1; // This ensures the struct is not empty.

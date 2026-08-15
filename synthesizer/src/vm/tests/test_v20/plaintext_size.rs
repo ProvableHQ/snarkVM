@@ -19,11 +19,11 @@ use crate::Stack;
 
 use console::network::prelude::*;
 
-/// Builds a VM advanced to V19 height, adds `imports` to the process, and runs
-/// `check_program_plaintext_sizes` against `program_text` using the V19 bit budget.
-fn run_check_at_v19_with_imports(imports: &[&str], program_text: &str) -> Result<()> {
+/// Builds a VM advanced to V20 height, adds `imports` to the process, and runs
+/// `check_program_plaintext_sizes` against `program_text` using the V20 bit budget.
+fn run_check_at_v20_with_imports(imports: &[&str], program_text: &str) -> Result<()> {
     let rng = &mut TestRng::default();
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V20).unwrap(), rng);
 
     // Add the imported programs, in topological order, so that the program under test resolves.
     for import in imports {
@@ -36,17 +36,17 @@ fn run_check_at_v19_with_imports(imports: &[&str], program_text: &str) -> Result
     check_program_plaintext_sizes(&program, &stack, max_bits)
 }
 
-/// Builds a VM advanced to V19 height and runs `check_program_plaintext_sizes`
-/// against `program_text` using the V19 bit budget.
-fn run_check_at_v19(program_text: &str) -> Result<()> {
-    run_check_at_v19_with_imports(&[], program_text)
+/// Builds a VM advanced to V20 height and runs `check_program_plaintext_sizes`
+/// against `program_text` using the V20 bit budget.
+fn run_check_at_v20(program_text: &str) -> Result<()> {
+    run_check_at_v20_with_imports(&[], program_text)
 }
 
 /// A triply-nested 2048x2048x2048 bool array, the largest array type the element limit permits.
 /// It is rejected on the type AST, without sampling any leaf.
 #[test]
 fn test_deeply_nested_array_input_rejected() {
-    let result = run_check_at_v19(
+    let result = run_check_at_v20(
         r"
 program nested_array.aleo;
 
@@ -65,7 +65,7 @@ constructor:
 /// A program whose function input fits well under the cap is accepted.
 #[test]
 fn test_under_cap_function_input_accepted() {
-    run_check_at_v19(
+    run_check_at_v20(
         r"
 program small.aleo;
 
@@ -83,7 +83,7 @@ constructor:
 /// A struct whose member exceeds the per-type cap is rejected.
 #[test]
 fn test_over_cap_struct_member_rejected() {
-    let err = run_check_at_v19(
+    let err = run_check_at_v20(
         r"
 program big_struct.aleo;
 
@@ -105,7 +105,7 @@ constructor:
 /// A record entry that exceeds the per-type cap is rejected.
 #[test]
 fn test_over_cap_record_entry_rejected() {
-    let err = run_check_at_v19(
+    let err = run_check_at_v20(
         r"
 program big_record.aleo;
 
@@ -128,7 +128,7 @@ constructor:
 /// A mapping value that exceeds the per-type cap is rejected.
 #[test]
 fn test_over_cap_mapping_value_rejected() {
-    let err = run_check_at_v19(
+    let err = run_check_at_v20(
         r"
 program big_mapping.aleo;
 
@@ -151,7 +151,7 @@ constructor:
 /// A closure input that exceeds the per-type cap is rejected.
 #[test]
 fn test_over_cap_closure_input_rejected() {
-    let err = run_check_at_v19(
+    let err = run_check_at_v20(
         r"
 program big_closure.aleo;
 
@@ -176,10 +176,10 @@ constructor:
 /// Since async arguments and finalize inputs must agree, the over-cap type also appears as
 /// a function input; the function-input check fires first, but the program is still rejected.
 /// The legacy `check_future_argument_bit_size` runs only before V14 and permits up to
-/// `u16::MAX` bits; this check applies from V19 with a tighter budget.
+/// `u16::MAX` bits; this check applies from V20 with a tighter budget.
 #[test]
 fn test_over_cap_finalize_input_rejected() {
-    let err = run_check_at_v19(
+    let err = run_check_at_v20(
         r"
 program big_finalize.aleo;
 
@@ -206,7 +206,7 @@ constructor:
 /// against that program, and accepted when it fits under the cap.
 #[test]
 fn test_under_cap_external_struct_accepted() {
-    run_check_at_v19_with_imports(
+    run_check_at_v20_with_imports(
         &[r"
 program child.aleo;
 
@@ -240,10 +240,10 @@ constructor:
 }
 
 /// An external struct whose local member type exceeds the per-type cap is rejected. The external
-/// program may predate V19, so its declarations are only bounded where an importer declares them.
+/// program may predate V20, so its declarations are only bounded where an importer declares them.
 #[test]
 fn test_over_cap_external_struct_rejected() {
-    let err = run_check_at_v19_with_imports(
+    let err = run_check_at_v20_with_imports(
         &[r"
 program child.aleo;
 
@@ -280,7 +280,7 @@ constructor:
 /// each struct reference must be resolved against the program that declares it.
 #[test]
 fn test_under_cap_transitive_external_struct_accepted() {
-    run_check_at_v19_with_imports(
+    run_check_at_v20_with_imports(
         &[
             r"
 program grandchild.aleo;

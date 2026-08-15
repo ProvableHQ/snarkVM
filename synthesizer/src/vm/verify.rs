@@ -429,7 +429,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         }
                     }
                 }
-                if consensus_version >= ConsensusVersion::V19 {
+                if consensus_version >= ConsensusVersion::V20 {
                     // Bound the size in bits of every plaintext type declared in the program. This runs
                     // before deployment verification samples values, since sampling walks the leaves of
                     // the declared type.

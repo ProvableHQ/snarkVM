@@ -16,7 +16,7 @@
 // Tests that the translation-marked variants of Input and Output are checked correctly.
 mod translated_type_checks;
 
-// Tests for the V19 plaintext-type size bound.
+// Tests for the V20 plaintext-type size bound.
 mod plaintext_size;
 
 use super::*;
