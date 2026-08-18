@@ -94,9 +94,12 @@ impl<N: Network> DynamicRecord<N> {
 
 impl<N: Network> ToBytes for DynamicRecord<N> {
     /// Writes the record to a buffer.
+    ///
+    /// Always writes encoding version 2, which includes the plaintext entry map when it is present.
+    /// Merge this change only after delegated provers decode version 2.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the serialization format version.
-        1u8.write_le(&mut writer)?;
+        2u8.write_le(&mut writer)?;
 
         // Write the owner.
         self.owner.write_le(&mut writer)?;
@@ -108,7 +111,41 @@ impl<N: Network> ToBytes for DynamicRecord<N> {
         self.nonce.write_le(&mut writer)?;
 
         // Write the record version field.
-        self.version.write_le(&mut writer)
+        self.version.write_le(&mut writer)?;
+
+        // Write the optional entry map (empty when `data` is `None`).
+        Self::write_data_le(&mut writer, self.data.as_ref())
+    }
+}
+
+impl<N: Network> DynamicRecord<N> {
+    /// Writes a version-2 plaintext entry map.
+    fn write_data_le<W: Write>(mut writer: W, data: Option<&RecordData<N>>) -> IoResult<()> {
+        let data = match data {
+            Some(data) => data,
+            None => {
+                0u8.write_le(&mut writer)?;
+                return Ok(());
+            }
+        };
+
+        // Write the number of entries.
+        u8::try_from(data.len()).or_halt_with::<N>("Dynamic record length exceeds u8::MAX").write_le(&mut writer)?;
+        // Write each entry.
+        for (entry_name, entry_value) in data {
+            // Write the entry name.
+            entry_name.write_le(&mut writer)?;
+            // Write the entry value (performed in 2 steps to prevent infinite recursion).
+            let bytes = entry_value.to_bytes_le().map_err(|e| error(e.to_string()))?;
+            // Write the number of bytes.
+            u16::try_from(bytes.len())
+                .or_halt_with::<N>("Dynamic record entry exceeds u16::MAX bytes")
+                .write_le(&mut writer)?;
+            // Write the bytes.
+            bytes.write_le(&mut writer)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -133,6 +170,7 @@ mod tests {
         assert_eq!(expected.root(), candidate.root());
         assert_eq!(expected.nonce(), candidate.nonce());
         assert_eq!(expected.version(), candidate.version());
+        assert_eq!(expected.data(), candidate.data());
     }
 
     #[test]
@@ -181,23 +219,14 @@ mod tests {
         check_bytes(&record);
     }
 
-    /// Encodes a dynamic record using the version-2 layout (header plus entry map).
-    fn write_v2(record: &DynamicRecord<CurrentNetwork>) -> Vec<u8> {
+    /// Encodes a dynamic record using the version-1 layout (header only).
+    fn write_v1(record: &DynamicRecord<CurrentNetwork>) -> Vec<u8> {
         let mut writer = Vec::new();
-        2u8.write_le(&mut writer).unwrap();
+        1u8.write_le(&mut writer).unwrap();
         record.owner().write_le(&mut writer).unwrap();
         record.root().write_le(&mut writer).unwrap();
         record.nonce().write_le(&mut writer).unwrap();
         record.version().write_le(&mut writer).unwrap();
-
-        let data = record.data().as_ref().expect("expected populated dynamic record data");
-        u8::try_from(data.len()).unwrap().write_le(&mut writer).unwrap();
-        for (entry_name, entry_value) in data {
-            entry_name.write_le(&mut writer).unwrap();
-            let bytes = entry_value.to_bytes_le().unwrap();
-            u16::try_from(bytes.len()).unwrap().write_le(&mut writer).unwrap();
-            bytes.write_le(&mut writer).unwrap();
-        }
         writer
     }
 
@@ -218,7 +247,7 @@ mod tests {
         .unwrap();
         let expected = DynamicRecord::from_record(&record).unwrap();
 
-        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&write_v2(&expected)[..]).unwrap();
+        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&expected.to_bytes_le().unwrap()[..]).unwrap();
         assert_eq!(expected.owner(), candidate.owner());
         assert_eq!(expected.root(), candidate.root());
         assert_eq!(expected.nonce(), candidate.nonce());
@@ -244,7 +273,7 @@ mod tests {
         let expected = DynamicRecord::from_record(&record).unwrap();
         assert!(expected.data().is_some());
 
-        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&expected.to_bytes_le().unwrap()[..]).unwrap();
+        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&write_v1(&expected)[..]).unwrap();
         assert!(candidate.data().is_none());
     }
 
@@ -263,7 +292,7 @@ mod tests {
         )
         .unwrap();
         let expected = DynamicRecord::from_record(&record).unwrap();
-        let mut bytes = write_v2(&expected);
+        let mut bytes = expected.to_bytes_le().unwrap();
         // Overwrite the root (bytes after the encoding version and owner).
         let root_offset = 1 + expected.owner().to_bytes_le().unwrap().len();
         let root_bytes = Field::<CurrentNetwork>::from_u64(12345).to_bytes_le().unwrap();
