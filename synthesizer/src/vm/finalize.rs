@@ -311,7 +311,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
             (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
         } else {
-            (None, None)
+            Authority::<N>::beacon_limits(block.height())
         };
         let state = FinalizeGlobalState::new::<N>(
             block.round(),

@@ -416,7 +416,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let (block_spend_limit, block_synthesis_limit) = if let Some(subdag) = subdag {
             (subdag.spend_limit(next_height), subdag.synthesis_limit(next_height))
         } else {
-            (None, None)
+            (Subdag::<N>::min_spend_limit(next_height), Subdag::<N>::min_synthesis_limit(next_height))
         };
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
