@@ -120,11 +120,26 @@ impl<N: Network> Stack<N> {
         // Get the program ID.
         let program_id = self.program.id();
 
-        if consensus_version < ConsensusVersion::V18 {
-            // Check that the number of combined variables does not exceed the deployment limit.
-            ensure!(deployment.num_combined_variables()? <= N::MAX_DEPLOYMENT_VARIABLES);
-            // Check that the number of combined constraints does not exceed the deployment limit.
-            ensure!(deployment.num_combined_constraints()? <= N::MAX_DEPLOYMENT_CONSTRAINTS);
+        // Enforce per-transaction variable and constraint limits, except at V18 where a block-wide
+        // synthesis limit is used instead.
+        let (variable_limit, constraint_limit) = if consensus_version >= ConsensusVersion::V19 {
+            (Some(N::MAX_DEPLOYMENT_VARIABLES_V2), Some(N::MAX_DEPLOYMENT_CONSTRAINTS_V2))
+        } else if consensus_version >= ConsensusVersion::V18 {
+            (None, None)
+        } else {
+            (Some(N::MAX_DEPLOYMENT_VARIABLES), Some(N::MAX_DEPLOYMENT_CONSTRAINTS))
+        };
+        if let Some(variable_limit) = variable_limit {
+            ensure!(
+                deployment.num_combined_variables()? <= variable_limit,
+                "The number of combined variables exceeds the deployment limit"
+            );
+        }
+        if let Some(constraint_limit) = constraint_limit {
+            ensure!(
+                deployment.num_combined_constraints()? <= constraint_limit,
+                "The number of combined constraints exceeds the deployment limit"
+            );
         }
 
         // Construct the call stacks and assignments used to verify the certificates.
