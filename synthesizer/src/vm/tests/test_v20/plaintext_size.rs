@@ -325,3 +325,53 @@ constructor:
     )
     .expect("under-cap transitive external struct must pass");
 }
+
+/// A shared-struct graph: `MAX_STRUCT_ENTRIES` members per struct, every member of `s{k}` referring to `s{k-1}`.
+/// A single input of type `s{depth - 1}` therefore spans `MAX_STRUCT_ENTRIES ^ (depth - 1)` distinct root-to-leaf
+/// paths — the shape exploited by the type-validation DoS. Without memoization `check_program_plaintext_sizes`
+/// re-expands every path and never returns; with it, each `(program, struct)` pair is sized once.
+///
+/// The check is run on a detached thread so that the regression surfaces as a bounded timeout failure rather
+/// than hanging the test suite indefinitely.
+#[test]
+fn test_shared_struct_dag_terminates() {
+    use std::{
+        fmt::Write as _,
+        sync::{mpsc, mpsc::RecvTimeoutError},
+        thread,
+        time::Duration,
+    };
+
+    const DEPTH: usize = 12;
+
+    let mut source = String::from("program testing_dag.aleo;\n\n");
+    for level in 0..DEPTH {
+        writeln!(source, "struct s{level}:").unwrap();
+        let member_type = if level == 0 { "field".to_string() } else { format!("s{}", level - 1) };
+        for member in 0..CurrentNetwork::MAX_STRUCT_ENTRIES {
+            writeln!(source, "    m{member} as {member_type};").unwrap();
+        }
+        source.push('\n');
+    }
+    writeln!(source, "function f:\n    input r0 as s{}.private;", DEPTH - 1).unwrap();
+    source.push_str("\nconstructor:\n    assert.eq true true;\n");
+
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = sender.send(run_check_at_v20(&source));
+    });
+
+    // 5 minutes is generous even if the CI machine is heavily loaded.
+    match receiver.recv_timeout(Duration::from_secs(300)) {
+        // The graph is astronomically over the cap, so it must be rejected — either for exceeding the cap or,
+        // as here, because its bit size overflows `usize` first. The point is only that it is rejected promptly.
+        Ok(result) => {
+            result.expect_err("over-cap shared-struct graph must be rejected");
+        }
+        Err(RecvTimeoutError::Timeout) => panic!(
+            "check_program_plaintext_sizes did not terminate within 300s: the shared-struct graph is being \
+             re-expanded exponentially (memoization is missing)"
+        ),
+        Err(RecvTimeoutError::Disconnected) => panic!("the checking thread panicked; see its output above"),
+    }
+}

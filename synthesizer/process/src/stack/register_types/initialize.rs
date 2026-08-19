@@ -1086,13 +1086,20 @@ mod tests {
 
     type CurrentNetwork = MainnetV0;
 
-    /// Builds a program whose `depth` structs each have `MAX_STRUCT_ENTRIES` members, where every member of
-    /// `s{k}` refers to `s{k-1}` (and every member of `s0` is a `field`). A single function input of type
+    /// Builds a program named `name` whose `depth` structs each have `MAX_STRUCT_ENTRIES` members, where every
+    /// member of `s{k}` refers to `s{k-1}` (and every member of `s0` is a `field`). A function input of type
     /// `s{depth - 1}` therefore references an acyclic struct graph with `MAX_STRUCT_ENTRIES ^ (depth - 1)`
     /// distinct root-to-leaf paths — the shape exploited by the type-validation DoS.
-    fn sample_shared_struct_program(depth: usize) -> Program<CurrentNetwork> {
+    ///
+    /// `function` is passed `depth - 1` and returns the body of the `compute` function, so that each test can
+    /// drive a different type-checking walker over that graph.
+    fn sample_shared_struct_program(
+        name: &str,
+        depth: usize,
+        function: impl FnOnce(usize) -> String,
+    ) -> Program<CurrentNetwork> {
         assert!(depth >= 1);
-        let mut source = String::from("program testing_dag.aleo;\n\n");
+        let mut source = format!("program {name}.aleo;\n\n");
         for level in 0..depth {
             writeln!(source, "struct s{level}:").unwrap();
             let member_type = if level == 0 { "field".to_string() } else { format!("s{}", level - 1) };
@@ -1101,7 +1108,7 @@ mod tests {
             }
             source.push('\n');
         }
-        writeln!(source, "function compute:\n    input r0 as s{}.private;", depth - 1).unwrap();
+        writeln!(source, "function compute:\n{}", function(depth - 1)).unwrap();
         source.push_str("\nconstructor:\n    assert.eq true true;\n");
         Program::from_str(&source).unwrap()
     }
@@ -1114,7 +1121,7 @@ mod tests {
         //
         // The traversal is run on a detached thread so that the missing-memoization regression surfaces as a
         // bounded timeout failure rather than hanging the test suite indefinitely.
-        let program = sample_shared_struct_program(12);
+        let program = sample_shared_struct_program("testing_dag", 12, |top| format!("    input r0 as s{top}.private;"));
 
         let (sender, receiver) = mpsc::channel();
         thread::spawn(move || {
@@ -1124,12 +1131,72 @@ mod tests {
             let _ = sender.send(is_ok);
         });
 
-        // 5 minutes is generous even if the CI machine is heavily loaded
+        // 5 minutes is generous even if the CI machine is heavily loaded.
         match receiver.recv_timeout(Duration::from_secs(300)) {
             Ok(true) => {}
             Ok(false) => panic!("Stack::new rejected a well-formed shared-struct program"),
             Err(_) => panic!(
-                "check_plaintext_type did not terminate within 30s: the shared-struct graph is being re-expanded \
+                "check_plaintext_type did not terminate within 300s: the shared-struct graph is being re-expanded \
+                 exponentially (memoization is missing)"
+            ),
+        }
+    }
+
+    #[test]
+    fn test_size_in_bits_shared_struct_dag_terminates() {
+        // `hash.bhp256` computes `size_in_bits` of its operand type during `Stack::new` type-checking. Without
+        // memoization this recurses over the shared-struct DAG exponentially and never returns. With memoization
+        // the walk is linear and `Stack::new` returns promptly. (The deployment is then rejected for an unrelated
+        // reason - the struct's bit size overflows `usize` - so only termination is asserted here.)
+        let program = sample_shared_struct_program("testing_dag_hash", 12, |top| {
+            format!(
+                "    input r0 as s{top}.private;\n    hash.bhp256 r0 into r1 as field;\n    output r1 as field.private;"
+            )
+        });
+
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let process = Process::<CurrentNetwork>::load().expect("Failed to load process");
+            // We only assert that type-checking terminates; the deployment itself may still be rejected.
+            let _ = Stack::new(&process, &program);
+            let _ = sender.send(());
+        });
+
+        // 5 minutes is generous even if the CI machine is heavily loaded.
+        match receiver.recv_timeout(Duration::from_secs(300)) {
+            Ok(()) => {}
+            Err(_) => panic!(
+                "size_in_bits did not terminate within 300s: the shared-struct type is being sized \
+                 exponentially (memoization is missing)"
+            ),
+        }
+    }
+
+    #[test]
+    fn test_types_equivalent_shared_struct_dag_terminates() {
+        // `is.eq` on two shared-struct-DAG operands runs `register_types_equivalent` -> `types_equivalent`
+        // during `Stack::new` type-checking. Without memoization this compares hundreds of trillions of member
+        // pairs and never returns; with memoization each `(program, program, struct)` triple is compared once.
+        let program = sample_shared_struct_program("testing_dag_eq", 12, |top| {
+            format!(
+                "    input r0 as s{top}.private;\n    input r1 as s{top}.private;\n    is.eq r0 r1 into r2;\n    \
+                 output r2 as boolean.private;"
+            )
+        });
+
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let process = Process::<CurrentNetwork>::load().expect("Failed to load process");
+            let is_ok = Stack::new(&process, &program).is_ok();
+            let _ = sender.send(is_ok);
+        });
+
+        // 5 minutes is generous even if the CI machine is heavily loaded.
+        match receiver.recv_timeout(Duration::from_secs(300)) {
+            Ok(true) => {}
+            Ok(false) => panic!("Stack::new rejected a well-formed program using is.eq on shared structs"),
+            Err(_) => panic!(
+                "types_equivalent did not terminate within 300s: shared-struct comparison is being expanded \
                  exponentially (memoization is missing)"
             ),
         }
