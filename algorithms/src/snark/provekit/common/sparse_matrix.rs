@@ -15,9 +15,11 @@
 
 // Originally derived from ProveKit, Copyright 2026 World Foundation (MIT).
 
-use crate::snark::provekit::common::{InternedFieldElement, Interner};
+use crate::snark::provekit::{
+    common::{InternedFieldElement, Interner},
+    whir::algebra::embedding::Embedding,
+};
 use anyhow::{Result, bail};
-use ark_ff::Field;
 use rayon::{
     iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator},
     slice::ParallelSliceMut,
@@ -30,11 +32,11 @@ use serde::{
     de::{SeqAccess, Visitor},
     ser::SerializeStruct,
 };
+use snarkvm_fields::Field;
 use std::{
     fmt::{self, Debug},
     ops::{Mul, Range},
 };
-use whir::algebra::embedding::Embedding;
 
 #[derive(Debug, Clone, Copy)]
 pub struct DeltaEncodingStats {
@@ -672,7 +674,7 @@ impl<F: Field> Mul<HydratedSparseMatrix<'_, F>> for &[F] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use whir::algebra::fields::Field64 as FieldElement;
+    use snarkvm_curves::bls12_377::Fr as FieldElement;
 
     #[test]
     fn test_delta_encoding_roundtrip() {
@@ -842,7 +844,7 @@ mod tests {
 
     #[test]
     fn test_mixed_multiply_matches_homogeneous_under_identity() {
-        use whir::algebra::embedding::Identity;
+        use crate::snark::provekit::whir::algebra::embedding::Identity;
 
         let mut interner = Interner::new();
         let v1 = interner.intern(FieldElement::from(2u64));

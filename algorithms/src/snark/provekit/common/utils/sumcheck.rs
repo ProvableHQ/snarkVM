@@ -15,15 +15,17 @@
 
 // Originally derived from ProveKit, Copyright 2026 World Foundation (MIT).
 
-use crate::snark::provekit::common::{
-    R1CS,
-    sparse_matrix::SparseMatrix,
-    utils::{unzip_double_array, workload_size},
+use crate::snark::provekit::{
+    common::{
+        R1CS,
+        sparse_matrix::SparseMatrix,
+        utils::{unzip_double_array, workload_size},
+    },
+    whir::algebra::embedding::Embedding,
 };
-use ark_ff::Field;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use snarkvm_fields::Field;
 use std::array;
-use whir::algebra::embedding::Embedding;
 
 /// Compute the sum of a vector valued function over the boolean hypercube in
 /// the leading variable.
@@ -288,18 +290,12 @@ pub fn multiply_transposed_by_eq_alpha<M: Embedding>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_std::{One, Zero};
-    use whir::algebra::{
-        embedding::{Basefield, Identity},
-        fields::{Field64 as FieldElement, Field64_3},
-    };
+    use crate::snark::provekit::whir::algebra::embedding::Identity;
+    use snarkvm_curves::bls12_377::Fr as FieldElement;
+    use snarkvm_fields::{One, Zero};
 
     fn fe(v: i64) -> FieldElement {
         if v >= 0 { FieldElement::from(v as u64) } else { FieldElement::from(0u64) - FieldElement::from((-v) as u64) }
-    }
-
-    fn fe3(a: i64, b: i64, c: i64) -> Field64_3 {
-        Field64_3::from_base_prime_field_elems(vec![fe(a), fe(b), fe(c)]).unwrap()
     }
 
     /// Build a small 3×4 R1CS for matrix tests.
@@ -420,10 +416,10 @@ mod tests {
 
     /// The cubic sumcheck round evaluations, base mles against ext eq.
     fn mixed_round_map(
-        embedding: &Basefield<Field64_3>,
+        embedding: &Identity<FieldElement>,
         [a, b, c]: [(FieldElement, FieldElement); 3],
-        eq: (Field64_3, Field64_3),
-    ) -> [Field64_3; 3] {
+        eq: (FieldElement, FieldElement),
+    ) -> [FieldElement; 3] {
         let f0 = embedding.mixed_mul(eq.0, a.0 * b.0 - c.0);
         let f_em1 = embedding.mixed_mul(eq.0 + eq.0 - eq.1, (a.0 + a.0 - a.1) * (b.0 + b.0 - b.1) - (c.0 + c.0 - c.1));
         let f_inf = embedding.mixed_mul(eq.1 - eq.0, (a.1 - a.0) * (b.1 - b.0));
@@ -431,24 +427,24 @@ mod tests {
     }
 
     /// The same round evaluations, everything lifted to the extension.
-    fn ext_round_map([a, b, c, eq]: [(Field64_3, Field64_3); 4]) -> [Field64_3; 3] {
+    fn ext_round_map([a, b, c, eq]: [(FieldElement, FieldElement); 4]) -> [FieldElement; 3] {
         let f0 = eq.0 * (a.0 * b.0 - c.0);
         let f_em1 = (eq.0 + eq.0 - eq.1) * ((a.0 + a.0 - a.1) * (b.0 + b.0 - b.1) - (c.0 + c.0 - c.1));
         let f_inf = (eq.1 - eq.0) * (a.1 - a.0) * (b.1 - b.0);
         [f0, f_em1, f_inf]
     }
 
-    fn mixed_test_mles(n: usize) -> ([Vec<FieldElement>; 3], Vec<Field64_3>) {
+    fn mixed_test_mles(n: usize) -> ([Vec<FieldElement>; 3], Vec<FieldElement>) {
         let a = (0..n).map(|i| fe(i as i64 + 1)).collect();
         let b = (0..n).map(|i| fe(2 * i as i64 + 3)).collect();
         let c = (0..n).map(|i| fe(7 * i as i64 + 5)).collect();
-        let eq = (0..n).map(|i| fe3(i as i64 + 2, 3 * i as i64 + 1, i as i64)).collect();
+        let eq = (0..n).map(|i| fe(i as i64 + 2)).collect();
         ([a, b, c], eq)
     }
 
     #[test]
     fn test_mixed_map_reduce_matches_lifted() {
-        let embedding = Basefield::<Field64_3>::new();
+        let embedding = Identity::<FieldElement>::new();
         let ([a, b, c], eq) = mixed_test_mles(16);
 
         let mixed =
@@ -462,28 +458,28 @@ mod tests {
 
     #[test]
     fn test_mixed_fold_matches_lifted() {
-        let embedding = Basefield::<Field64_3>::new();
+        let embedding = Identity::<FieldElement>::new();
         let n = 8;
         let mle: Vec<FieldElement> = (0..n).map(|i| fe(3 * i as i64 + 2)).collect();
-        let point = fe3(5, 7, 11);
+        let point = fe(5);
 
         let folded = mixed_fold(&embedding, &mle, point);
 
         let lifted = embedding.map_vec(mle);
         let (p0, p1) = lifted.split_at(n / 2);
-        let expected: Vec<Field64_3> = p0.iter().zip(p1).map(|(&l, &h)| l + point * (h - l)).collect();
+        let expected: Vec<FieldElement> = p0.iter().zip(p1).map(|(&l, &h)| l + point * (h - l)).collect();
         assert_eq!(folded, expected);
     }
 
     #[test]
     fn test_mixed_fold_identity() {
         let n = 4;
-        let mle: Vec<Field64_3> = (0..n).map(|i| fe3(i as i64 + 1, i as i64, 2 * i as i64)).collect();
-        let point = fe3(9, 4, 6);
+        let mle: Vec<FieldElement> = (0..n).map(|i| fe(i as i64 + 1)).collect();
+        let point = fe(9);
 
         let folded = mixed_fold(&Identity::new(), &mle, point);
 
-        let expected: Vec<Field64_3> = (0..n / 2).map(|i| mle[i] + point * (mle[i + n / 2] - mle[i])).collect();
+        let expected: Vec<FieldElement> = (0..n / 2).map(|i| mle[i] + point * (mle[i + n / 2] - mle[i])).collect();
         assert_eq!(folded, expected);
     }
 
@@ -492,9 +488,9 @@ mod tests {
     /// base-field first round relies on.
     #[test]
     fn test_explicit_mixed_fold_matches_fused_fold() {
-        let embedding = Basefield::<Field64_3>::new();
+        let embedding = Identity::<FieldElement>::new();
         let ([a, b, c], eq) = mixed_test_mles(8);
-        let alpha = fe3(3, 8, 2);
+        let alpha = fe(3);
 
         let (mut la, mut lb, mut lc, mut leq) =
             (embedding.map_vec(a.clone()), embedding.map_vec(b.clone()), embedding.map_vec(c.clone()), eq.clone());
@@ -559,7 +555,7 @@ mod tests {
         let expected_c = vec![fe(-8), fe(-3), fe(2), fe(-9)];
 
         let [actual_a, actual_b, actual_c] = multiply_transposed_by_eq_alpha(
-            &whir::algebra::embedding::Identity::<FieldElement>::new(),
+            &crate::snark::provekit::whir::algebra::embedding::Identity::<FieldElement>::new(),
             &at,
             &bt,
             &ct,

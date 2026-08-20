@@ -19,55 +19,35 @@ use crate::{
     r1cs::{ConstraintSynthesizer, ConstraintSystem, Index, LinearCombination, Variable, errors::SynthesisError},
     snark::provekit::common::{PublicInputs, R1CS},
 };
-use ark_bls12_377::Fr as ArkFr;
-use ark_ff::PrimeField as ArkPrimeField;
-use snarkvm_curves::bls12_377::Fr as SnarkFr;
-use snarkvm_fields::{One, PrimeField};
-use snarkvm_utilities::ToBytes;
+use snarkvm_curves::bls12_377::Fr;
+use snarkvm_fields::One;
 
 /// An R1CS instance plus witness, ready for ProveKit setup/prove/verify.
 pub struct SynthesizedCircuit {
-    /// ProveKit R1CS matrices over arkworks BLS12-377 `Fr`.
-    pub r1cs: R1CS<ArkFr>,
+    /// ProveKit R1CS matrices over BLS12-377 `Fr`.
+    pub r1cs: R1CS<Fr>,
     /// Full witness, including the constant-one at index 0.
-    pub witness: Vec<ArkFr>,
+    pub witness: Vec<Fr>,
     /// Public inputs excluding the constant-one (Fiat-Shamir binding vector).
-    pub public_inputs: PublicInputs<ArkFr>,
+    pub public_inputs: PublicInputs<Fr>,
 }
 
 /// Synthesize `circuit` into a ProveKit R1CS instance over BLS12-377 `Fr`.
-pub fn synthesize<C: ConstraintSynthesizer<SnarkFr>>(circuit: &C) -> Result<SynthesizedCircuit, SynthesisError> {
+pub fn synthesize<C: ConstraintSynthesizer<Fr>>(circuit: &C) -> Result<SynthesizedCircuit, SynthesisError> {
     let mut cs = CollectingConstraintSystem::new();
     circuit.generate_constraints(&mut cs)?;
     Ok(cs.into_synthesized())
 }
 
-/// Convert a snarkVM BLS12-377 scalar into the arkworks representation.
-pub fn snarkvm_fr_to_ark(value: SnarkFr) -> ArkFr {
-    let mut bytes = [0u8; 32];
-    value.write_le(&mut bytes[..]).expect("BLS12-377 Fr is 32 little-endian bytes");
-    ArkFr::from_le_bytes_mod_order(&bytes)
-}
-
-/// Convert an arkworks BLS12-377 scalar into the snarkVM representation.
-pub fn ark_fr_to_snarkvm(value: ArkFr) -> SnarkFr {
-    let limbs = value.into_bigint().0;
-    let mut bytes = [0u8; 32];
-    for (i, &limb) in limbs.iter().enumerate() {
-        bytes[i * 8..(i + 1) * 8].copy_from_slice(&limb.to_le_bytes());
-    }
-    SnarkFr::from_bytes_le_mod_order(&bytes)
-}
-
 struct CollectingConstraintSystem {
-    public_variables: Vec<SnarkFr>,
-    private_variables: Vec<SnarkFr>,
-    constraints: Vec<(LinearCombination<SnarkFr>, LinearCombination<SnarkFr>, LinearCombination<SnarkFr>)>,
+    public_variables: Vec<Fr>,
+    private_variables: Vec<Fr>,
+    constraints: Vec<(LinearCombination<Fr>, LinearCombination<Fr>, LinearCombination<Fr>)>,
 }
 
 impl CollectingConstraintSystem {
     fn new() -> Self {
-        Self { public_variables: vec![<SnarkFr as One>::one()], private_variables: Vec::new(), constraints: Vec::new() }
+        Self { public_variables: vec![<Fr as One>::one()], private_variables: Vec::new(), constraints: Vec::new() }
     }
 
     fn into_synthesized(self) -> SynthesizedCircuit {
@@ -85,8 +65,8 @@ impl CollectingConstraintSystem {
         }
 
         let mut witness = Vec::with_capacity(num_witnesses);
-        witness.extend(self.public_variables.iter().copied().map(snarkvm_fr_to_ark));
-        witness.extend(self.private_variables.iter().copied().map(snarkvm_fr_to_ark));
+        witness.extend(self.public_variables);
+        witness.extend(self.private_variables);
 
         let public_inputs =
             if num_public > 1 { PublicInputs::from_vec(witness[1..num_public].to_vec()) } else { PublicInputs::new() };
@@ -95,8 +75,8 @@ impl CollectingConstraintSystem {
     }
 }
 
-fn lc_to_terms(lc: &LinearCombination<SnarkFr>, num_public: usize) -> Vec<(ArkFr, usize)> {
-    lc.as_ref().iter().map(|(var, coeff)| (snarkvm_fr_to_ark(*coeff), var_to_column(*var, num_public))).collect()
+fn lc_to_terms(lc: &LinearCombination<Fr>, num_public: usize) -> Vec<(Fr, usize)> {
+    lc.as_ref().iter().map(|(var, coeff)| (*coeff, var_to_column(*var, num_public))).collect()
 }
 
 fn var_to_column(var: Variable, num_public: usize) -> usize {
@@ -106,12 +86,12 @@ fn var_to_column(var: Variable, num_public: usize) -> usize {
     }
 }
 
-impl ConstraintSystem<SnarkFr> for CollectingConstraintSystem {
+impl ConstraintSystem<Fr> for CollectingConstraintSystem {
     type Root = Self;
 
     fn alloc<FN, A, AR>(&mut self, _: A, f: FN) -> Result<Variable, SynthesisError>
     where
-        FN: FnOnce() -> Result<SnarkFr, SynthesisError>,
+        FN: FnOnce() -> Result<Fr, SynthesisError>,
         A: FnOnce() -> AR,
         AR: AsRef<str>,
     {
@@ -122,7 +102,7 @@ impl ConstraintSystem<SnarkFr> for CollectingConstraintSystem {
 
     fn alloc_input<FN, A, AR>(&mut self, _: A, f: FN) -> Result<Variable, SynthesisError>
     where
-        FN: FnOnce() -> Result<SnarkFr, SynthesisError>,
+        FN: FnOnce() -> Result<Fr, SynthesisError>,
         A: FnOnce() -> AR,
         AR: AsRef<str>,
     {
@@ -135,9 +115,9 @@ impl ConstraintSystem<SnarkFr> for CollectingConstraintSystem {
     where
         A: FnOnce() -> AR,
         AR: AsRef<str>,
-        LA: FnOnce(LinearCombination<SnarkFr>) -> LinearCombination<SnarkFr>,
-        LB: FnOnce(LinearCombination<SnarkFr>) -> LinearCombination<SnarkFr>,
-        LC: FnOnce(LinearCombination<SnarkFr>) -> LinearCombination<SnarkFr>,
+        LA: FnOnce(LinearCombination<Fr>) -> LinearCombination<Fr>,
+        LB: FnOnce(LinearCombination<Fr>) -> LinearCombination<Fr>,
+        LC: FnOnce(LinearCombination<Fr>) -> LinearCombination<Fr>,
     {
         self.constraints.push((
             a(LinearCombination::zero()),

@@ -104,6 +104,12 @@ workspace = true
 [dependencies.rand]
 workspace = true
 
+# spongefish is built against rand 0.8; keep a matching copy for transcript RNG interop.
+[dependencies.rand_08]
+package = "rand"
+version = "0.8.5"
+optional = true
+
 [dependencies.rayon]
 workspace = true
 
@@ -124,28 +130,8 @@ workspace = true
 [dependencies.num-traits]
 workspace = true
 
-[dependencies.ark-bls12-377]
-version = "0.5"
-default-features = false
-features = [ "scalar_field" ]
-optional = true
-
-[dependencies.ark-ff]
-version = "0.5"
-default-features = false
-features = [ "std" ]
-optional = true
-
-[dependencies.ark-serialize]
-version = "0.5"
-default-features = false
-features = [ "derive" ]
-optional = true
-
-[dependencies.ark-std]
-version = "0.5"
-default-features = false
-features = [ "std" ]
+[dependencies.arrayvec]
+version = "0.7"
 optional = true
 
 [dependencies.base64]
@@ -154,6 +140,34 @@ optional = true
 
 [dependencies.blake3]
 version = "=1.8.3"
+features = [ "digest", "traits-preview" ]
+optional = true
+
+[dependencies.ciborium]
+version = "0.2"
+optional = true
+
+[dependencies.const-oid]
+version = "0.9"
+optional = true
+
+[dependencies.derive-where]
+version = "1.6"
+features = [ "safe" ]
+optional = true
+
+[dependencies.digest]
+version = "0.10"
+features = [ "oid" ]
+optional = true
+
+[dependencies.hex-literal]
+version = "0.4"
+optional = true
+
+[dependencies.ordered-float]
+version = "5"
+features = [ "serde" ]
 optional = true
 
 [dependencies.postcard]
@@ -168,14 +182,15 @@ optional = true
 [dependencies.spongefish]
 git = "https://github.com/arkworks-rs/spongefish"
 rev = "fcc277f8a857fdeeadd7cca92ab08de63b1ff1a1"
-features = [ "ark-ff", "sha2", "blake3", "keccak" ]
+features = [ "sha2", "blake3", "keccak" ]
 optional = true
 
-[dependencies.whir]
-git = "https://github.com/WizardOfMenlo/whir"
-rev = "0aeaa7f337c743d9ddfcb9d909628d6491e3355c"
-default-features = false
-features = [ "rs_in_order" ]
+[dependencies.static_assertions]
+version = "1.1"
+optional = true
+
+[dependencies.zerocopy]
+version = "0.8"
 optional = true
 
 [dev-dependencies.expect-test]
@@ -212,14 +227,19 @@ test_exports = [ ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 snark-print = [ ]
 provekit = [
-  "ark-bls12-377",
-  "ark-ff",
-  "ark-serialize",
-  "ark-std",
+  "arrayvec",
   "base64",
   "blake3",
+  "ciborium",
+  "const-oid",
+  "derive-where",
+  "digest",
+  "hex-literal",
+  "ordered-float",
   "postcard",
+  "rand_08",
   "sha3",
   "spongefish",
-  "whir"
+  "static_assertions",
+  "zerocopy"
 ]

@@ -15,57 +15,55 @@
 
 // Originally derived from ProveKit, Copyright 2026 World Foundation (MIT).
 
-use crate::snark::provekit::common::{
-    Base,
-    Ext,
-    FieldHash,
-    PrefixCovector,
-    ProofField,
-    PublicInputs,
-    R1CS,
-    WhirR1CSProof,
-    WhirR1CSScheme,
-    prefix_covector::{
-        OffsetCovector,
-        build_prefix_covectors,
-        compute_alpha_evals,
-        compute_challenge_eval,
-        compute_public_eval,
-        expand_powers,
-        make_challenge_weight,
-        make_public_weight,
-    },
-    utils::{
-        pad_to_power_of_two,
-        sumcheck::{
-            calculate_evaluations_over_boolean_hypercube_for_eq,
-            calculate_witness_bounds,
-            eval_cubic_poly,
-            mixed_fold,
-            mixed_sumcheck_map_reduce,
-            multiply_transposed_by_eq_alpha,
-            sumcheck_fold_map_reduce,
-            transpose_r1cs_matrices,
+use crate::snark::provekit::{
+    common::{
+        Base,
+        Ext,
+        FieldHash,
+        PrefixCovector,
+        ProofField,
+        PublicInputs,
+        R1CS,
+        WhirR1CSProof,
+        WhirR1CSScheme,
+        prefix_covector::{
+            OffsetCovector,
+            build_prefix_covectors,
+            compute_alpha_evals,
+            compute_challenge_eval,
+            compute_public_eval,
+            expand_powers,
+            make_challenge_weight,
+            make_public_weight,
         },
+        utils::{
+            pad_to_power_of_two,
+            sumcheck::{
+                calculate_evaluations_over_boolean_hypercube_for_eq,
+                calculate_witness_bounds,
+                eval_cubic_poly,
+                mixed_fold,
+                mixed_sumcheck_map_reduce,
+                multiply_transposed_by_eq_alpha,
+                sumcheck_fold_map_reduce,
+                transpose_r1cs_matrices,
+            },
+        },
+    },
+    whir::{
+        algebra::{
+            dot,
+            embedding::{Embedding, Identity},
+            linear_form::LinearForm,
+            mixed_dot,
+        },
+        protocols::whir::Witness as WhirWitness,
+        transcript::{Codec, DuplexSpongeInterface, FieldElem, ProverState, VerifierMessage},
     },
 };
 use anyhow::{Result, ensure};
-use ark_ff::{Field, One};
-use ark_std::{
-    Zero,
-    rand::distributions::{Distribution, Standard},
-};
+use snarkvm_fields::{Field, One, Zero};
 use std::borrow::Cow;
-use whir::{
-    algebra::{
-        dot,
-        embedding::{Embedding, Identity},
-        linear_form::LinearForm,
-        mixed_dot,
-    },
-    protocols::whir::Witness as WhirWitness,
-    transcript::{Codec, DuplexSpongeInterface, ProverState, VerifierMessage},
-};
 
 /// Spartan sumcheck blinding `g`, committed separately in the extension field.
 pub struct BlindingState<P: ProofField> {
@@ -136,7 +134,8 @@ pub trait WhirR1CSProver<P: FieldHash> {
 
 impl<P: FieldHash> WhirR1CSProver<P> for WhirR1CSScheme<P>
 where
-    Standard: Distribution<Ext<P>> + Distribution<Base<P>>,
+    Base<P>: snarkvm_utilities::Uniform,
+    Ext<P>: snarkvm_utilities::Uniform,
 {
     fn commit(
         &self,
@@ -217,7 +216,8 @@ fn prove_noir_inner<P: FieldHash>(
     produce_spark_query: bool,
 ) -> Result<(WhirR1CSProof, Option<SparkQueryData<P>>)>
 where
-    Standard: Distribution<Ext<P>> + Distribution<Base<P>>,
+    Base<P>: snarkvm_utilities::Uniform,
+    Ext<P>: snarkvm_utilities::Uniform,
 {
     ensure!(!commitments.is_empty(), "Need at least one commitment");
 
@@ -275,7 +275,8 @@ pub fn prove_from_alphas<P: FieldHash>(
     public_inputs: &PublicInputs<Base<P>>,
 ) -> Result<WhirR1CSProof>
 where
-    Standard: Distribution<Ext<P>> + Distribution<Base<P>>,
+    Base<P>: snarkvm_utilities::Uniform,
+    Ext<P>: snarkvm_utilities::Uniform,
 {
     let (proof, _) = prove_from_alphas_ctx(
         scheme,
@@ -293,7 +294,8 @@ pub fn prove_from_alphas_ctx<P: FieldHash>(
     public_inputs: &PublicInputs<Base<P>>,
 ) -> Result<(WhirR1CSProof, Option<SparkQueryData<P>>)>
 where
-    Standard: Distribution<Ext<P>> + Distribution<Base<P>>,
+    Base<P>: snarkvm_utilities::Uniform,
+    Ext<P>: snarkvm_utilities::Uniform,
 {
     let ProveFromAlphasCtx { alphas, blinding_eval, blinding_weights, mut commitments, spark_row } = ctx;
 
@@ -321,7 +323,7 @@ where
             create_weights_and_evaluations::<3, _>(&embedding, scheme.m, &commitment.polynomial, alphas);
 
         for eval in &evals {
-            merlin.prover_message(eval);
+            merlin.prover_field(eval);
         }
 
         // Snapshot the three alpha covectors (A, B, C) before the public
@@ -333,7 +335,7 @@ where
         if public_inputs_len > 0 {
             let public_eval =
                 compute_public_weight_evaluation(&embedding, &mut weights, &commitment.polynomial, public_weight);
-            merlin.prover_message(&public_eval);
+            merlin.prover_field(&public_eval);
         }
 
         let evaluations = compute_evaluations(&embedding, &weights, &commitment.polynomial);
@@ -377,15 +379,15 @@ where
         let evals_1 = compute_alpha_evals(&embedding, &c1.polynomial, &alphas_1);
         let evals_2 = compute_alpha_evals(&embedding, &c2.polynomial, &alphas_2);
         for eval in &evals_1 {
-            merlin.prover_message(eval);
+            merlin.prover_field(eval);
         }
         for eval in &evals_2 {
-            merlin.prover_message(eval);
+            merlin.prover_field(eval);
         }
 
         let public_1 = if public_inputs_len > 0 {
             let p1 = compute_public_eval(&embedding, x, public_inputs_len, &c1.polynomial);
-            merlin.prover_message(&p1);
+            merlin.prover_field(&p1);
             Some(p1)
         } else {
             None
@@ -395,7 +397,7 @@ where
         // challenge values at the expected positions.
         let challenge_eval = if !scheme.challenge_offsets.is_empty() {
             let ce = compute_challenge_eval(&embedding, x, &scheme.challenge_offsets, &c2.polynomial);
-            merlin.prover_message(&ce);
+            merlin.prover_field(&ce);
             Some(ce)
         } else {
             None
@@ -588,7 +590,7 @@ pub fn sum_over_hypercube<F: Field>(g_univariates: &[[F; 4]]) -> F {
 }
 
 fn generate_blinding_univariates<F: Field>(m_0: usize) -> Vec<[F; 4]> {
-    let mut rng = ark_std::rand::thread_rng();
+    let mut rng = rand::rng();
     (0..m_0).map(|_| std::array::from_fn(|_| F::rand(&mut rng))).collect()
 }
 
@@ -613,11 +615,11 @@ pub fn run_zk_sumcheck_prover<M, S>(
 ) -> (Vec<M::Target>, M::Target)
 where
     M: Embedding,
-    M::Target: Codec,
+    FieldElem<M::Target>: Codec,
     S: DuplexSpongeInterface<U = u8>,
 {
     let [mut a, mut b, mut c] = mles;
-    let r: Vec<M::Target> = merlin.verifier_message_vec(m_0);
+    let r: Vec<M::Target> = merlin.verifier_field_vec(m_0);
     let mut eq = calculate_evaluations_over_boolean_hypercube_for_eq(&r, 1 << r.len());
 
     pad_to_pow2_len_min2(&mut a);
@@ -629,9 +631,9 @@ where
 
     let sum_g_reduce = sum_over_hypercube(blinding_polynomial);
 
-    merlin.prover_message(&sum_g_reduce);
+    merlin.prover_field(&sum_g_reduce);
 
-    let rho: M::Target = merlin.verifier_message();
+    let rho: M::Target = merlin.verifier_field();
 
     // Prove that sum of F + ρ·G over the boolean hypercube equals ρ·Σ(G).
     let mut saved_val_for_sumcheck_equality_assertion = rho * sum_g_reduce;
@@ -692,7 +694,7 @@ where
 
     let weight_vec = expand_powers::<4, _>(alpha.as_slice());
     let blinding_eval = dot(&weight_vec, &blinding_vector[..weight_vec.len()]);
-    merlin.prover_message(&blinding_eval);
+    merlin.prover_field(&blinding_eval);
 
     (alpha, blinding_eval)
 }
@@ -700,14 +702,17 @@ where
 /// Absorb the combined round polynomial `hhat_i + ρ·g_i` into the transcript
 /// and draw the round challenge; returns it with the sumcheck equality value
 /// for the next round.
-fn combined_round_message<F: Field + Codec, S: DuplexSpongeInterface<U = u8>>(
+fn combined_round_message<F: Field, S: DuplexSpongeInterface<U = u8>>(
     merlin: &mut ProverState<S>,
     hhat: [F; 3],
     g_poly: [F; 4],
     rho: F,
     half: F,
     saved_val_for_sumcheck_equality_assertion: F,
-) -> (F, F) {
+) -> (F, F)
+where
+    FieldElem<F>: Codec,
+{
     let [hhat_i_at_0, hhat_i_at_em1, hhat_i_at_inf_over_x_cube] = hhat;
 
     let mut combined_hhat_i_coeffs = [F::zero(); 4];
@@ -741,9 +746,9 @@ fn combined_round_message<F: Field + Codec, S: DuplexSpongeInterface<U = u8>>(
     );
 
     for coeff in &combined_hhat_i_coeffs {
-        merlin.prover_message(coeff);
+        merlin.prover_field(coeff);
     }
-    let alpha_i: F = merlin.verifier_message();
+    let alpha_i: F = merlin.verifier_field();
 
     (alpha_i, eval_cubic_poly(combined_hhat_i_coeffs, alpha_i))
 }
@@ -790,15 +795,18 @@ fn compute_public_weight_evaluation<M: Embedding>(
     eval
 }
 
-fn get_public_weights<F: Field + Codec, S: DuplexSpongeInterface<U = u8>>(
+fn get_public_weights<F: Field, S: DuplexSpongeInterface<U = u8>>(
     public_inputs_hash: F,
     public_inputs_len: usize,
     merlin: &mut ProverState<S>,
     m: usize,
-) -> (F, PrefixCovector<F>) {
-    merlin.prover_message(&public_inputs_hash);
+) -> (F, PrefixCovector<F>)
+where
+    FieldElem<F>: Codec,
+{
+    merlin.prover_field(&public_inputs_hash);
 
-    let x: F = merlin.verifier_message();
+    let x: F = merlin.verifier_field();
 
     (x, make_public_weight(x, public_inputs_len, m))
 }

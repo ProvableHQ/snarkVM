@@ -15,8 +15,13 @@
 
 // Originally derived from ProveKit, Copyright 2026 World Foundation (MIT).
 
-use ark_ff::{Field, One, Zero};
-use whir::algebra::{embedding::Embedding, linear_form::LinearForm, mixed_dot, multilinear_extend};
+use crate::snark::provekit::whir::algebra::{
+    embedding::Embedding,
+    linear_form::LinearForm,
+    mixed_dot,
+    multilinear_extend,
+};
+use snarkvm_fields::{Field, One, Zero};
 
 /// A covector that stores only a power-of-two prefix, with the rest
 /// implicitly zero-padded to `domain_size`. Saves memory when the
@@ -331,8 +336,9 @@ pub fn compute_challenge_eval<M: Embedding>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_std::{One, Zero};
-    use whir::algebra::{fields::Field64 as FieldElement, multilinear_extend};
+    use crate::snark::provekit::whir::algebra::multilinear_extend;
+    use snarkvm_curves::bls12_377::Fr as FieldElement;
+    use snarkvm_fields::{One, Zero};
 
     /// Build a full domain-size vector that is zero everywhere except at
     /// `[offset .. offset + weights.len())`.
@@ -585,7 +591,7 @@ mod tests {
         poly[5] = fe(99);
         poly[11] = fe(17);
 
-        let embedding = whir::algebra::embedding::Identity::<FieldElement>::new();
+        let embedding = crate::snark::provekit::whir::algebra::embedding::Identity::<FieldElement>::new();
         let eval = compute_challenge_eval(&embedding, x, &offsets, &poly);
         let expected = fe(42) + fe(7) * fe(99) + fe(49) * fe(17);
         assert_eq!(eval, expected);

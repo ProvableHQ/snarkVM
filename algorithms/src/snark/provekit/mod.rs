@@ -23,8 +23,9 @@ pub mod poseidon_circuit;
 pub mod prover;
 pub mod snark;
 pub mod verifier;
+pub mod whir;
 
-pub use adapter::{SynthesizedCircuit, ark_fr_to_snarkvm, snarkvm_fr_to_ark, synthesize};
+pub use adapter::{SynthesizedCircuit, synthesize};
 pub use bls12_377::{Bls12_377Field, register};
 pub use common::{HashConfig, PublicInputs, R1CS, WhirR1CSProof, WhirR1CSScheme};
 pub use poseidon_circuit::PoseidonPermutationCircuit;

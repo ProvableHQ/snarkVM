@@ -16,9 +16,9 @@
 // Originally derived from ProveKit, Copyright 2026 World Foundation (MIT).
 
 use crate::snark::provekit::common::{HydratedSparseMatrix, Interner, SparseMatrix, interner::InternedFieldElement};
-use ark_ff::Field;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
+use snarkvm_fields::Field;
 use std::collections::HashMap;
 
 fn has_duplicate_witnesses<F>(terms: &[(F, usize)]) -> bool {
@@ -299,9 +299,8 @@ impl<F: Field> R1CS<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_ff::Zero;
-    use ark_std::One;
-    use whir::algebra::fields::Field64 as FieldElement;
+    use snarkvm_curves::bls12_377::Fr as FieldElement;
+    use snarkvm_fields::{One, Zero};
 
     /// Duplicate witness coefficients are summed, not overwritten.
     #[test]

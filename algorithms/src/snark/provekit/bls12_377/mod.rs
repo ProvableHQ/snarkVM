@@ -31,8 +31,10 @@ pub fn register() {
 
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        let ntt: Arc<dyn whir::algebra::ntt::ReedSolomon<ark_bls12_377::Fr>> =
-            Arc::new(whir::algebra::ntt::NttEngine::<ark_bls12_377::Fr>::new_from_fftfield());
-        whir::algebra::ntt::NTT.insert(ntt);
+        let ntt: Arc<dyn crate::snark::provekit::whir::algebra::ntt::ReedSolomon<snarkvm_curves::bls12_377::Fr>> =
+            Arc::new(crate::snark::provekit::whir::algebra::ntt::NttEngine::<
+                snarkvm_curves::bls12_377::Fr,
+            >::new_from_fftfield());
+        crate::snark::provekit::whir::algebra::ntt::NTT.insert(ntt);
     });
 }

@@ -15,25 +15,27 @@
 
 // Originally derived from ProveKit, Copyright 2026 World Foundation (MIT).
 
-use crate::snark::provekit::common::{
-    HashConfig,
-    PublicInputs,
-    R1CS,
-    field::{Base, Ext, FieldHash, ProofField},
-    utils::{next_power_of_two, serde_hex},
+#[cfg(debug_assertions)]
+use crate::snark::provekit::whir::transcript::Interaction;
+use crate::snark::provekit::{
+    common::{
+        HashConfig,
+        PublicInputs,
+        R1CS,
+        field::{Base, Ext, FieldHash, ProofField},
+        utils::{next_power_of_two, serde_hex},
+    },
+    whir::{
+        algebra::embedding::Identity,
+        engines::EngineId,
+        parameters::ProtocolParameters,
+        protocols::whir::Config as GenericWhirConfig,
+        transcript,
+    },
 };
 use serde::{Deserialize, Serialize};
 #[cfg(debug_assertions)]
 use std::fmt::Debug;
-#[cfg(debug_assertions)]
-use whir::transcript::Interaction;
-use whir::{
-    algebra::embedding::Identity,
-    engines::EngineId,
-    parameters::ProtocolParameters,
-    protocols::whir::Config as GenericWhirConfig,
-    transcript,
-};
 
 /// WHIR witness-domain floor: prover work is flat at or below `2^13` variables,
 /// so smaller commitments are padded up to this many variables.

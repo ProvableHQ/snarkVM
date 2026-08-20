@@ -21,14 +21,16 @@
 //! Noir/ACIR lowering IR and lives in the bn254 backend; only the public-input
 //! vector — which the generic verifier binds against the witness — is spine.
 
-use crate::snark::provekit::common::{
-    HashConfig,
-    field::{Ext, FieldHash},
-    utils::serde_ark_vec,
+use crate::snark::provekit::{
+    common::{
+        HashConfig,
+        field::{Ext, FieldHash},
+        utils::serde_ark_vec,
+    },
+    whir::algebra::embedding::Embedding,
 };
-use ark_ff::Field;
 use serde::{Deserialize, Serialize};
-use whir::algebra::embedding::Embedding;
+use snarkvm_fields::Field;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(bound = "")]

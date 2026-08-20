@@ -16,8 +16,8 @@
 // Originally derived from ProveKit, Copyright 2026 World Foundation (MIT).
 
 use crate::snark::provekit::common::utils::serde_ark;
-use ark_ff::Field;
 use serde::{Deserialize, Serialize};
+use snarkvm_fields::Field;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Eq, Serialize, Deserialize)]

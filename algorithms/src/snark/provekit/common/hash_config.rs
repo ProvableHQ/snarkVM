@@ -24,15 +24,16 @@
 //! - public-input instance binding (the field-element hashing lives in each
 //!   backend's [`crate::snark::provekit::common::FieldHash::hash_public_inputs`])
 
+use crate::snark::provekit::whir::engines::EngineId;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use whir::engines::EngineId;
 
 /// Raw 32-byte engine ID for the Skyscraper hash engine.
 ///
-/// Derived as `SHA3-256("whir::hash" || "skyscraper")`. Protocol-visible
-/// metadata: the engine *implementation* lives in each backend, but the ID is
-/// a field-agnostic tag so [`HashConfig::engine_id`] can route to it.
+/// Derived as `SHA3-256("crate::snark::provekit::whir::hash" || "skyscraper")`.
+/// Protocol-visible metadata: the engine *implementation* lives in each
+/// backend, but the ID is a field-agnostic tag so [`HashConfig::engine_id`] can
+/// route to it.
 pub const SKYSCRAPER_ENGINE_ID: [u8; 32] = [
     0xa5, 0x0d, 0x5e, 0xe2, 0xa3, 0xfc, 0x52, 0xe9, 0x6f, 0x11, 0x10, 0x3c, 0xbb, 0x8a, 0x65, 0xa3, 0x77, 0xb5, 0x82,
     0xb0, 0xb2, 0xdd, 0x42, 0x1c, 0x66, 0x19, 0x13, 0xe6, 0xa5, 0x63, 0xf8, 0xa1,
@@ -43,7 +44,7 @@ pub const SKYSCRAPER: EngineId = EngineId::new(SKYSCRAPER_ENGINE_ID);
 
 /// Pre-computed [`EngineId`] for the Poseidon2 hash engine.
 ///
-/// Derived as `SHA3-256("whir::hash" || "poseidon2")`.
+/// Derived as `SHA3-256("crate::snark::provekit::whir::hash" || "poseidon2")`.
 pub const POSEIDON2: EngineId = EngineId::new([
     0xab, 0x4c, 0x81, 0x0f, 0x79, 0xdd, 0xf2, 0xa5, 0x4e, 0x81, 0x73, 0x1f, 0x97, 0x08, 0x23, 0x6a, 0xcf, 0x5c, 0xc2,
     0xcc, 0x35, 0xe9, 0xc4, 0x57, 0xa4, 0x35, 0x37, 0xdc, 0x01, 0x23, 0x6b, 0xb7,
@@ -89,12 +90,12 @@ impl HashConfig {
 
     /// Returns the WHIR 2.0 engine ID for this hash configuration.
     #[must_use]
-    pub fn engine_id(&self) -> whir::engines::EngineId {
+    pub fn engine_id(&self) -> crate::snark::provekit::whir::engines::EngineId {
         match self {
             Self::Skyscraper => SKYSCRAPER,
-            Self::Sha256 => whir::hash::SHA2,
-            Self::Keccak => whir::hash::KECCAK,
-            Self::Blake3 => whir::hash::BLAKE3,
+            Self::Sha256 => crate::snark::provekit::whir::hash::SHA2,
+            Self::Keccak => crate::snark::provekit::whir::hash::KECCAK,
+            Self::Blake3 => crate::snark::provekit::whir::hash::BLAKE3,
             Self::Poseidon2 => POSEIDON2,
         }
     }

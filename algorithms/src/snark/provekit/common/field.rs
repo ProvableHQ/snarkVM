@@ -17,9 +17,9 @@
 
 //! Field abstraction for the generic proof-system spine.
 
-use ark_ff::FftField;
+use crate::snark::provekit::whir::algebra::embedding::Embedding;
+use snarkvm_fields::FftField;
 use std::fmt::Debug;
-use whir::{algebra::embedding::Embedding, transcript::Codec};
 
 /// Algebra carrier for a proof field: `Embedding::Source` is the base
 /// (committed) field, `Embedding::Target` the extension (challenge) field.
@@ -30,9 +30,9 @@ use whir::{algebra::embedding::Embedding, transcript::Codec};
 pub trait ProofField: Copy + Debug + Eq + Send + Sync {
     /// `Default` lets the spine construct the embedding instance for mixed
     /// base×ext products (`Identity`/`Basefield` both derive it). The extension
-    /// (`Target`) must be FFT-friendly and transcript-codec-able — WHIR's
-    /// requirement for any challenge/commitment field.
-    type Embedding: Embedding<Target: FftField + Codec> + Default;
+    /// (`Target`) must be FFT-friendly — WHIR's requirement for any
+    /// challenge/commitment field.
+    type Embedding: Embedding<Target: FftField> + Default;
 
     /// Per-field tag folded into the `.np` proof magic so one field's proof is
     /// rejected by another field's verifier. Must be unique per field; bn254

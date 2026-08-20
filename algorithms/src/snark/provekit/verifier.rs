@@ -15,31 +15,32 @@
 
 // Originally derived from ProveKit, Copyright 2026 World Foundation (MIT).
 
-use crate::snark::provekit::common::{
-    Base,
-    Ext,
-    FieldHash,
-    ProofField,
-    PublicInputs,
-    R1CS,
-    WhirR1CSProof,
-    WhirR1CSScheme,
-    prefix_covector::{
-        OffsetCovector,
-        build_prefix_covectors,
-        expand_powers,
-        make_challenge_weight,
-        make_public_weight,
+use crate::snark::provekit::{
+    common::{
+        Base,
+        Ext,
+        FieldHash,
+        ProofField,
+        PublicInputs,
+        R1CS,
+        WhirR1CSProof,
+        WhirR1CSScheme,
+        prefix_covector::{
+            OffsetCovector,
+            build_prefix_covectors,
+            expand_powers,
+            make_challenge_weight,
+            make_public_weight,
+        },
+        utils::sumcheck::{calculate_eq, eval_cubic_poly, multiply_transposed_by_eq_alpha, transpose_r1cs_matrices},
     },
-    utils::sumcheck::{calculate_eq, eval_cubic_poly, multiply_transposed_by_eq_alpha, transpose_r1cs_matrices},
+    whir::{
+        algebra::{embedding::Embedding, linear_form::LinearForm},
+        transcript::{Codec, DuplexSpongeInterface, FieldElem, Proof, VerifierMessage, VerifierState},
+    },
 };
 use anyhow::{Context, Result, ensure};
-use ark_ff::Field;
-use ark_std::One;
-use whir::{
-    algebra::{embedding::Embedding, linear_form::LinearForm},
-    transcript::{Codec, DuplexSpongeInterface, Proof, VerifierMessage, VerifierState},
-};
+use snarkvm_fields::{Field, One};
 
 #[derive(Debug)]
 pub struct DataFromSumcheckVerifier<F: Field> {
@@ -87,7 +88,7 @@ impl<P: FieldHash> WhirR1CSVerifier<P> for WhirR1CSScheme<P> {
             .map_err(|_| anyhow::anyhow!("Failed to parse blinding commitment"))?;
 
         let (commitment_2, logup_challenges) = if self.num_challenges > 0 {
-            let challenges: Vec<Ext<P>> = arthur.verifier_message_vec(self.num_challenges);
+            let challenges: Vec<Ext<P>> = arthur.verifier_field_vec(self.num_challenges);
             let commitment = self
                 .whir_witness
                 .receive_commitment(&mut arthur)
@@ -102,12 +103,12 @@ impl<P: FieldHash> WhirR1CSVerifier<P> for WhirR1CSScheme<P> {
         let (at, bt, ct) = transposed;
 
         let public_inputs_hash_buf: Ext<P> =
-            arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read public inputs hash"))?;
+            arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read public inputs hash"))?;
         ensure!(
             public_inputs_hash_buf == public_inputs_hash,
             "Public inputs hash mismatch: expected {public_inputs_hash:?}, got {public_inputs_hash_buf:?}"
         );
-        let x: Ext<P> = arthur.verifier_message();
+        let x: Ext<P> = arthur.verifier_field();
 
         let embedding = <P::Embedding>::default();
         let alphas =
@@ -130,22 +131,21 @@ impl<P: FieldHash> WhirR1CSVerifier<P> for WhirR1CSScheme<P> {
                 alphas_2.try_into().map_err(|_| anyhow::anyhow!("Expected 3 alpha vectors for commitment 2"))?;
 
             let evals_1: [Ext<P>; 3] = [
-                arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read evals_1[0]"))?,
-                arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read evals_1[1]"))?,
-                arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read evals_1[2]"))?,
+                arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read evals_1[0]"))?,
+                arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read evals_1[1]"))?,
+                arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read evals_1[2]"))?,
             ];
             let evals_2: [Ext<P>; 3] = [
-                arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read evals_2[0]"))?,
-                arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read evals_2[1]"))?,
-                arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read evals_2[2]"))?,
+                arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read evals_2[0]"))?,
+                arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read evals_2[1]"))?,
+                arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read evals_2[2]"))?,
             ];
 
             let mut weights_1 = build_prefix_covectors(self.m, alphas_1);
             let weights_2 = build_prefix_covectors(self.m, alphas_2);
 
             let evaluations_1 = if !public_inputs.is_empty() {
-                let public_1: Ext<P> =
-                    arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read public_1"))?;
+                let public_1: Ext<P> = arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read public_1"))?;
                 verify_public_input_binding(&embedding, public_1, x, public_inputs)?;
                 weights_1.insert(0, make_public_weight(x, public_inputs.len(), self.m));
                 vec![public_1, evals_1[0], evals_1[1], evals_1[2]]
@@ -158,7 +158,7 @@ impl<P: FieldHash> WhirR1CSVerifier<P> for WhirR1CSScheme<P> {
             // Fiat-Shamir challenge values at the expected positions.
             let challenge_covector = if let Some(ref challenges) = logup_challenges {
                 let challenge_eval: Ext<P> =
-                    arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read challenge_eval"))?;
+                    arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read challenge_eval"))?;
                 verify_challenge_binding(challenge_eval, x, challenges)?;
                 let cw = make_challenge_weight(x, &self.challenge_offsets, self.m);
                 evaluations_2.push(challenge_eval);
@@ -192,16 +192,16 @@ impl<P: FieldHash> WhirR1CSVerifier<P> for WhirR1CSScheme<P> {
             (evals_1[0] + evals_2[0], evals_1[1] + evals_2[1], evals_1[2] + evals_2[2])
         } else {
             let evals: [Ext<P>; 3] = [
-                arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read evals[0]"))?,
-                arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read evals[1]"))?,
-                arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read evals[2]"))?,
+                arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read evals[0]"))?,
+                arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read evals[1]"))?,
+                arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read evals[2]"))?,
             ];
 
             let mut weights = build_prefix_covectors(self.m, alphas);
 
             let evaluations = if !public_inputs.is_empty() {
                 let public_eval: Ext<P> =
-                    arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read public eval"))?;
+                    arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read public eval"))?;
                 verify_public_input_binding(&embedding, public_eval, x, public_inputs)?;
                 weights.insert(0, make_public_weight(x, public_inputs.len(), self.m));
                 vec![public_eval, evals[0], evals[1], evals[2]]
@@ -247,15 +247,18 @@ impl<P: FieldHash> WhirR1CSVerifier<P> for WhirR1CSScheme<P> {
     }
 }
 
-pub fn run_sumcheck_verifier<F: Field + Codec, S: DuplexSpongeInterface<U = u8>>(
+pub fn run_sumcheck_verifier<F: Field, S: DuplexSpongeInterface<U = u8>>(
     arthur: &mut VerifierState<'_, S>,
     m_0: usize,
-) -> Result<DataFromSumcheckVerifier<F>> {
-    let r: Vec<F> = arthur.verifier_message_vec(m_0);
+) -> Result<DataFromSumcheckVerifier<F>>
+where
+    FieldElem<F>: Codec,
+{
+    let r: Vec<F> = arthur.verifier_field_vec(m_0);
 
-    let sum_g: F = arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read sum_g"))?;
+    let sum_g: F = arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read sum_g"))?;
 
-    let rho: F = arthur.verifier_message();
+    let rho: F = arthur.verifier_field();
 
     let mut saved_val_for_sumcheck_equality_assertion = rho * sum_g;
 
@@ -263,12 +266,12 @@ pub fn run_sumcheck_verifier<F: Field + Codec, S: DuplexSpongeInterface<U = u8>>
 
     for item in &mut alpha {
         let hhat_i: [F; 4] = [
-            arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read hhat coeff"))?,
-            arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read hhat coeff"))?,
-            arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read hhat coeff"))?,
-            arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read hhat coeff"))?,
+            arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read hhat coeff"))?,
+            arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read hhat coeff"))?,
+            arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read hhat coeff"))?,
+            arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read hhat coeff"))?,
         ];
-        let alpha_i: F = arthur.verifier_message();
+        let alpha_i: F = arthur.verifier_field();
         *item = alpha_i;
         let hhat_i_at_zero = eval_cubic_poly(hhat_i, F::zero());
         let hhat_i_at_one = eval_cubic_poly(hhat_i, F::one());
@@ -279,7 +282,7 @@ pub fn run_sumcheck_verifier<F: Field + Codec, S: DuplexSpongeInterface<U = u8>>
         saved_val_for_sumcheck_equality_assertion = eval_cubic_poly(hhat_i, alpha_i);
     }
 
-    let blinding_eval: F = arthur.prover_message().map_err(|_| anyhow::anyhow!("Failed to read blinding eval"))?;
+    let blinding_eval: F = arthur.prover_field().map_err(|_| anyhow::anyhow!("Failed to read blinding eval"))?;
 
     let f_at_alpha = saved_val_for_sumcheck_equality_assertion - rho * blinding_eval;
 

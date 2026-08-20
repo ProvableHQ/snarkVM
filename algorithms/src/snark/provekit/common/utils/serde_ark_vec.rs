@@ -15,13 +15,13 @@
 
 // Originally derived from ProveKit, Copyright 2026 World Foundation (MIT).
 
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use serde::{
     Deserializer,
     Serializer,
     de::{Error as _, SeqAccess, Visitor},
     ser::{Error as _, SerializeSeq},
 };
+use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize};
 use std::{fmt, marker::PhantomData};
 
 pub fn serialize<T, S>(vec: &Vec<T>, serializer: S) -> Result<S::Ok, S::Error>

@@ -14,16 +14,9 @@
 // limitations under the License.
 
 use crate::snark::{
-    provekit::{
-        PoseidonPermutationCircuit,
-        ProvekitSNARK,
-        adapter::{ark_fr_to_snarkvm, snarkvm_fr_to_ark, synthesize},
-        common::PublicInputs,
-        proof_size,
-    },
+    provekit::{PoseidonPermutationCircuit, ProvekitSNARK, adapter::synthesize, common::PublicInputs, proof_size},
     varuna::TestCircuit,
 };
-use ark_ff::One as ArkOne;
 use snarkvm_curves::bls12_377::Fr as SnarkFr;
 use snarkvm_fields::{One, Zero};
 use snarkvm_utilities::TestRng;
@@ -76,9 +69,9 @@ fn wrong_public_inputs_fail_verify() {
 
     let mut wrong = synthesized.public_inputs.0.clone();
     if let Some(first) = wrong.first_mut() {
-        *first += <ark_bls12_377::Fr as ArkOne>::one();
+        *first += <SnarkFr as One>::one();
     } else {
-        wrong.push(<ark_bls12_377::Fr as ArkOne>::one());
+        wrong.push(<SnarkFr as One>::one());
     }
     let wrong_inputs = PublicInputs::from_vec(wrong);
     assert!(!ProvekitSNARK::verify(&scheme, &synthesized.r1cs, &wrong_inputs, &proof).expect("verify should return"));
@@ -100,10 +93,12 @@ fn prove_verify_poseidon_permutations() {
 
 #[test]
 fn fr_byte_roundtrip() {
+    use snarkvm_utilities::{FromBytes, ToBytes};
     let values = [<SnarkFr as Zero>::zero(), <SnarkFr as One>::one(), -<SnarkFr as One>::one()];
     for value in values {
-        let ark = snarkvm_fr_to_ark(value);
-        let back = ark_fr_to_snarkvm(ark);
+        let mut bytes = [0u8; 32];
+        value.write_le(&mut bytes[..]).expect("Fr is 32 bytes");
+        let back = SnarkFr::read_le(&bytes[..]).expect("Fr roundtrip");
         assert_eq!(value, back);
     }
 }

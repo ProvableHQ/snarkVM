@@ -15,8 +15,8 @@
 
 // Originally derived from ProveKit, Copyright 2026 World Foundation (MIT).
 
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use serde::{Deserialize as _, Deserializer, Serializer, de::Error as _, ser::Error as _};
+use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize};
 
 pub fn serialize<T, S>(obj: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
 where

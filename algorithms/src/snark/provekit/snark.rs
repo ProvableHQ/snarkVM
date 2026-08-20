@@ -21,9 +21,9 @@ use super::{
     prover::WhirR1CSProver,
     verifier::WhirR1CSVerifier,
 };
+use crate::snark::provekit::whir::transcript::ProverState;
 use anyhow::Result;
-use ark_bls12_377::Fr;
-use whir::transcript::ProverState;
+use snarkvm_curves::bls12_377::Fr;
 
 /// ProveKit (Spartan + WHIR) instantiated over BLS12-377 `Fr` with Blake3.
 pub struct ProvekitSNARK;

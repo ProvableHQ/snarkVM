@@ -17,8 +17,8 @@
 
 use super::bytes::field_to_bytes_le;
 use crate::snark::provekit::common::HashConfig;
-use ark_bls12_377::Fr;
-use ark_ff::PrimeField;
+use snarkvm_curves::bls12_377::Fr;
+use snarkvm_fields::PrimeField;
 
 /// Domain-separation tag for public-input instance binding.
 const PUBLIC_INPUTS_DST: &[u8] = b"PROVEKIT_PUBLIC_INPUTS_V1";
@@ -42,7 +42,7 @@ fn hash_sha256(dst: &[u8], elements: &[Fr]) -> Fr {
     for fe in elements {
         hasher.update(field_to_bytes_le(*fe));
     }
-    Fr::from_le_bytes_mod_order(&hasher.finalize())
+    Fr::from_bytes_le_mod_order(&hasher.finalize())
 }
 
 fn hash_keccak(dst: &[u8], elements: &[Fr]) -> Fr {
@@ -52,7 +52,7 @@ fn hash_keccak(dst: &[u8], elements: &[Fr]) -> Fr {
     for fe in elements {
         hasher.update(field_to_bytes_le(*fe));
     }
-    Fr::from_le_bytes_mod_order(&hasher.finalize())
+    Fr::from_bytes_le_mod_order(&hasher.finalize())
 }
 
 fn hash_blake3(dst: &[u8], elements: &[Fr]) -> Fr {
@@ -61,5 +61,5 @@ fn hash_blake3(dst: &[u8], elements: &[Fr]) -> Fr {
     for fe in elements {
         hasher.update(&field_to_bytes_le(*fe));
     }
-    Fr::from_le_bytes_mod_order(hasher.finalize().as_bytes())
+    Fr::from_bytes_le_mod_order(hasher.finalize().as_bytes())
 }

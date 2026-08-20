@@ -16,9 +16,11 @@
 //! BLS12-377 proof field: `Identity<Fr>` (base == ext).
 
 use super::{TranscriptSponge, bytes::field_to_bytes_le};
-use crate::snark::provekit::common::{Base, Ext, FieldHash, HashConfig, ProofField};
-use ark_bls12_377::Fr;
-use whir::algebra::embedding::Identity;
+use crate::snark::provekit::{
+    common::{Base, Ext, FieldHash, HashConfig, ProofField},
+    whir::algebra::embedding::Identity,
+};
+use snarkvm_curves::bls12_377::Fr;
 
 /// BLS12-377 proof field: the `Identity<Fr>` embedding (base == ext).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
