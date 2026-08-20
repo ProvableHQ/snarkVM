@@ -13,9 +13,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod varuna;
+//! ProveKit (Spartan + WHIR) transparent R1CS SNARK, vendored and instantiated
+//! over BLS12-377.
 
-/// ProveKit (Spartan + WHIR) transparent R1CS SNARK, instantiated over
-/// BLS12-377.
-#[cfg(feature = "provekit")]
-pub mod provekit;
+pub mod adapter;
+pub mod bls12_377;
+pub mod common;
+pub mod prover;
+pub mod snark;
+pub mod verifier;
+
+pub use adapter::{SynthesizedCircuit, ark_fr_to_snarkvm, snarkvm_fr_to_ark, synthesize};
+pub use bls12_377::{Bls12_377Field, register};
+pub use common::{HashConfig, PublicInputs, R1CS, WhirR1CSProof, WhirR1CSScheme};
+pub use snark::{ProvekitSNARK, proof_size};
+
+#[cfg(test)]
+mod tests;

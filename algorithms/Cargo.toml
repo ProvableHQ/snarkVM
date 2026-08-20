@@ -51,6 +51,12 @@ path = "benches/snark/varuna_verifier.rs"
 harness = false
 required-features = [ "test" ]
 
+[[bench]]
+name = "provekit"
+path = "benches/snark/provekit.rs"
+harness = false
+required-features = [ "test", "provekit" ]
+
 [dependencies.snarkvm-curves]
 workspace = true
 
@@ -118,6 +124,60 @@ workspace = true
 [dependencies.num-traits]
 workspace = true
 
+[dependencies.ark-bls12-377]
+version = "0.5"
+default-features = false
+features = [ "scalar_field" ]
+optional = true
+
+[dependencies.ark-ff]
+version = "0.5"
+default-features = false
+features = [ "std" ]
+optional = true
+
+[dependencies.ark-serialize]
+version = "0.5"
+default-features = false
+features = [ "derive" ]
+optional = true
+
+[dependencies.ark-std]
+version = "0.5"
+default-features = false
+features = [ "std" ]
+optional = true
+
+[dependencies.base64]
+version = "0.22"
+optional = true
+
+[dependencies.blake3]
+version = "=1.8.3"
+optional = true
+
+[dependencies.postcard]
+version = "1.1"
+features = [ "use-std" ]
+optional = true
+
+[dependencies.sha3]
+version = "0.10"
+optional = true
+
+[dependencies.spongefish]
+git = "https://github.com/arkworks-rs/spongefish"
+rev = "fcc277f8a857fdeeadd7cca92ab08de63b1ff1a1"
+features = [ "ark-ff", "sha2", "blake3", "keccak" ]
+optional = true
+
+[dependencies.whir]
+git = "https://github.com/WizardOfMenlo/whir"
+rev = "0aeaa7f337c743d9ddfcb9d909628d6491e3355c"
+default-features = false
+features = [ "rs_in_order" ]
+optional = true
+
 [dev-dependencies.expect-test]
 workspace = true
 
@@ -151,3 +211,15 @@ serial = [
 test_exports = [ ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 snark-print = [ ]
+provekit = [
+  "ark-bls12-377",
+  "ark-ff",
+  "ark-serialize",
+  "ark-std",
+  "base64",
+  "blake3",
+  "postcard",
+  "sha3",
+  "spongefish",
+  "whir"
+]
