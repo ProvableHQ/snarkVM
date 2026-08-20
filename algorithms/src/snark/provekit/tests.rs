@@ -15,6 +15,7 @@
 
 use crate::snark::{
     provekit::{
+        PoseidonPermutationCircuit,
         ProvekitSNARK,
         adapter::{ark_fr_to_snarkvm, snarkvm_fr_to_ark, synthesize},
         common::PublicInputs,
@@ -81,6 +82,20 @@ fn wrong_public_inputs_fail_verify() {
     }
     let wrong_inputs = PublicInputs::from_vec(wrong);
     assert!(!ProvekitSNARK::verify(&scheme, &synthesized.r1cs, &wrong_inputs, &proof).expect("verify should return"));
+}
+
+#[test]
+fn prove_verify_poseidon_permutations() {
+    let circuit = PoseidonPermutationCircuit::new(SnarkFr::from(7u64), 2);
+    let synthesized = synthesize(&circuit).expect("poseidon circuit should synthesize");
+    let scheme = ProvekitSNARK::setup(&synthesized.r1cs);
+    let proof =
+        ProvekitSNARK::prove(&scheme, &synthesized.r1cs, synthesized.witness.clone(), &synthesized.public_inputs)
+            .expect("proving should succeed");
+    assert!(
+        ProvekitSNARK::verify(&scheme, &synthesized.r1cs, &synthesized.public_inputs, &proof)
+            .expect("verify should return")
+    );
 }
 
 #[test]

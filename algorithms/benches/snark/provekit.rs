@@ -16,30 +16,67 @@
 #[macro_use]
 extern crate criterion;
 
-use snarkvm_algorithms::snark::{
-    provekit::{ProvekitSNARK, SynthesizedCircuit, WhirR1CSProof, WhirR1CSScheme, proof_size, synthesize},
-    varuna::TestCircuit,
+use snarkvm_algorithms::{
+    r1cs::{ConstraintCounter, ConstraintSynthesizer},
+    snark::provekit::{
+        PoseidonPermutationCircuit,
+        ProvekitSNARK,
+        SynthesizedCircuit,
+        WhirR1CSProof,
+        WhirR1CSScheme,
+        proof_size,
+        synthesize,
+    },
 };
 use snarkvm_curves::bls12_377::Fr;
-use snarkvm_utilities::TestRng;
+use snarkvm_utilities::{TestRng, Uniform};
 
 use criterion::{BenchmarkId, Criterion};
 use std::time::Duration;
 
+/// Counts R1CS constraints for `n` chained Poseidon permutations.
+fn count_constraints(seed: Fr, n: usize) -> usize {
+    let circuit = PoseidonPermutationCircuit::new(seed, n);
+    let mut cs = ConstraintCounter::default();
+    circuit.generate_constraints(&mut cs).expect("poseidon circuit should synthesize");
+    cs.num_constraints
+}
+
+/// Chooses `N` so the Poseidon circuit lands near `target` constraints,
+/// matching ProofBench's linear calibration for ProveKit poseidon2.
+fn permutations_for_target(seed: Fr, target: usize) -> usize {
+    let c1 = count_constraints(seed, 1);
+    let c2 = count_constraints(seed, 2);
+    let slope = c2.saturating_sub(c1);
+    let intercept = c1.saturating_sub(slope);
+    if slope == 0 {
+        return 1;
+    }
+    let n = ((target.saturating_sub(intercept) as f64) / (slope as f64)).round() as usize;
+    n.max(1)
+}
+
 fn prepare(
-    num_constraints: usize,
-) -> (WhirR1CSScheme<snarkvm_algorithms::snark::provekit::Bls12_377Field>, SynthesizedCircuit) {
+    target_constraints: usize,
+) -> (WhirR1CSScheme<snarkvm_algorithms::snark::provekit::Bls12_377Field>, SynthesizedCircuit, usize, usize) {
     let rng = &mut TestRng::default();
-    let (circuit, _) = TestCircuit::<Fr>::gen_rand(1, num_constraints, num_constraints, rng);
-    let synthesized = synthesize(&circuit).expect("test circuit should synthesize");
+    let seed = Fr::rand(rng);
+    let n = permutations_for_target(seed, target_constraints);
+    let circuit = PoseidonPermutationCircuit::new(seed, n);
+    let synthesized = synthesize(&circuit).expect("poseidon circuit should synthesize");
+    let constraints = synthesized.r1cs.num_constraints();
+    println!(
+        "poseidon target={target_constraints} permutations={n} constraints={constraints} (proofbench-style chained Poseidon-2)"
+    );
     let scheme = ProvekitSNARK::setup(&synthesized.r1cs);
-    (scheme, synthesized)
+    (scheme, synthesized, n, constraints)
 }
 
 fn provekit_prover(c: &mut Criterion) {
     let mut group = c.benchmark_group("provekit_prover");
     for size in [1 << 14, 1 << 16] {
-        let (scheme, synthesized) = prepare(size);
+        let (scheme, synthesized, n, constraints) = prepare(size);
+        let id = format!("{size}/n={n}/c={constraints}");
         if size == 1 << 16 {
             group.sample_size(10);
             group.measurement_time(Duration::from_secs(60));
@@ -48,7 +85,7 @@ fn provekit_prover(c: &mut Criterion) {
             group.sample_size(10);
             group.measurement_time(Duration::from_secs(30));
         }
-        group.bench_function(BenchmarkId::from_parameter(size), |b| {
+        group.bench_function(BenchmarkId::from_parameter(id), |b| {
             b.iter(|| {
                 ProvekitSNARK::prove(
                     &scheme,
@@ -67,13 +104,14 @@ fn provekit_proof_size(c: &mut Criterion) {
     let mut group = c.benchmark_group("provekit_proof_size");
     group.sample_size(10);
     for size in [1 << 14, 1 << 16] {
-        let (scheme, synthesized) = prepare(size);
+        let (scheme, synthesized, n, constraints) = prepare(size);
         let proof =
             ProvekitSNARK::prove(&scheme, &synthesized.r1cs, synthesized.witness.clone(), &synthesized.public_inputs)
                 .unwrap();
         let bytes = proof_size(&proof);
-        println!("provekit_proof_size_{size}: {bytes} bytes");
-        group.bench_function(BenchmarkId::from_parameter(size), |b| b.iter(|| proof_size(&proof)));
+        println!("provekit_proof_size target={size} n={n} constraints={constraints}: {bytes} bytes");
+        let id = format!("{size}/n={n}/c={constraints}");
+        group.bench_function(BenchmarkId::from_parameter(id), |b| b.iter(|| proof_size(&proof)));
     }
     group.finish();
 }
@@ -81,17 +119,18 @@ fn provekit_proof_size(c: &mut Criterion) {
 fn provekit_verifier(c: &mut Criterion) {
     let mut group = c.benchmark_group("provekit_verifier");
     for size in [1 << 14, 1 << 16] {
-        let (scheme, synthesized) = prepare(size);
+        let (scheme, synthesized, n, constraints) = prepare(size);
         let proof: WhirR1CSProof =
             ProvekitSNARK::prove(&scheme, &synthesized.r1cs, synthesized.witness.clone(), &synthesized.public_inputs)
                 .unwrap();
+        let id = format!("{size}/n={n}/c={constraints}");
         if size == 1 << 16 {
             group.sample_size(10);
             group.measurement_time(Duration::from_secs(20));
         } else {
             group.sample_size(10);
         }
-        group.bench_function(BenchmarkId::from_parameter(size), |b| {
+        group.bench_function(BenchmarkId::from_parameter(id), |b| {
             b.iter(|| ProvekitSNARK::verify(&scheme, &synthesized.r1cs, &synthesized.public_inputs, &proof).unwrap())
         });
     }
