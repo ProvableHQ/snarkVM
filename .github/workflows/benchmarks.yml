@@ -139,7 +139,7 @@ jobs:
           alert-threshold: '200%'
           comment-on-alert: true
           fail-on-alert: true
-          alert-comment-cc-users: '@vicsn'
+          alert-comment-cc-users: '@vicsn,@snarkworld,@cbeck88'
           auto-push: true
           # Enable Job Summary for PRs
           summary-always: true
