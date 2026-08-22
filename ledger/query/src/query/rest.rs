@@ -128,6 +128,14 @@ impl<N: Network> QueryTrait<N> for RestQuery<N> {
 
     /// Returns a list of state paths for the given list of `commitment`s.
     fn get_state_paths_for_commitments(&self, commitments: &[Field<N>]) -> Result<Vec<StatePath<N>>> {
+        // Zero commitments means zero state paths, so there is nothing to ask for.
+        // An execution with no record inputs -- any public transfer -- reaches
+        // here with an empty slice, and issuing the request anyway is both a
+        // needless round trip and, on some nodes, a failure: an empty
+        // `?commitments=` is answered with a 502 rather than an empty list.
+        if commitments.is_empty() {
+            return Ok(Vec::new());
+        }
         // Construct the comma separated string of commitments.
         let commitments_string = commitments.iter().map(|cm| cm.to_string()).collect::<Vec<_>>().join(",");
         self.get_request(&format!("statePaths?commitments={commitments_string}"))
@@ -136,6 +144,14 @@ impl<N: Network> QueryTrait<N> for RestQuery<N> {
     /// Returns a list of state paths for the given list of `commitment`s.
     #[cfg(feature = "async")]
     async fn get_state_paths_for_commitments_async(&self, commitments: &[Field<N>]) -> Result<Vec<StatePath<N>>> {
+        // Zero commitments means zero state paths, so there is nothing to ask for.
+        // An execution with no record inputs -- any public transfer -- reaches
+        // here with an empty slice, and issuing the request anyway is both a
+        // needless round trip and, on some nodes, a failure: an empty
+        // `?commitments=` is answered with a 502 rather than an empty list.
+        if commitments.is_empty() {
+            return Ok(Vec::new());
+        }
         // Construct the comma separated string of commitments.
         let commitments_string = commitments.iter().map(|cm| cm.to_string()).collect::<Vec<_>>().join(",");
         self.get_request_async(&format!("statePaths?commitments={commitments_string}")).await
