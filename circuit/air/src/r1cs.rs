@@ -17,15 +17,17 @@ use crate::{Air, AirBuilder, BaseAir, Trace};
 use snarkvm_circuit_environment::{Assignment, LinearCombination, Variable};
 use snarkvm_fields::{One, PrimeField};
 
+use anyhow::{Result, ensure};
+
 /// A sparse linear combination over AIR main-trace columns.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct SparseLc<F: PrimeField> {
     constant: F,
     terms: Vec<(usize, F)>,
 }
 
 /// One R1CS multiplication constraint `A * B = C`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct SparseConstraint<F: PrimeField> {
     a: SparseLc<F>,
     b: SparseLc<F>,
@@ -39,7 +41,7 @@ struct SparseConstraint<F: PrimeField> {
 /// degree-2 polynomial `A(w) * B(w) - C(w)` in those columns. This is a
 /// circuit-specific AIR: `eval` lists the instance's constraints rather than
 /// a uniform gate.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct R1csAir<F: PrimeField> {
     num_public: usize,
     num_private: usize,
@@ -113,14 +115,154 @@ impl<AB: AirBuilder> Air<AB> for R1csAir<AB::F> {
         let local = main.local();
 
         if self.num_public > 0 {
-            builder.when_first_row().assert_eq(local[0], AB::Expr::one());
+            builder.assert_eq(local[0], AB::Expr::one());
+        }
+        eval_constraints::<AB>(&self.constraints, local, builder);
+    }
+}
+
+/// A variable column in an isolated per-opcode R1CS assignment.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum OpcodeColumn {
+    /// A public variable, indexed within the opcode assignment's public variables.
+    Public(usize),
+    /// A private variable, indexed within the opcode assignment's private variables.
+    Private(usize),
+}
+
+impl OpcodeColumn {
+    fn resolve(self, num_public: usize, num_private: usize) -> Result<usize> {
+        match self {
+            Self::Public(index) => {
+                ensure!(index < num_public, "Public opcode column {index} is out of bounds ({num_public})");
+                Ok(index)
+            }
+            Self::Private(index) => {
+                ensure!(index < num_private, "Private opcode column {index} is out of bounds ({num_private})");
+                Ok(num_public + index)
+            }
+        }
+    }
+}
+
+/// An equality between a column on the current opcode row and a column on the
+/// next opcode row.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct TransitionLink {
+    current: OpcodeColumn,
+    next: OpcodeColumn,
+}
+
+impl TransitionLink {
+    /// Constructs a transition link `current == next`.
+    pub const fn new(current: OpcodeColumn, next: OpcodeColumn) -> Self {
+        Self { current, next }
+    }
+
+    /// Returns the current-row column.
+    pub const fn current(&self) -> OpcodeColumn {
+        self.current
+    }
+
+    /// Returns the next-row column.
+    pub const fn next(&self) -> OpcodeColumn {
+        self.next
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+struct ResolvedTransitionLink {
+    current: usize,
+    next: usize,
+}
+
+/// AIR compiled from one isolated R1CS shape per opcode invocation.
+///
+/// Each row contains the complete local witness for one invocation of the same
+/// opcode shape. The opcode's R1CS constraints are applied locally on every row.
+/// Explicit [`TransitionLink`]s enforce fixed dataflow between consecutive
+/// invocations without a global witness or memory argument.
+///
+/// This only handles direct, fixed current-to-next dataflow. Arbitrary register
+/// reads, non-adjacent dependencies, and communication between different opcode
+/// AIRs still require a bus, lookup, or permutation argument.
+#[derive(Clone, Debug)]
+pub struct OpcodeR1csAir<F: PrimeField> {
+    opcode: R1csAir<F>,
+    links: Vec<ResolvedTransitionLink>,
+}
+
+impl<F: PrimeField> OpcodeR1csAir<F> {
+    /// Compiles isolated assignments of the same opcode shape into one row per
+    /// invocation.
+    ///
+    /// The assignments may have different values, but must have identical
+    /// public/private layouts, coefficients, and R1CS constraints.
+    pub fn from_assignments(assignments: &[Assignment<F>], links: &[TransitionLink]) -> Result<(Self, Trace<F>)> {
+        let Some(first) = assignments.first() else {
+            anyhow::bail!("At least one opcode assignment is required");
+        };
+
+        let opcode = R1csAir::from_assignment_structure(first);
+        for (index, assignment) in assignments.iter().enumerate().skip(1) {
+            ensure!(
+                R1csAir::from_assignment_structure(assignment) == opcode,
+                "Opcode assignment {index} does not match the first assignment's R1CS shape"
+            );
         }
 
-        for constraint in &self.constraints {
-            let a = eval_lc::<AB>(&constraint.a, local);
-            let b = eval_lc::<AB>(&constraint.b, local);
-            let c = eval_lc::<AB>(&constraint.c, local);
-            builder.assert_zero(a * b - c);
+        let resolved_links = links
+            .iter()
+            .map(|link| {
+                Ok(ResolvedTransitionLink {
+                    current: link.current.resolve(opcode.num_public, opcode.num_private)?,
+                    next: link.next.resolve(opcode.num_public, opcode.num_private)?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let width = opcode.width();
+        let mut values = Vec::with_capacity(width.saturating_mul(assignments.len()));
+        for assignment in assignments {
+            values.extend(assignment.public_inputs().iter().map(Variable::value));
+            values.extend(assignment.private_inputs().iter().map(Variable::value));
+        }
+        let trace = Trace::new(width, assignments.len(), values)?;
+
+        Ok((Self { opcode, links: resolved_links }, trace))
+    }
+
+    /// Returns the number of R1CS constraints applied to every opcode row.
+    pub fn num_constraints_per_row(&self) -> usize {
+        self.opcode.num_constraints()
+    }
+
+    /// Returns the number of fixed links between consecutive rows.
+    pub fn num_transition_links(&self) -> usize {
+        self.links.len()
+    }
+}
+
+impl<F: PrimeField> BaseAir<F> for OpcodeR1csAir<F> {
+    fn width(&self) -> usize {
+        self.opcode.width()
+    }
+}
+
+impl<AB: AirBuilder> Air<AB> for OpcodeR1csAir<AB::F> {
+    fn eval(&self, builder: &mut AB) {
+        let main = builder.main();
+        let local = main.local();
+        let next = main.next();
+
+        if self.opcode.num_public > 0 {
+            builder.assert_eq(local[0], AB::Expr::one());
+        }
+        eval_constraints::<AB>(&self.opcode.constraints, local, builder);
+
+        let mut transition = builder.when_transition();
+        for link in &self.links {
+            transition.assert_eq(local[link.current], next[link.next]);
         }
     }
 }
@@ -217,6 +359,15 @@ fn eval_lc<AB: AirBuilder>(lc: &SparseLc<AB::F>, local: &[AB::Var]) -> AB::Expr 
     acc
 }
 
+fn eval_constraints<AB: AirBuilder>(constraints: &[SparseConstraint<AB::F>], local: &[AB::Var], builder: &mut AB) {
+    for constraint in constraints {
+        let a = eval_lc::<AB>(&constraint.a, local);
+        let b = eval_lc::<AB>(&constraint.b, local);
+        let c = eval_lc::<AB>(&constraint.c, local);
+        builder.assert_zero(a * b - c);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,5 +412,48 @@ mod tests {
         let last = trace.width() - 1;
         *trace.get_mut(0, last) += <Circuit as Environment>::BaseField::one();
         assert!(debug_constraints(&air, &trace).is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_opcode_air_links_consecutive_multiplications() {
+        let first = {
+            Circuit::reset();
+            let a = Field::<Circuit>::new(Mode::Private, ConsoleF::from_u64(2));
+            let b = Field::<Circuit>::new(Mode::Private, ConsoleF::from_u64(3));
+            let _product = a * b;
+            Circuit::eject_assignment_and_reset()
+        };
+        // A compiler-generated copy row carries `6` across an opcode boundary.
+        // It intentionally uses the same local R1CS shape as `mul`: `6 * 1 = 6`.
+        let carry = {
+            Circuit::reset();
+            let value = Field::<Circuit>::new(Mode::Private, ConsoleF::from_u64(6));
+            let one = Field::<Circuit>::new(Mode::Private, ConsoleF::from_u64(1));
+            let _copied = value * one;
+            Circuit::eject_assignment_and_reset()
+        };
+        let second = {
+            Circuit::reset();
+            let a = Field::<Circuit>::new(Mode::Private, ConsoleF::from_u64(6));
+            let b = Field::<Circuit>::new(Mode::Private, ConsoleF::from_u64(4));
+            let _product = a * b;
+            Circuit::eject_assignment_and_reset()
+        };
+        let assignments = [first, carry, second];
+
+        let (unlinked_air, mut trace) = OpcodeR1csAir::from_assignments(&assignments, &[]).unwrap();
+        let link = TransitionLink::new(OpcodeColumn::Private(2), OpcodeColumn::Private(0));
+        let (linked_air, _) = OpcodeR1csAir::from_assignments(&assignments, &[link]).unwrap();
+        debug_constraints(&linked_air, &trace).unwrap();
+
+        let num_public = assignments[0].num_public() as usize;
+        *trace.get_mut(1, num_public) = <Circuit as Environment>::BaseField::from(7u64);
+        *trace.get_mut(1, num_public + 2) = <Circuit as Environment>::BaseField::from(7u64);
+
+        // The compiler-generated row is still a valid copy (`7 * 1 = 7`) in isolation.
+        debug_constraints(&unlinked_air, &trace).unwrap();
+        // The explicit transitions catch that the carried value changed from `6` to `7`.
+        assert!(debug_constraints(&linked_air, &trace).is_err());
     }
 }

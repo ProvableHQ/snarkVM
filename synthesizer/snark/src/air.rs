@@ -18,7 +18,19 @@
 //! This module sits beside Varuna (and optional ProveKit). It does **not**
 //! replace those proving systems or change `ProvingKey` / `Proof` APIs.
 
-pub use snarkvm_circuit::air::{Air, AirBuilder, BaseAir, PoseidonAir, R1csAir, R1csGateAir, Trace, debug_constraints};
+pub use snarkvm_circuit::air::{
+    Air,
+    AirBuilder,
+    BaseAir,
+    OpcodeColumn,
+    OpcodeR1csAir,
+    PoseidonAir,
+    R1csAir,
+    R1csGateAir,
+    Trace,
+    TransitionLink,
+    debug_constraints,
+};
 
 use snarkvm_circuit::environment::{Assignment, prelude::PrimeField};
 
