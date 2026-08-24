@@ -30,6 +30,7 @@ members = [
   "algorithms/cuda",
   "circuit",
   "circuit/account",
+  "circuit/air",
   "circuit/algorithms",
   "circuit/collections",
   "circuit/environment",
@@ -203,6 +204,10 @@ version = "=4.9.0"
 
 [workspace.dependencies.snarkvm-circuit-account]
 path = "circuit/account"
+version = "=4.9.0"
+
+[workspace.dependencies.snarkvm-circuit-air]
+path = "circuit/air"
 version = "=4.9.0"
 
 [workspace.dependencies.snarkvm-circuit-algorithms]

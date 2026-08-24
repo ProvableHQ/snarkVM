@@ -31,6 +31,9 @@ test = [ "snarkvm-circuit-environment/test" ]
 [dependencies.snarkvm-circuit-account]
 workspace = true
 
+[dependencies.snarkvm-circuit-air]
+workspace = true
+
 [dependencies.snarkvm-circuit-algorithms]
 workspace = true
 

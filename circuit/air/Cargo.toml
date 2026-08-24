@@ -1,0 +1,36 @@
+[package]
+name = "snarkvm-circuit-air"
+version = "4.9.0"
+authors = [ "The Aleo Team <hello@aleo.org>" ]
+description = "Plonky3-style AIR arithmetization for a decentralized virtual machine"
+homepage = "https://aleo.org"
+repository = "https://github.com/ProvableHQ/snarkVM"
+license = "Apache-2.0"
+edition = "2024"
+
+[dependencies.anyhow]
+workspace = true
+
+[dependencies.itertools]
+workspace = true
+
+[dependencies.snarkvm-circuit-environment]
+workspace = true
+
+[dependencies.snarkvm-fields]
+workspace = true
+
+[dev-dependencies.serial_test]
+workspace = true
+
+[dev-dependencies.snarkvm-circuit-types-field]
+workspace = true
+
+[dev-dependencies.snarkvm-console-types-field]
+workspace = true
+
+[dev-dependencies.snarkvm-curves]
+workspace = true
+
+[dev-dependencies.snarkvm-utilities]
+workspace = true

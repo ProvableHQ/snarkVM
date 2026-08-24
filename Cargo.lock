@@ -3535,6 +3535,7 @@ name = "snarkvm-circuit"
 version = "4.9.0"
 dependencies = [
  "snarkvm-circuit-account",
+ "snarkvm-circuit-air",
  "snarkvm-circuit-algorithms",
  "snarkvm-circuit-collections",
  "snarkvm-circuit-environment",
@@ -3551,6 +3552,21 @@ dependencies = [
  "snarkvm-circuit-network",
  "snarkvm-circuit-types",
  "snarkvm-console-account",
+ "snarkvm-utilities",
+]
+
+[[package]]
+name = "snarkvm-circuit-air"
+version = "4.9.0"
+dependencies = [
+ "anyhow",
+ "itertools 0.14.0",
+ "serial_test",
+ "snarkvm-circuit-environment",
+ "snarkvm-circuit-types-field",
+ "snarkvm-console-types-field",
+ "snarkvm-curves",
+ "snarkvm-fields",
  "snarkvm-utilities",
 ]
 

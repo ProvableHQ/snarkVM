@@ -21,6 +21,8 @@ pub mod modules {
     pub use snarkvm_circuit_account as account;
     pub use snarkvm_circuit_account::*;
 
+    pub use snarkvm_circuit_air as air;
+
     pub use snarkvm_circuit_algorithms as algorithms;
     pub use snarkvm_circuit_algorithms::*;
 

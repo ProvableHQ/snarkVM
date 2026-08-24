@@ -43,6 +43,9 @@ pub use universal_srs::UniversalSRS;
 mod verifying_key;
 pub use verifying_key::VerifyingKey;
 
+/// Experimental AIR lowering of R1CS assignments. Does not replace Varuna.
+pub mod air;
+
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers {
     use super::*;
