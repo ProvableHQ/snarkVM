@@ -158,15 +158,51 @@ impl<F: PrimeField> DensePolynomial<F> {
         DensePolynomial::from_coefficients_vec(shifted)
     }
 
-    /// Divide `self` by the vanishing polynomial for the domain `domain`.
-    /// Returns the quotient and remainder of the division.
+    /// Divides by the vanishing polynomial `X^n - 1` of `domain`, returning
+    /// `(quotient, remainder)`.
+    ///
+    /// Matching coefficients on `p = q(X^n - 1) + r`, with `deg(r) < n`:
+    ///
+    /// ```text
+    ///     q[j] = p[j+n] + q[j+n]      (q[k] = 0 for k >= len(q))
+    ///     r[i] = p[i]   + q[i]
+    /// ```
+    ///
+    /// The recurrence is `n` independent chains, one per residue class mod `n`.
+    /// For `deg(p) < 2n` each chain is a single step and the quotient is
+    /// `p[n..]`.
     pub fn divide_by_vanishing_poly(
         &self,
         domain: EvaluationDomain<F>,
     ) -> Result<(DensePolynomial<F>, DensePolynomial<F>)> {
-        let self_poly = Polynomial::from(self);
-        let vanishing_poly = Polynomial::from(domain.vanishing_polynomial());
-        self_poly.divide_with_q_and_r(&vanishing_poly)
+        let n = domain.size();
+        anyhow::ensure!(n > 0, "Dividing by the vanishing polynomial of an empty domain");
+
+        let p = &self.coeffs;
+        // deg(p) < n: the quotient is zero and the remainder is `p`.
+        if p.len() <= n {
+            return Ok((DensePolynomial::zero(), Self::from_coefficients_slice(p)));
+        }
+
+        let q_len = p.len() - n;
+        let q = if q_len <= n {
+            // Single-step chains.
+            p[n..].to_vec()
+        } else {
+            // Chains span several steps, so each carries into the next.
+            let mut q = vec![F::zero(); q_len];
+            for j in (0..q_len).rev() {
+                let carry = if j + n < q_len { q[j + n] } else { F::zero() };
+                q[j] = p[j + n] + carry;
+            }
+            q
+        };
+
+        let mut r = p[..n].to_vec();
+        let overlap = q_len.min(n);
+        cfg_iter_mut!(r[..overlap]).enumerate().for_each(|(i, r_i)| *r_i += q[i]);
+
+        Ok((DensePolynomial::from_coefficients_vec(q), DensePolynomial::from_coefficients_vec(r)))
     }
 
     /// Evaluate `self` over `domain`.
@@ -717,5 +753,109 @@ mod tests {
                 assert_eq!(ans1, ans2);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod vanishing_divide_tests {
+    use crate::fft::{DensePolynomial, EvaluationDomain, Polynomial};
+    use snarkvm_curves::bls12_377::Fr;
+    use snarkvm_fields::Zero;
+    use snarkvm_utilities::rand::{TestRng, Uniform};
+
+    pub(super) fn rand_poly(len: usize, rng: &mut TestRng) -> DensePolynomial<Fr> {
+        DensePolynomial::from_coefficients_vec((0..len).map(|_| Fr::rand(rng)).collect())
+    }
+
+    /// `q * (X^n - 1) + r == p`, and `deg(r) < n`.
+    ///
+    /// Compared against the canonical form of `p`: results are trimmed on
+    /// construction, so an input carrying trailing zeros would otherwise differ
+    /// from an equal output by representation alone.
+    fn check_identity(p: &DensePolynomial<Fr>, domain: EvaluationDomain<Fr>, label: &str) {
+        let n = domain.size();
+        let (q, r) = p.divide_by_vanishing_poly(domain).unwrap();
+        let v = DensePolynomial::from(domain.vanishing_polynomial());
+        let canonical = DensePolynomial::from_coefficients_vec(p.coeffs.clone());
+        assert_eq!(&(&q * &v) + &r, canonical, "q*v + r != p [{label}]");
+        assert!(r.is_zero() || r.degree() < n, "deg(r) >= n [{label}]");
+    }
+
+    /// Agrees with generic long division across inputs shorter than the
+    /// divisor, on the `deg(p) < 2n` path, and long enough for a chain to
+    /// carry.
+    #[test]
+    fn agrees_with_generic_long_division() {
+        let rng = &mut TestRng::default();
+        for log_n in [3usize, 5, 8] {
+            let domain = EvaluationDomain::<Fr>::new(1 << log_n).unwrap();
+            let n = domain.size();
+            for len in [0, 1, n / 2, n, n + 1, 2 * n - 1, 2 * n, 2 * n + 3, 4 * n + 5] {
+                let p = rand_poly(len, rng);
+                let (q, r) = p.divide_by_vanishing_poly(domain).unwrap();
+
+                let expect =
+                    Polynomial::from(&p).divide_with_q_and_r(&Polynomial::from(domain.vanishing_polynomial())).unwrap();
+                assert_eq!(q, expect.0, "quotient differs at n={n} len={len}");
+                assert_eq!(r, expect.1, "remainder differs at n={n} len={len}");
+                check_identity(&p, domain, &format!("n={n} len={len}"));
+            }
+        }
+    }
+
+    /// Random lengths spanning every branch, including chains long enough to
+    /// carry several times.
+    #[test]
+    fn identity_holds_for_random_inputs() {
+        let rng = &mut TestRng::default();
+        for _ in 0..200 {
+            let log_n = 2 + (u64::rand(rng) % 7) as usize;
+            let domain = EvaluationDomain::<Fr>::new(1 << log_n).unwrap();
+            let len = (u64::rand(rng) % (6 * domain.size() as u64 + 2)) as usize;
+            let p = rand_poly(len, rng);
+            check_identity(&p, domain, &format!("n={} len={len}", domain.size()));
+        }
+    }
+
+    /// `coeffs` is public, so a caller can hand over a polynomial carrying
+    /// trailing zeros. The quotient's own leading zeros are trimmed on
+    /// construction, so the identity still holds.
+    #[test]
+    fn tolerates_trailing_zeros() {
+        let rng = &mut TestRng::default();
+        let domain = EvaluationDomain::<Fr>::new(16).unwrap();
+        for len in [0usize, 5, 16, 17, 33, 70] {
+            for pad in [1usize, 4, 20] {
+                let mut p = rand_poly(len, rng);
+                p.coeffs.resize(p.coeffs.len() + pad, Fr::zero());
+                check_identity(&p, domain, &format!("len={len} pad={pad}"));
+            }
+        }
+    }
+
+    /// A polynomial that is exactly a multiple of the vanishing polynomial
+    /// divides with no remainder, which is what the selector paths assert.
+    #[test]
+    fn exact_multiples_leave_no_remainder() {
+        let rng = &mut TestRng::default();
+        for log_n in [3usize, 6] {
+            let domain = EvaluationDomain::<Fr>::new(1 << log_n).unwrap();
+            let v = DensePolynomial::from(domain.vanishing_polynomial());
+            for len in [1usize, 5, domain.size(), 3 * domain.size()] {
+                let p = &rand_poly(len, rng) * &v;
+                let (q, r) = p.divide_by_vanishing_poly(domain).unwrap();
+                assert!(r.is_zero(), "expected no remainder [n={} len={len}]", domain.size());
+                assert_eq!(&q * &v, p, "q*v != p [n={} len={len}]", domain.size());
+            }
+        }
+    }
+
+    /// The zero polynomial divides to zero and zero.
+    #[test]
+    fn zero_divides_to_zero() {
+        let domain = EvaluationDomain::<Fr>::new(8).unwrap();
+        let (q, r) = DensePolynomial::<Fr>::zero().divide_by_vanishing_poly(domain).unwrap();
+        assert!(q.is_zero());
+        assert!(r.is_zero());
     }
 }
