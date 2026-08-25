@@ -33,6 +33,7 @@ locktick = [
 ]
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
+profiler = [ "snarkvm-algorithms/profiler" ]
 history = [ "snarkvm-ledger-store/history", "snarkvm-synthesizer-process/history" ]
 history-staking-rewards = [ "snarkvm-ledger-store/history-staking-rewards" ]
 slipstream-plugins = [ "snarkvm-ledger-store/slipstream-plugins" ]

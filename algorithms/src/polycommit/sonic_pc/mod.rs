@@ -439,6 +439,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         let mut lc_randomness = Vec::new();
         let mut lc_info = Vec::new();
 
+        let accumulate_time = start_timer!(|| "Accumulating linear combinations");
         for lc in linear_combinations {
             let lc_label = lc.label().to_string();
             let mut poly = DensePolynomial::zero();
@@ -475,6 +476,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             lc_randomness.push(randomness);
             lc_info.push((lc_label, degree_bound));
         }
+        end_timer!(accumulate_time);
 
         let proof =
             Self::batch_open(universal_prover, ck, lc_polynomials.iter(), query_set, lc_randomness.iter(), fs_rng)?;
