@@ -280,6 +280,11 @@ impl<N: Network> Stack<N> {
                         if !certificate.verify(&function_name.to_string(), assignment, verifying_key) {
                             bail!("The certificate for function '{function_name}' is invalid in '{program_id}'")
                         }
+                        // Capture the exact assignment selected for certificate verification, if requested.
+                        circuit::environment::capture_r1cs_assignment(
+                            format!("{program_id}/function:{function_name}"),
+                            assignment,
+                        );
                     }
                 };
                 Ok(())
@@ -393,6 +398,11 @@ impl<N: Network> Stack<N> {
                         ensure!(
                             certificate.verify(&record_name.to_string(), &circuit_assignment, verifying_key),
                             "The translation-circuit certificate for record '{record_name}' is invalid in '{program_id}'"
+                        );
+                        // Capture the exact assignment selected for certificate verification, if requested.
+                        circuit::environment::capture_r1cs_assignment(
+                            format!("{program_id}/translation:{record_name}"),
+                            &circuit_assignment,
                         );
                         Ok(())
                     },

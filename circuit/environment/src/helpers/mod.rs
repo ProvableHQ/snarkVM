@@ -42,5 +42,8 @@ pub use variable::*;
 pub mod r1cs;
 pub use r1cs::*;
 
+mod r1cs_capture;
+pub use r1cs_capture::*;
+
 pub mod updatable_count;
 pub use updatable_count::*;
