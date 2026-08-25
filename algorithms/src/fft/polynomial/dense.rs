@@ -102,6 +102,37 @@ impl<F: Field> DensePolynomial<F> {
         } else if point.is_zero() {
             return self.coeffs[0];
         }
+
+        // Horner's rule: `degree` multiplications and no allocation, where
+        // materialising the powers of the point needs two multiplications per
+        // coefficient -- once to build the power, once to weight the
+        // coefficient -- and a vector the size of the polynomial to hold them.
+        //
+        // It is fully serial, where the powers form parallelised the weighting.
+        // That is the trade, and it is worth taking: the deleted half of the
+        // arithmetic outweighs the parallelism given up, and the allocation it
+        // also deletes is proportional to the polynomial.
+        //
+        // Unlike the powers form this tolerates trailing zero coefficients,
+        // which reach it because `coeffs` is public and callers do build such
+        // polynomials. The powers form called `degree()` and panicked on that
+        // input; `evaluate_tolerates_trailing_zeros` pins the new behaviour.
+        let mut acc = F::zero();
+        for coeff in self.coeffs.iter().rev() {
+            acc = acc * point + *coeff;
+        }
+        acc
+    }
+
+    /// The powers form that `evaluate` replaced, kept so the equivalence test
+    /// has something to compare against.
+    #[cfg(test)]
+    fn evaluate_by_powers(&self, point: F) -> F {
+        if self.is_zero() {
+            return F::zero();
+        } else if point.is_zero() {
+            return self.coeffs[0];
+        }
         let mut powers_of_point = Vec::with_capacity(1 + self.degree());
         powers_of_point.push(F::one());
         let mut cur = point;
@@ -983,5 +1014,47 @@ mod monic_linear_divide_tests {
         let (q, r) = DensePolynomial::from_coefficients_vec(vec![c]).divide_by_monic_linear(z);
         assert!(q.is_zero());
         assert_eq!(r, c);
+    }
+}
+
+#[cfg(test)]
+mod evaluate_tests {
+    use super::vanishing_divide_tests::rand_poly;
+    use snarkvm_curves::bls12_377::Fr;
+    use snarkvm_fields::{One, Zero};
+    use snarkvm_utilities::rand::{TestRng, Uniform};
+
+    /// Horner agrees with the powers form it replaced, on well-formed input.
+    ///
+    /// Field addition is associative, so the tree reduction the powers form
+    /// used and Horner's serial accumulation agree exactly rather than
+    /// approximately -- `assert_eq!` is the right strength here, not an
+    /// epsilon.
+    #[test]
+    fn evaluate_agrees_with_the_powers_form() {
+        let rng = &mut TestRng::default();
+        for len in [0usize, 1, 2, 5, 16, 17, 33, 70] {
+            let p = rand_poly(len, rng);
+            for point in [Fr::zero(), Fr::one(), Fr::rand(rng), Fr::rand(rng)] {
+                assert_eq!(p.evaluate(point), p.evaluate_by_powers(point), "len={len}");
+            }
+        }
+    }
+
+    /// `evaluate` tolerates trailing zero coefficients. The powers form it
+    /// replaced panicked in `degree()` on exactly this input, so the tolerance
+    /// is a deliberate widening rather than an accident.
+    #[test]
+    fn evaluate_tolerates_trailing_zeros() {
+        let rng = &mut TestRng::default();
+        for len in [1usize, 5, 17] {
+            for pad in [1usize, 4, 20] {
+                let mut p = rand_poly(len, rng);
+                let point = Fr::rand(rng);
+                let expected = p.evaluate(point);
+                p.coeffs.resize(p.coeffs.len() + pad, Fr::zero());
+                assert_eq!(p.evaluate(point), expected, "len={len} pad={pad}");
+            }
+        }
     }
 }
