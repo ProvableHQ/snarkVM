@@ -217,17 +217,15 @@ impl<E: PairingEngine> KZG10<E> {
         point: E::Fr,
         randomness: &KZGRandomness<E>,
     ) -> Result<(DensePolynomial<E::Fr>, Option<DensePolynomial<E::Fr>>), PCError> {
-        let divisor = DensePolynomial::from_coefficients_vec(vec![-point, E::Fr::one()]);
-
         let witness_time = start_timer!(|| "Computing witness polynomial");
-        let witness_polynomial = polynomial / &divisor;
+        let (witness_polynomial, _) = polynomial.divide_by_monic_linear(point);
         end_timer!(witness_time);
 
         let random_witness_polynomial = if randomness.is_hiding() {
             let random_p = &randomness.blinding_polynomial;
 
             let witness_time = start_timer!(|| "Computing random witness polynomial");
-            let random_witness_polynomial = random_p / &divisor;
+            let (random_witness_polynomial, _) = random_p.divide_by_monic_linear(point);
             end_timer!(witness_time);
             Some(random_witness_polynomial)
         } else {

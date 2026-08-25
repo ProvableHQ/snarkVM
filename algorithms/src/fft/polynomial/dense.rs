@@ -158,6 +158,32 @@ impl<F: PrimeField> DensePolynomial<F> {
         DensePolynomial::from_coefficients_vec(shifted)
     }
 
+    /// Divides by the monic linear polynomial `X - z`, returning the quotient
+    /// and the remainder.
+    ///
+    /// Ruffini's rule: one multiply-add per coefficient. Generic long division
+    /// reaches the same answer with two multiplications per coefficient, a
+    /// clone of the dividend, and a trailing-zero trim and degree check on
+    /// every iteration.
+    ///
+    /// The remainder is the scalar `self(z)`, which is what the divisor's
+    /// degree makes it.
+    pub fn divide_by_monic_linear(&self, z: F) -> (Self, F) {
+        match self.coeffs.len() {
+            0 => (Self::zero(), F::zero()),
+            1 => (Self::zero(), self.coeffs[0]),
+            n => {
+                let mut quotient = vec![F::zero(); n - 1];
+                quotient[n - 2] = self.coeffs[n - 1];
+                for i in (1..n - 1).rev() {
+                    quotient[i - 1] = self.coeffs[i] + z * quotient[i];
+                }
+                let remainder = self.coeffs[0] + z * quotient[0];
+                (Self::from_coefficients_vec(quotient), remainder)
+            }
+        }
+    }
+
     /// Divides by the vanishing polynomial `X^n - 1` of `domain`, returning
     /// `(quotient, remainder)`.
     ///
@@ -857,5 +883,105 @@ mod vanishing_divide_tests {
         let (q, r) = DensePolynomial::<Fr>::zero().divide_by_vanishing_poly(domain).unwrap();
         assert!(q.is_zero());
         assert!(r.is_zero());
+    }
+}
+
+#[cfg(test)]
+mod monic_linear_divide_tests {
+    use crate::fft::{DensePolynomial, Polynomial};
+    use snarkvm_curves::bls12_377::Fr;
+    use snarkvm_fields::{One, Zero};
+    use snarkvm_utilities::{TestRng, Uniform};
+
+    /// What generic long division would have produced, for comparison.
+    fn generic(p: &DensePolynomial<Fr>, z: Fr) -> (DensePolynomial<Fr>, DensePolynomial<Fr>) {
+        let divisor = DensePolynomial::from_coefficients_vec(vec![-z, Fr::one()]);
+        Polynomial::from(p.clone()).divide_with_q_and_r(&Polynomial::from(divisor)).unwrap()
+    }
+
+    #[test]
+    fn agrees_with_generic_long_division() {
+        let rng = &mut TestRng::default();
+        for degree in [0usize, 1, 2, 3, 7, 64, 255, 1024] {
+            let p = DensePolynomial::<Fr>::rand(degree, rng);
+            let z = Fr::rand(rng);
+            let (q, r) = p.divide_by_monic_linear(z);
+            let (gq, gr) = generic(&p, z);
+            assert_eq!(q, gq, "quotient differs at degree {degree}");
+            assert_eq!(DensePolynomial::from_coefficients_vec(vec![r]), gr, "remainder differs at degree {degree}");
+        }
+    }
+
+    /// p = (X - z) q + r, over enough random inputs to catch an off-by-one that
+    /// hand-picked shapes would step over.
+    #[test]
+    fn satisfies_the_defining_identity() {
+        let rng = &mut TestRng::default();
+        for _ in 0..200 {
+            let degree = (u64::rand(rng) % 128) as usize;
+            let p = DensePolynomial::<Fr>::rand(degree, rng);
+            let z = Fr::rand(rng);
+            let (q, r) = p.divide_by_monic_linear(z);
+            let divisor = DensePolynomial::from_coefficients_vec(vec![-z, Fr::one()]);
+            let reconstructed = &(&divisor * &q) + &DensePolynomial::from_coefficients_vec(vec![r]);
+            assert_eq!(reconstructed, p);
+        }
+    }
+
+    /// The remainder of dividing by `X - z` is the evaluation at `z`.
+    #[test]
+    fn the_remainder_is_the_evaluation() {
+        let rng = &mut TestRng::default();
+        for degree in [0usize, 1, 5, 100, 513] {
+            let p = DensePolynomial::<Fr>::rand(degree, rng);
+            let z = Fr::rand(rng);
+            let (_, r) = p.divide_by_monic_linear(z);
+            assert_eq!(r, p.evaluate(z), "at degree {degree}");
+        }
+    }
+
+    /// A root divides exactly, and the quotient must come back canonical --
+    /// this is the shape that carried a real defect in the vanishing-poly case.
+    #[test]
+    fn a_root_divides_exactly() {
+        let rng = &mut TestRng::default();
+        for degree in [1usize, 2, 9, 200] {
+            let q = DensePolynomial::<Fr>::rand(degree, rng);
+            let z = Fr::rand(rng);
+            let divisor = DensePolynomial::from_coefficients_vec(vec![-z, Fr::one()]);
+            let p = &divisor * &q;
+            let (quotient, r) = p.divide_by_monic_linear(z);
+            assert!(r.is_zero(), "remainder at degree {degree}");
+            assert_eq!(quotient, q);
+            assert!(quotient.coeffs.last().is_none_or(|c| !c.is_zero()), "non-canonical quotient");
+        }
+    }
+
+    /// Trailing zeros in the coefficient vector must not change the answer.
+    #[test]
+    fn tolerates_non_canonical_input() {
+        let rng = &mut TestRng::default();
+        let p = DensePolynomial::<Fr>::rand(30, rng);
+        let z = Fr::rand(rng);
+        let mut padded = p.clone();
+        padded.coeffs.extend(std::iter::repeat_n(Fr::zero(), 5));
+        let (q1, r1) = p.divide_by_monic_linear(z);
+        let (q2, r2) = padded.divide_by_monic_linear(z);
+        assert_eq!(q1, q2);
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn zero_and_constant_polynomials() {
+        let rng = &mut TestRng::default();
+        let z = Fr::rand(rng);
+
+        let (q, r) = DensePolynomial::<Fr>::zero().divide_by_monic_linear(z);
+        assert!(q.is_zero() && r.is_zero());
+
+        let c = Fr::rand(rng);
+        let (q, r) = DensePolynomial::from_coefficients_vec(vec![c]).divide_by_monic_linear(z);
+        assert!(q.is_zero());
+        assert_eq!(r, c);
     }
 }
