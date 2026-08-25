@@ -63,18 +63,20 @@ Run in order:
 ```bash
 cargo check -p <crate>
 cargo clippy -p <crate> -- -D warnings
-cargo +nightly fmt --check
+cargo +nightly-2026-04-02 fmt --check
 cargo test -p <crate>
 ```
 
-Clippy warnings are errors. Formatting requires nightly (`cargo +nightly fmt --all` to fix).
+Clippy warnings are errors. Formatting requires the nightly `.circleci/config.yml` pins as
+`fmt_nightly` (`cargo +nightly-2026-04-02 fmt --all` to fix) -- `.rustfmt.toml` uses
+nightly-only options, and plain `cargo fmt` drops them silently rather than refusing.
 
-Pre-commit hook runs workspace-wide: `cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo +nightly fmt --all -- --check`
+Pre-commit hook runs workspace-wide: `cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo +nightly-2026-04-02 fmt --all -- --check`
 
 ## Git
 - Never commit unless explicitly asked.
 - Stage with `git add` only if requested.
-- Run `cargo +nightly fmt --all` before staging.
+- Run `cargo +nightly-2026-04-02 fmt --all` before staging.
 
 ## Style
 - One blank line between functions.

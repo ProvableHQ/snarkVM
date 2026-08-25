@@ -16,6 +16,22 @@ parameters:
   twoxlarge:
     type: string
     default: 2xlarge
+  # The toolchain `check-fmt` formats with.
+  #
+  # `.rustfmt.toml` uses options that only exist on nightly -- imports_layout,
+  # imports_granularity, overflow_delimited_expr, reorder_impl_items and
+  # style_edition -- so the formatter cannot be the 1.88.0 this project builds
+  # with, and `cargo fmt` without a toolchain silently drops all five rather
+  # than refusing. The formatter is therefore a second toolchain, and pinning
+  # it is the same act as pinning the first.
+  #
+  # Resolves to rustfmt 1.9.0-nightly (7e46c5f6fb 2026-04-01); rustup's dated
+  # nightlies are built from the previous day's commit. Bumping it may reformat
+  # the tree, so it should be a deliberate change with the reformatting in the
+  # same commit.
+  fmt_nightly:
+    type: string
+    default: nightly-2026-04-02
 
 orbs:
   windows: circleci/windows@5.0
@@ -473,9 +489,9 @@ commands:
                 cache_key: v4.7.3-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
 
   install_rust_nightly:
-    description: "Install Rust nightly toolchain"
+    description: "Install the pinned Rust nightly toolchain used for formatting"
     steps:
-      - run: rustup toolchain install nightly-x86_64-unknown-linux-gnu
+      - run: rustup toolchain install << pipeline.parameters.fmt_nightly >>-x86_64-unknown-linux-gnu --profile minimal --component rustfmt
 
 jobs:
   snarkvm:
@@ -1127,7 +1143,7 @@ jobs:
       - run:
           name: Check style
           no_output_timeout: 35m
-          command: cargo +nightly fmt --all -- --check
+          command: cargo +<< pipeline.parameters.fmt_nightly >> fmt --all -- --check
       - clear_environment:
           cache_key: v4.7.3-rust-1.88.0-snarkvm-fmt-cache
 
