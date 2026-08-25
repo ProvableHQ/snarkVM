@@ -99,7 +99,7 @@ let link = TransitionLink::new(
 );
 
 let (air, trace) = OpcodeR1csAir::from_assignments(
-    &[first_mul_assignment, second_mul_assignment],
+    &[first_mul_assignment, carry_assignment, second_mul_assignment],
     &[link],
 )?;
 debug_constraints(&air, &trace)?;
@@ -107,6 +107,110 @@ debug_constraints(&air, &trace)?;
 
 See `test_opcode_air_links_consecutive_multiplications` in
 [`src/r1cs.rs`](src/r1cs.rs).
+
+## Architectural comparison with Plonky3
+
+The two systems can use the same high-level composition model, but they start at
+different abstraction levels.
+
+snarkVM gadgets currently execute against `Environment` and append equations to
+one heterogeneous R1CS. Shared R1CS variables compose gadgets implicitly.
+`OpcodeR1csAir` recovers AIR structure by isolating a reusable R1CS shape for
+each opcode variant, assigning one invocation per row, and making dataflow
+explicit with carry columns or transition links.
+
+Plonky3 AIRs are normally written directly as trace layouts and polynomial
+constraints. A specialized chip can choose whether rounds occupy rows or
+columns, which intermediates are witnessed, and how polynomial degree is
+reduced. Separate chips compose through shared columns, transition constraints,
+or lookup/permutation interactions.
+
+Therefore, different snarkVM opcode AIRs can be composed Plonky3-style. The
+compiler must additionally:
+
+1. choose and populate an AIR table for each opcode shape;
+2. bind public inputs and outputs;
+3. route SSA values through adjacent carry lanes or a cross-table bus; and
+4. constrain table multiplicities and control flow.
+
+Plonky3's bare `Poseidon2Air` does not itself expose public inputs or emit
+cross-table interactions. A wrapper AIR must bind or bus-connect its input and
+output columns when composing it with the rest of a program.
+
+Compiler-generated variables between opcode invocations are sufficient for
+correctness. Their cost is proportional to live-range length, so a bus becomes
+preferable when many values have long or overlapping live ranges.
+
+## Poseidon AIR size benchmark
+
+This benchmark measures structural AIR size, not proving time or proof bytes.
+It counts committed main-trace field elements, symbolic constraint polynomials,
+and maximum polynomial degree for one permutation row or segment.
+
+The snarkVM case is a full-rate `Poseidon2<Circuit>::hash` of two private field
+elements. In snarkVM, `Poseidon2` means classic Poseidon with rate 2; it does not
+mean the Poseidon2 permutation design. Its sponge has a three-word state, eight
+full rounds, 31 partial rounds, and an `x^17` S-box. Constant-only work is folded
+away, leaving one nonconstant permutation with two variable rate words and a
+fixed capacity word. The assignment is lowered as one `OpcodeR1csAir` row. It is
+therefore a hash-block measurement, not an arbitrary three-word raw permutation.
+
+Measured with:
+
+```text
+cargo test -p snarkvm-synthesizer-snark test_poseidon_hash_air_size_report -- --nocapture
+```
+
+The result is:
+
+- `OpcodeR1csAir`: 273 columns, one row, 273 committed cells, 270 R1CS
+  multiplication constraints, 271 AIR constraints including `one = 1`, and
+  maximum degree 2.
+- Native round-oriented `PoseidonAir`: three main columns, four preprocessed
+  columns, 40 rows, 120 committed cells, 160 fixed cells, three symbolic
+  transition constraints, and maximum symbolic degree 19.
+
+For Plonky3, the comparison uses its standard BabyBear Poseidon2 AIR at commit
+[`5dc50e5`](https://github.com/Plonky3/Plonky3/tree/5dc50e51436a811c62443e336f766015fecc9217):
+a 16-word state, eight full rounds, 13 partial rounds, and an `x^7` S-box with
+one auxiliary register. Plonky3 places one complete permutation in each row.
+Its [`Poseidon2Cols`](https://github.com/Plonky3/Plonky3/blob/5dc50e51436a811c62443e336f766015fecc9217/poseidon2-air/src/columns.rs)
+layout gives:
+
+```text
+16 inputs
++ 8 full rounds * (16 S-box registers + 16 post-state cells)
++ 13 partial rounds * (1 S-box register + 1 post-S-box cell)
+= 298 columns
+```
+
+Symbolically evaluating the pinned
+[`Poseidon2Air`](https://github.com/Plonky3/Plonky3/blob/5dc50e51436a811c62443e336f766015fecc9217/poseidon2-air/src/air.rs)
+gives 282 constraints and maximum degree 3. One permutation therefore occupies
+298 committed cells. Its vectorized eight-permutation AIR changes width and
+height but retains 298 cells per permutation.
+
+The absolute row sizes are close: Plonky3 uses 9.2% more committed cells and
+4.1% more constraints per permutation. That is not an apples-to-apples
+efficiency result: Plonky3's permutation has 16 state words, while snarkVM's has
+three. Normalized per state word, the opcode lowering uses 91 cells and 90.3 AIR
+constraints; Plonky3 uses 18.6 cells and 17.6 constraints. The specialized
+Plonky3 layout is therefore about 4.9 times smaller in cells and 5.1 times
+smaller in constraints per state word.
+
+The native snarkVM AIR demonstrates the other side of the width/degree
+tradeoff. It has only 120 committed cells, but directly embeds `x^17` and uses a
+preprocessed full-round selector. Its raw S-box expression has degree 17; the
+complete symbolic transition expression has degree 19 after the full-round and
+transition selectors are included. A production native AIR should witness
+intermediate powers to reduce degree and add segment selectors or a
+one-permutation-per-row layout for batching.
+
+These ratios must not be interpreted as proof-size or prover-time ratios.
+snarkVM uses a roughly 253-bit field and classic Poseidon parameters; the
+Plonky3 instance uses the 31-bit BabyBear field and Poseidon2 parameters. A fair
+performance benchmark requires the same field, state width, permutation,
+security target, commitment scheme, and batch size.
 
 ## What this proves—and what it does not
 

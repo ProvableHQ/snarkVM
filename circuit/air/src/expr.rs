@@ -54,6 +54,23 @@ impl<F: PrimeField> SymbolicExpr<F> {
     pub fn constant(value: F) -> Self {
         Self::Constant(value)
     }
+
+    /// Returns the total polynomial degree of this expression.
+    pub fn degree(&self) -> usize {
+        match self {
+            Self::Constant(_) => 0,
+            Self::Local(_)
+            | Self::Next(_)
+            | Self::PreprocessedLocal(_)
+            | Self::PreprocessedNext(_)
+            | Self::IsFirstRow
+            | Self::IsLastRow
+            | Self::IsTransition => 1,
+            Self::Add(lhs, rhs) | Self::Sub(lhs, rhs) => lhs.degree().max(rhs.degree()),
+            Self::Mul(lhs, rhs) => lhs.degree().saturating_add(rhs.degree()),
+            Self::Neg(inner) => inner.degree(),
+        }
+    }
 }
 
 impl<F: PrimeField> From<F> for SymbolicExpr<F> {
@@ -200,5 +217,15 @@ mod tests {
         assert_eq!(a.clone() * b, SymbolicExpr::from(Fr::from(6u64)));
         assert_eq!(a.clone() * SymbolicExpr::zero(), SymbolicExpr::zero());
         assert_eq!(-(-a.clone()), a);
+    }
+
+    #[test]
+    fn test_symbolic_expr_degree() {
+        let x = SymbolicExpr::<Fr>::Local(0);
+        let y = SymbolicExpr::<Fr>::Next(0);
+        assert_eq!(0, SymbolicExpr::from(Fr::one()).degree());
+        assert_eq!(1, (x.clone() + SymbolicExpr::from(Fr::one())).degree());
+        assert_eq!(2, (x.clone() * y.clone()).degree());
+        assert_eq!(3, (x * y.clone() * y).degree());
     }
 }
