@@ -272,16 +272,33 @@ impl<F: FftField> EvaluationDomain<F> {
             }
             u
         } else {
-            let mut l = (t_size - one) * self.size_inv;
-            let mut r = one;
+            let l0 = (t_size - one) * self.size_inv;
             let mut u = vec![F::zero(); size];
             let mut ls = vec![F::zero(); size];
-            for i in 0..size {
-                u[i] = tau - r;
-                ls[i] = l;
-                l *= &self.group_gen;
-                r *= &self.group_gen;
-            }
+
+            // Both sequences are powers of `group_gen`, so a block can seed itself with
+            // `group_gen^start` rather than walking there from zero. Written serially this
+            // is one dependency chain the length of the domain, which neither
+            // more cores nor wider registers can shorten.
+            //
+            // Same shape as `distribute_powers_and_mul_by_const` above.
+            #[cfg(not(feature = "serial"))]
+            let chunk = core::cmp::max(size / max_available_threads(), 1024);
+            #[cfg(feature = "serial")]
+            let chunk = core::cmp::max(size, 1);
+
+            cfg_chunks_mut!(u, chunk).zip(cfg_chunks_mut!(ls, chunk)).enumerate().for_each(
+                |(i, (u_chunk, ls_chunk))| {
+                    let mut r = self.group_gen.pow([(i * chunk) as u64]);
+                    let mut l = l0 * r;
+                    u_chunk.iter_mut().zip(ls_chunk.iter_mut()).for_each(|(tau_minus_r, l_i)| {
+                        *tau_minus_r = tau - r;
+                        *l_i = l;
+                        r *= &self.group_gen;
+                        l *= &self.group_gen;
+                    });
+                },
+            );
 
             batch_inversion(u.as_mut_slice());
             cfg_iter_mut!(u, 1_000).zip_eq(ls).for_each(|(tau_minus_r, l)| {
