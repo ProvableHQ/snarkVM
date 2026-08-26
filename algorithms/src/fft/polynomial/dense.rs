@@ -57,6 +57,22 @@ impl<F: Field> fmt::Debug for DensePolynomial<F> {
 }
 
 impl<F: Field> DensePolynomial<F> {
+    /// Drops trailing zero coefficients, so that `degree()` is the real degree.
+    ///
+    /// `degree()` asserts that the last coefficient is non-zero, and
+    /// `apply_randomized_selector` divides by degree, so a polynomial that
+    /// skips this is a live panic rather than an untidy one. The loop was
+    /// written out seven times in this file and once in `second.rs`; naming it
+    /// means the next person changing one changes all of them.
+    ///
+    /// `from_coefficients_vec` still writes the loop out, and has to: it trims
+    /// a bare `Vec<F>` before there is a `Self` to call this on.
+    pub(crate) fn trim_trailing_zeros(&mut self) {
+        while let Some(true) = self.coeffs.last().map(|c| c.is_zero()) {
+            self.coeffs.pop();
+        }
+    }
+
     /// Returns the zero polynomial.
     pub fn zero() -> Self {
         Self { coeffs: Vec::new() }
@@ -304,10 +320,7 @@ impl<'a, F: Field> Add<&'a DensePolynomial<F>> for &'_ DensePolynomial<F> {
             cfg_iter_mut!(result.coeffs).zip(&self.coeffs).for_each(|(a, b)| *a += b);
             result
         };
-        // If the leading coefficient ends up being zero, pop it off.
-        while let Some(true) = result.coeffs.last().map(|c| c.is_zero()) {
-            result.coeffs.pop();
-        }
+        result.trim_trailing_zeros();
         result
     }
 }
@@ -328,10 +341,7 @@ impl<'a, F: Field> AddAssign<&'a DensePolynomial<F>> for DensePolynomial<F> {
             // Zip safety: `self` and `other` have the same length.
             cfg_iter_mut!(self.coeffs, 1_000).zip(&other.coeffs).for_each(|(a, b)| *a += b);
         }
-        // If the leading coefficient ends up being zero, pop it off.
-        while let Some(true) = self.coeffs.last().map(|c| c.is_zero()) {
-            self.coeffs.pop();
-        }
+        self.trim_trailing_zeros();
     }
 }
 
@@ -375,10 +385,7 @@ impl<'a, F: Field> AddAssign<(F, &'a DensePolynomial<F>)> for DensePolynomial<F>
                 *a += f * b;
             });
         }
-        // If the leading coefficient ends up being zero, pop it off.
-        while let Some(true) = self.coeffs.last().map(|c| c.is_zero()) {
-            self.coeffs.pop();
-        }
+        self.trim_trailing_zeros();
     }
 }
 
@@ -421,10 +428,7 @@ impl<'a, F: Field> Sub<&'a DensePolynomial<F>> for &'_ DensePolynomial<F> {
             });
             result
         };
-        // If the leading coefficient ends up being zero, pop it off.
-        while let Some(true) = result.coeffs.last().map(|c| c.is_zero()) {
-            result.coeffs.pop();
-        }
+        result.trim_trailing_zeros();
         result
     }
 }
@@ -448,10 +452,7 @@ impl<'a, F: Field> SubAssign<&'a DensePolynomial<F>> for DensePolynomial<F> {
             // Zip safety: self and other have the same length after the resize.
             cfg_iter_mut!(self.coeffs).zip(&other.coeffs).for_each(|(a, b)| *a -= b);
         }
-        // If the leading coefficient ends up being zero, pop it off.
-        while let Some(true) = self.coeffs.last().map(|c| c.is_zero()) {
-            self.coeffs.pop();
-        }
+        self.trim_trailing_zeros();
     }
 }
 
@@ -464,10 +465,7 @@ impl<'a, F: Field> AddAssign<&'a super::SparsePolynomial<F>> for DensePolynomial
         for (i, b) in other.coeffs() {
             self.coeffs[*i] += b;
         }
-        // If the leading coefficient ends up being zero, pop it off.
-        while let Some(true) = self.coeffs.last().map(|c| c.is_zero()) {
-            self.coeffs.pop();
-        }
+        self.trim_trailing_zeros();
     }
 }
 
@@ -482,10 +480,7 @@ impl<'a, F: Field> Sub<&'a super::SparsePolynomial<F>> for DensePolynomial<F> {
         for (i, b) in other.coeffs() {
             self.coeffs[*i] -= b;
         }
-        // If the leading coefficient ends up being zero, pop it off.
-        while let Some(true) = self.coeffs.last().map(|c| c.is_zero()) {
-            self.coeffs.pop();
-        }
+        self.trim_trailing_zeros();
         self
     }
 }
