@@ -32,6 +32,28 @@ use std::{
 
 use std::mem::size_of;
 
+/// The maximum number of circuits in a batch proof.
+///
+/// Every circuit in a batch contributes at least one instance, so the number of
+/// circuits is bounded by the consensus limit on the total number of instances
+/// in a batch proof, `Network::MAX_BATCH_PROOF_INSTANCES`. That limit lives in
+/// `snarkvm-console-network`, which this crate cannot depend on, so the value
+/// is repeated here: if it is ever raised, this constant has to be raised
+/// first, or newly produced proofs stop being deserializable.
+pub const MAX_CIRCUITS_PER_BATCH_PROOF: u64 = 128;
+
+/// The maximum number of instances of any single circuit in a batch proof.
+///
+/// The largest legitimate batch is the inclusion circuit, which holds one
+/// instance per input record, so at most `Network::MAX_INPUTS` (16) times
+/// `Transaction::MAX_TRANSITIONS` (32). Proofs predating the consensus limit
+/// on total instances can reach that, so this is deliberately looser than the
+/// 128 above; tightening it would reject historical blocks.
+pub const MAX_INSTANCES_PER_CIRCUIT: u64 = 512;
+
+/// The maximum number of instances across all circuits in a batch proof.
+pub const MAX_INSTANCES_PER_BATCH_PROOF: u64 = 1024;
+
 #[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Commitments<E: PairingEngine> {
     pub witness_commitments: Vec<WitnessCommitments<E>>,
@@ -347,8 +369,29 @@ impl<E: PairingEngine> CanonicalDeserialize for Proof<E> {
         compress: Compress,
         validate: Validate,
     ) -> Result<Self, SerializationError> {
-        let batch_sizes: Vec<u64> = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
-        let batch_sizes: Vec<usize> = batch_sizes.into_iter().map(|x| x as usize).collect();
+        // Read the batch sizes one value at a time rather than as a `Vec<u64>`,
+        // so that each count can be bounded as it arrives. These come off the
+        // wire and are used below as loop counts and expected lengths, so
+        // nothing downstream should see a count no honest prover could have
+        // produced. Zero is rejected too: the verifier computes `size - 1`.
+        let num_circuits = u64::deserialize_with_mode(&mut reader, compress, validate)?;
+        if num_circuits == 0 || num_circuits > MAX_CIRCUITS_PER_BATCH_PROOF {
+            return Err(SerializationError::InvalidData);
+        }
+        let mut batch_sizes = Vec::with_capacity(num_circuits as usize);
+        let mut total_instances = 0u64;
+        for _ in 0..num_circuits {
+            let batch_size = u64::deserialize_with_mode(&mut reader, compress, validate)?;
+            if batch_size == 0 || batch_size > MAX_INSTANCES_PER_CIRCUIT {
+                return Err(SerializationError::InvalidData);
+            }
+            // Cannot overflow, being at most 128 * 512.
+            total_instances += batch_size;
+            if total_instances > MAX_INSTANCES_PER_BATCH_PROOF {
+                return Err(SerializationError::InvalidData);
+            }
+            batch_sizes.push(usize::try_from(batch_size)?);
+        }
         let commitments = Commitments::deserialize_with_mode(&batch_sizes, &mut reader, compress, validate)?;
         let evaluations = Evaluations::deserialize_with_mode(&batch_sizes, &mut reader, compress, validate)?;
         let third_msg_sums = batch_sizes
@@ -471,7 +514,7 @@ mod test {
     use crate::{
         polycommit::{
             kzg10::{KZGCommitment, KZGProof},
-            sonic_pc::BatchProof,
+            sonic_pc::{BatchProof, MAX_BATCH_PROOF_LEN},
         },
         snark::varuna::prover::MatrixSums,
     };
@@ -584,8 +627,12 @@ mod test {
                 let evaluations: Evaluations<Fr> = rand_evaluations(rng, i);
                 let third_msg = ThirdMessage::<Fr> { sums: vec![vec![rand_sums(rng); j]; i] };
                 let fourth_msg = FourthMessage::<Fr> { sums: vec![rand_sums(rng); i] };
-                let pc_proof =
-                    sonic_pc::BatchLCProof { proof: BatchProof(vec![rand_kzg_proof(rng, test_with_none); j]) };
+                // A `BatchProof` holds one evaluation proof per distinct query
+                // point name, so it never exceeds `MAX_BATCH_PROOF_LEN`.
+                let num_kzg_proofs = j.min(MAX_BATCH_PROOF_LEN as usize);
+                let pc_proof = sonic_pc::BatchLCProof {
+                    proof: BatchProof(vec![rand_kzg_proof(rng, test_with_none); num_kzg_proofs]),
+                };
                 let proof = Proof { batch_sizes, commitments, evaluations, third_msg, fourth_msg, pc_proof };
                 let combinations = modes();
                 for (compress, validate) in combinations {
@@ -597,5 +644,60 @@ mod test {
                 }
             }
         }
+    }
+
+    /// Serializes `sizes` exactly as a `Proof` writes its batch sizes, giving a
+    /// `Proof` blob that is truncated immediately after them.
+    fn batch_sizes_blob(sizes: &[u64]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        sizes.to_vec().serialize_compressed(&mut bytes).unwrap();
+        bytes
+    }
+
+    #[test]
+    fn test_proof_batch_sizes_are_bounded() {
+        let rejected = [
+            (vec![], "no circuits"),
+            (vec![0u64], "a circuit with no instances"),
+            (vec![1u64; MAX_CIRCUITS_PER_BATCH_PROOF as usize + 1], "too many circuits"),
+            (vec![MAX_INSTANCES_PER_CIRCUIT + 1], "too many instances in one circuit"),
+            (vec![MAX_INSTANCES_PER_CIRCUIT; 4], "too many instances in total"),
+        ];
+        for (sizes, why) in rejected {
+            let bytes = batch_sizes_blob(&sizes);
+            assert!(
+                matches!(Proof::<Bls12_377>::deserialize_compressed(&bytes[..]), Err(SerializationError::InvalidData)),
+                "expected these batch sizes to be rejected: {why}"
+            );
+        }
+
+        // Batch sizes within the bounds get past these checks and fail on the truncated
+        // body instead, so the assertions above are rejecting the counts and
+        // not the short buffer.
+        let bytes = batch_sizes_blob(&[MAX_INSTANCES_PER_CIRCUIT]);
+        assert!(matches!(Proof::<Bls12_377>::deserialize_compressed(&bytes[..]), Err(SerializationError::IoError(_))));
+    }
+
+    #[test]
+    fn test_batch_proof_length_is_bounded() {
+        let rng = &mut TestRng::default();
+
+        // Every length the protocol can produce round-trips: one for a certificate,
+        // three for a proof.
+        for len in 0..=MAX_BATCH_PROOF_LEN as usize {
+            let expected = BatchProof::<Bls12_377>(vec![rand_kzg_proof(rng, false); len]);
+            let mut bytes = Vec::new();
+            expected.serialize_compressed(&mut bytes).unwrap();
+            assert_eq!(expected, BatchProof::deserialize_compressed(&bytes[..]).unwrap());
+        }
+
+        // One more than that is refused on the length prefix, before any proof is read.
+        let over = vec![rand_kzg_proof(rng, false); MAX_BATCH_PROOF_LEN as usize + 1];
+        let mut bytes = Vec::new();
+        over.serialize_compressed(&mut bytes).unwrap();
+        assert!(matches!(
+            BatchProof::<Bls12_377>::deserialize_compressed(&bytes[..]),
+            Err(SerializationError::InvalidData)
+        ));
     }
 }

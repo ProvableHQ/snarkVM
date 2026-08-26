@@ -396,9 +396,58 @@ impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
     }
 }
 
+/// The maximum number of evaluation proofs in a `BatchProof`.
+///
+/// `SonicKZG10::batch_open` emits exactly one proof per distinct query point
+/// name. The Varuna AHP queries at three names ("alpha", "beta", "gamma") and
+/// the verifying key certificate at one ("challenge"), so no `BatchProof` this
+/// crate can produce holds more than three. `batch_check` already rejects any
+/// other count; bounding it here refuses the length before it is used.
+pub const MAX_BATCH_PROOF_LEN: u64 = 3;
+
 /// Evaluation proof at a query set.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, CanonicalSerialize, CanonicalDeserialize)]
+///
+/// `CanonicalDeserialize` and `Valid` are written out rather than derived, so
+/// that the length prefix can be bounded by `MAX_BATCH_PROOF_LEN` before any
+/// element is read. Both are needed because deriving `CanonicalDeserialize`
+/// is also what derives `Valid`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, CanonicalSerialize)]
 pub struct BatchProof<E: PairingEngine>(pub(crate) Vec<kzg10::KZGProof<E>>);
+
+impl<E: PairingEngine> Valid for BatchProof<E> {
+    fn check(&self) -> Result<(), SerializationError> {
+        Valid::check(&self.0)
+    }
+
+    fn batch_check<'a>(batch: impl Iterator<Item = &'a Self> + Send) -> Result<(), SerializationError>
+    where
+        Self: 'a,
+    {
+        let batch: Vec<_> = batch.collect();
+        Valid::batch_check(batch.iter().map(|v| &v.0))
+    }
+}
+
+impl<E: PairingEngine> CanonicalDeserialize for BatchProof<E> {
+    fn deserialize_with_mode<R: Read>(
+        mut reader: R,
+        compress: Compress,
+        validate: Validate,
+    ) -> Result<Self, SerializationError> {
+        let len = u64::deserialize_with_mode(&mut reader, compress, validate)?;
+        if len > MAX_BATCH_PROOF_LEN {
+            return Err(SerializationError::InvalidData);
+        }
+        let mut proofs = Vec::with_capacity(len as usize);
+        for _ in 0..len {
+            proofs.push(kzg10::KZGProof::deserialize_with_mode(&mut reader, compress, Validate::No)?);
+        }
+        if let Validate::Yes = validate {
+            kzg10::KZGProof::<E>::batch_check(proofs.iter())?;
+        }
+        Ok(BatchProof(proofs))
+    }
+}
 
 impl<E: PairingEngine> BatchProof<E> {
     pub fn is_hiding(&self) -> bool {
