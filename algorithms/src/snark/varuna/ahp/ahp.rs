@@ -435,10 +435,13 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         // When running as the prover, who has access to a(X) and b(X), we directly
         // return those
+        // `has_lc_eval`, not `get_lc_eval(..).is_ok()`: the question is whether the
+        // polynomial is present, and the prover's implementation of the latter
+        // answers it by evaluating the polynomial and throwing the value away.
         let a_poly = LinearCombination::new(label_a_poly.clone(), [(F::one(), label_a_poly.clone())]);
-        let a_poly_eval_available = evals.get_lc_eval(&a_poly, gamma).is_ok();
+        let a_poly_eval_available = evals.has_lc_eval(&a_poly, gamma);
         let b_poly = LinearCombination::new(label_b_poly.clone(), [(F::one(), label_b_poly.clone())]);
-        let b_poly_eval_available = evals.get_lc_eval(&b_poly, gamma).is_ok();
+        let b_poly_eval_available = evals.has_lc_eval(&b_poly, gamma);
         ensure!(a_poly_eval_available == b_poly_eval_available);
         if a_poly_eval_available && b_poly_eval_available {
             return Ok((a_poly, b_poly));
@@ -472,6 +475,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 pub trait EvaluationsProvider<F: PrimeField>: core::fmt::Debug {
     /// Get the evaluation of linear combination `lc` at `point`.
     fn get_lc_eval(&self, lc: &LinearCombination<F>, point: F) -> Result<F>;
+
+    /// Whether `get_lc_eval` would succeed, without computing the value.
+    ///
+    /// `construct_matrix_linear_combinations` has to know which side of the
+    /// protocol it is running on, and asks by seeing whether an evaluation is
+    /// available. Answering that with `get_lc_eval(..).is_ok()` costs a full
+    /// evaluation of every named polynomial on the prover's implementation, and
+    /// the value is then discarded.
+    ///
+    /// Implementations must agree with `get_lc_eval(..).is_ok()` exactly.
+    fn has_lc_eval(&self, lc: &LinearCombination<F>, point: F) -> bool;
 }
 
 /// The `EvaluationsProvider` used by the verifier
@@ -479,6 +493,10 @@ impl<F: PrimeField> EvaluationsProvider<F> for crate::polycommit::sonic_pc::Eval
     fn get_lc_eval(&self, lc: &LinearCombination<F>, point: F) -> Result<F> {
         let key = (lc.label.clone(), point);
         self.get(&key).copied().ok_or_else(|| AHPError::MissingEval(lc.label.clone())).map_err(Into::into)
+    }
+
+    fn has_lc_eval(&self, lc: &LinearCombination<F>, point: F) -> bool {
+        self.get(&(lc.label.clone(), point)).is_some()
     }
 }
 
@@ -505,6 +523,17 @@ where
         }
         Ok(eval)
     }
+
+    fn has_lc_eval(&self, lc: &LinearCombination<F>, _point: F) -> bool {
+        // Mirrors the two ways `get_lc_eval` above can fail: a `PolyLabel` term
+        // with no matching polynomial, and a non-`PolyLabel` term that is not
+        // one. The point is irrelevant -- if the polynomial is here, it can be
+        // evaluated anywhere.
+        lc.iter().all(|(_, term)| match term {
+            LCTerm::PolyLabel(label) => self.iter().any(|p| (*p).borrow().label() == label),
+            other => other.is_one(),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -512,8 +541,36 @@ mod tests {
     use super::*;
     use crate::fft::DensePolynomial;
     use snarkvm_curves::bls12_377::fr::Fr;
-    use snarkvm_fields::Zero;
-    use snarkvm_utilities::rand::TestRng;
+    use snarkvm_fields::{One, Zero};
+    use snarkvm_utilities::rand::{TestRng, Uniform};
+
+    /// `has_lc_eval` exists only as a cheap stand-in for
+    /// `get_lc_eval(..).is_ok()`, so the property worth testing is that the two
+    /// never disagree -- including on the inputs that make `get_lc_eval` fail.
+    #[test]
+    fn has_lc_eval_agrees_with_get_lc_eval() {
+        let rng = &mut TestRng::default();
+        let point = Fr::rand(rng);
+        let polys: Vec<LabeledPolynomial<Fr>> = ["a", "b"]
+            .into_iter()
+            .map(|label| LabeledPolynomial::new(label.to_string(), DensePolynomial::rand(1 << 4, rng), None, None))
+            .collect();
+
+        let cases = [
+            // Present, absent, mixed, and a bare `One` term, which `get_lc_eval`
+            // resolves without consulting the provider at all.
+            LinearCombination::new("present", [(Fr::one(), "a")]),
+            LinearCombination::new("absent", [(Fr::one(), "nope")]),
+            LinearCombination::new("both", [(Fr::one(), "a"), (Fr::one(), "b")]),
+            LinearCombination::new("one_present_one_not", [(Fr::one(), "a"), (Fr::one(), "nope")]),
+            LinearCombination::new("constant", [(Fr::one(), LCTerm::One)]),
+            LinearCombination::empty("empty"),
+        ];
+
+        for lc in &cases {
+            assert_eq!(polys.has_lc_eval(lc, point), polys.get_lc_eval(lc, point).is_ok(), "disagreed on {}", lc.label);
+        }
+    }
 
     #[test]
     fn test_summation() {
