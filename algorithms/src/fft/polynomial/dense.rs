@@ -367,9 +367,15 @@ impl<'a, F: Field> AddAssign<(F, &'a DensePolynomial<F>)> for DensePolynomial<F>
     #[allow(clippy::suspicious_op_assign_impl)]
     fn add_assign(&mut self, (f, other): (F, &'a DensePolynomial<F>)) {
         if self.is_zero() {
+            // One pass, not two. The scale has to happen either way; the copy
+            // does not have to be a separate walk over the coefficients.
+            //
+            // `clear()` rather than assigning a fresh vector, because `self`
+            // being zero does not mean it is empty -- a polynomial whose
+            // coefficients are all zero reaches here too, and its allocation is
+            // worth keeping.
             self.coeffs.clear();
-            self.coeffs.extend_from_slice(&other.coeffs);
-            self.coeffs.iter_mut().for_each(|c| *c *= &f);
+            self.coeffs.extend(other.coeffs.iter().map(|c| *c * f));
         } else if other.is_zero() {
             // return
         } else if self.degree() >= other.degree() {
@@ -646,6 +652,41 @@ mod tests {
                 assert_eq!(res1, res2);
             }
         }
+    }
+
+    #[test]
+    fn add_scaled_polynomial_to_zero() {
+        // `DensePolynomial::rand` resamples until the leading coefficient is
+        // non-zero, so `add_polynomials_with_mul` never enters `add_assign`'s
+        // `self.is_zero()` branch. These do, both ways it can be reached: an
+        // empty polynomial, and a non-empty one whose coefficients are all zero
+        // -- which is why that branch still has to `clear()`.
+        let rng = &mut TestRng::default();
+        for degree in 0..70 {
+            let q = DensePolynomial::rand(degree, rng);
+            let f = Fr::rand(rng);
+            let expected = DensePolynomial::from_coefficients_vec(q.coeffs.iter().map(|c| f * c).collect());
+
+            let mut empty = DensePolynomial::zero();
+            empty += (f, &q);
+            assert_eq!(empty, expected, "scaled add onto an empty polynomial");
+
+            // Built through the field, not `from_coefficients_vec`, which strips
+            // trailing zeros and would hand back the empty representation --
+            // making this the same case as `empty` above and testing nothing.
+            let mut zeroed = DensePolynomial::zero();
+            zeroed.coeffs = vec![Fr::zero(); degree + 3];
+            assert!(zeroed.is_zero() && !zeroed.coeffs.is_empty());
+            zeroed += (f, &q);
+            assert_eq!(zeroed, expected, "scaled add onto a non-empty all-zero polynomial");
+        }
+
+        // A zero scalar still normalises to the empty representation.
+        let q = DensePolynomial::rand(16, rng);
+        let mut p = DensePolynomial::zero();
+        p += (Fr::zero(), &q);
+        assert!(p.is_zero());
+        assert!(p.coeffs.is_empty());
     }
 
     #[test]
