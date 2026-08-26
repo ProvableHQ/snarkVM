@@ -83,10 +83,14 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let total_instances = num_instances.iter().sum::<usize>();
         let matrix_labels = ["a", "b", "c"];
 
+        // Borrowed, not cloned. Each precomputation holds a root-of-unity table sized
+        // by the circuit's largest multiplicative domain, so cloning copies
+        // megabytes per circuit per proof to produce a byte-identical result --
+        // the tables are circuit data, fixed for the life of the process.
         let fft_precomputations = state
             .circuit_specific_states
             .keys()
-            .map(|circuit| (circuit.fft_precomputation.clone(), circuit.ifft_precomputation.clone()))
+            .map(|circuit| (&circuit.fft_precomputation, &circuit.ifft_precomputation))
             .collect_vec();
 
         // Compute lineval sumcheck witnesses
@@ -134,8 +138,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                             label,
                             &l_at_alpha,
                             &circuit_specific_state.variable_domain,
-                            &precomp.0,
-                            &precomp.1,
+                            precomp.0,
+                            precomp.1,
                             assignment,
                             matrix_transpose,
                         )?;
