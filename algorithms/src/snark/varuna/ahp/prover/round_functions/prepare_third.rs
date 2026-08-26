@@ -25,6 +25,7 @@ use crate::{
 };
 use snarkvm_fields::PrimeField;
 use snarkvm_utilities::ExecutionPool;
+use std::sync::Arc;
 
 use anyhow::Result;
 use itertools::Itertools;
@@ -116,21 +117,27 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             .zip_eq(assignments.values())
             .zip_eq(matrix_transposes.values())
         {
+            // One Lagrange vector per circuit rather than one per matrix: it depends only
+            // on the constraint domain and alpha, both of which are fixed
+            // across the jobs below.
+            let l_at_alpha =
+                Arc::new(circuit_specific_state.constraint_domain.evaluate_all_lagrange_coefficients(*alpha));
+
             // Iterate for each instance in the batch.
             for assignment in assignments_i {
                 // Iterate for each R1CS matrix corresponding to the circuit and instance.
                 for label in matrix_labels {
                     let matrix_transpose = &matrix_transposes_i[label];
+                    let l_at_alpha = l_at_alpha.clone();
                     job_pool.add_job(move || {
                         let z_m_at_alpha = Self::calculate_lineval_sumcheck_instance_witness(
                             label,
-                            &circuit_specific_state.constraint_domain,
+                            &l_at_alpha,
                             &circuit_specific_state.variable_domain,
                             &precomp.0,
                             &precomp.1,
                             assignment,
                             matrix_transpose,
-                            *alpha,
                         )?;
                         // sum_{h in H} f(h) = n*(c_0 + c_n) for deg(p) < 2n, where c_0 and c_n are the
                         // coeffs of f at degree 0 and n, resp. and in [0, 2n-2]
