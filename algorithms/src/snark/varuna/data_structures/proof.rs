@@ -34,21 +34,31 @@ use std::mem::size_of;
 
 /// The maximum number of circuits in a batch proof.
 ///
-/// Every circuit in a batch contributes at least one instance, so the number of
-/// circuits is bounded by the consensus limit on the total number of instances
-/// in a batch proof, `Network::MAX_BATCH_PROOF_INSTANCES`. That limit lives in
-/// `snarkvm-console-network`, which this crate cannot depend on, so the value
-/// is repeated here: if it is ever raised, this constant has to be raised
-/// first, or newly produced proofs stop being deserializable.
+/// Two different arguments bound this, because the consensus limit on the total
+/// number of instances in a batch proof, `Network::MAX_BATCH_PROOF_INSTANCES`
+/// (128), is only applied from `ConsensusVersion::V14` and so says nothing
+/// about older proofs:
+///
+/// - From V14, every circuit holds at least one instance, so the number of
+///   circuits cannot exceed that limit of 128.
+/// - Before V14, a batch held one circuit per distinct function in the
+///   execution plus one for inclusion, and an execution carries fewer than
+///   `Transaction::MAX_TRANSITIONS` (32) transitions, giving at most 32.
+///
+/// 128 therefore covers both eras. It repeats a value from
+/// `snarkvm-console-network`, which this crate cannot depend on; a compile-time
+/// assertion beside that limit keeps the two from drifting apart.
 pub const MAX_CIRCUITS_PER_BATCH_PROOF: u64 = 128;
 
 /// The maximum number of instances of any single circuit in a batch proof.
 ///
 /// The largest legitimate batch is the inclusion circuit, which holds one
-/// instance per input record, so at most `Network::MAX_INPUTS` (16) times
-/// `Transaction::MAX_TRANSITIONS` (32). Proofs predating the consensus limit
-/// on total instances can reach that, so this is deliberately looser than the
-/// 128 above; tightening it would reject historical blocks.
+/// instance per input record. An execution carries at most
+/// `Transaction::MAX_TRANSITIONS - 1` transitions, one slot being held back
+/// for the fee (see `Transaction::check_execution_size`), so at most
+/// 31 * `Network::MAX_INPUTS` (16) = 496 records. Proofs predating the
+/// consensus limit on total instances can reach that, so this is deliberately
+/// looser than the 128 above; tightening it would reject historical blocks.
 pub const MAX_INSTANCES_PER_CIRCUIT: u64 = 512;
 
 /// The maximum number of instances across all circuits in a batch proof.
@@ -699,5 +709,11 @@ mod test {
             BatchProof::<Bls12_377>::deserialize_compressed(&bytes[..]),
             Err(SerializationError::InvalidData)
         ));
+
+        // The same bound applies on the way out, so nothing serializes that would then
+        // fail to deserialize.
+        let over = BatchProof::<Bls12_377>(over);
+        let mut bytes = Vec::new();
+        assert!(matches!(over.serialize_compressed(&mut bytes), Err(SerializationError::InvalidData)));
     }
 }

@@ -396,23 +396,40 @@ impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
     }
 }
 
-/// The maximum number of evaluation proofs in a `BatchProof`.
+/// The maximum number of evaluation proofs a `BatchProof` will serialize.
 ///
-/// `SonicKZG10::batch_open` emits exactly one proof per distinct query point
-/// name. The Varuna AHP queries at three names ("alpha", "beta", "gamma") and
-/// the verifying key certificate at one ("challenge"), so no `BatchProof` this
-/// crate can produce holds more than three. `batch_check` already rejects any
-/// other count; bounding it here refuses the length before it is used.
+/// `SonicKZG10::batch_open` emits one proof per distinct query point name, so
+/// the count follows from the caller's query set rather than from the scheme.
+/// Both callers in this crate sit at or below three: the Varuna AHP queries at
+/// "alpha", "beta" and "gamma", and the verifying key certificate at
+/// "challenge". `batch_check` already rejects any other count.
+///
+/// This is enforced on serialization as well as deserialization, so that the
+/// round trip stays total -- whatever writes will read back. A caller with a
+/// larger query set would have to raise it.
 pub const MAX_BATCH_PROOF_LEN: u64 = 3;
 
 /// Evaluation proof at a query set.
 ///
-/// `CanonicalDeserialize` and `Valid` are written out rather than derived, so
-/// that the length prefix can be bounded by `MAX_BATCH_PROOF_LEN` before any
-/// element is read. Both are needed because deriving `CanonicalDeserialize`
-/// is also what derives `Valid`.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, CanonicalSerialize)]
+/// `CanonicalSerialize`, `CanonicalDeserialize` and `Valid` are written out
+/// rather than derived, so that the length can be bounded by
+/// `MAX_BATCH_PROOF_LEN` on both sides. All three are needed because deriving
+/// `CanonicalDeserialize` is also what derives `Valid`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct BatchProof<E: PairingEngine>(pub(crate) Vec<kzg10::KZGProof<E>>);
+
+impl<E: PairingEngine> CanonicalSerialize for BatchProof<E> {
+    fn serialize_with_mode<W: Write>(&self, mut writer: W, compress: Compress) -> Result<(), SerializationError> {
+        if self.0.len() as u64 > MAX_BATCH_PROOF_LEN {
+            return Err(SerializationError::InvalidData);
+        }
+        CanonicalSerialize::serialize_with_mode(&self.0, &mut writer, compress)
+    }
+
+    fn serialized_size(&self, compress: Compress) -> usize {
+        CanonicalSerialize::serialized_size(&self.0, compress)
+    }
+}
 
 impl<E: PairingEngine> Valid for BatchProof<E> {
     fn check(&self) -> Result<(), SerializationError> {

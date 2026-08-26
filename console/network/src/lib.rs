@@ -641,6 +641,26 @@ pub trait Network:
     fn dynamic_record_path_hasher() -> &'static Poseidon2<Self>;
 }
 
+/// Every instance permitted by `MAX_BATCH_PROOF_INSTANCES` needs a circuit to live in, and the
+/// Varuna proof deserializer caps the number of circuits it will read. `snarkvm-algorithms` cannot
+/// depend on this crate, so its cap is a hand-written constant; raising the limit here past it
+/// would leave newly produced proofs undeserializable. Pin the relationship at the definition, so
+/// that raising the limit without raising the cap is a build failure rather than a runtime one.
+const _: () = {
+    assert!(
+        <MainnetV0 as Network>::MAX_BATCH_PROOF_INSTANCES as u64
+            <= snarkvm_algorithms::snark::varuna::MAX_CIRCUITS_PER_BATCH_PROOF
+    );
+    assert!(
+        <TestnetV0 as Network>::MAX_BATCH_PROOF_INSTANCES as u64
+            <= snarkvm_algorithms::snark::varuna::MAX_CIRCUITS_PER_BATCH_PROOF
+    );
+    assert!(
+        <CanaryV0 as Network>::MAX_BATCH_PROOF_INSTANCES as u64
+            <= snarkvm_algorithms::snark::varuna::MAX_CIRCUITS_PER_BATCH_PROOF
+    );
+};
+
 /// Returns the consensus version heights, initializing them if necessary.
 ///
 /// If a `heights` string is provided, it must be a comma-separated list of ascending block heights
