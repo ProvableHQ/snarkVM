@@ -29,8 +29,16 @@ parameters:
   # nightlies are built from the previous day's commit. Bumping it may reformat
   # the tree, so it should be a deliberate change with the reformatting in the
   # same commit.
+  #
+  # `enum` rather than `string`: this value is interpolated unquoted into the
+  # `rustup toolchain install` and `cargo fmt` commands below, so a `string`
+  # parameter would let anyone able to trigger a pipeline with custom
+  # parameters inject arbitrary shell commands into the job. `enum` rejects
+  # any pipeline-trigger value that isn't in the list below before the config
+  # is compiled, closing that off. Add the new pin to the list when bumping.
   fmt_nightly:
-    type: string
+    type: enum
+    enum: [nightly-2026-04-02]
     default: nightly-2026-04-02
 
 orbs:
