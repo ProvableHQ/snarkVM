@@ -421,7 +421,10 @@ impl<T: CanonicalDeserialize> CanonicalDeserialize for Vec<T> {
     ) -> Result<Self, SerializationError> {
         let len = u64::deserialize_with_mode(&mut reader, compress, validate)?;
         let mut values = Vec::new();
-        let _ = values.try_reserve(len as usize);
+        // `len` comes straight off the wire, so only pre-reserve a small hint from it; a huge
+        // value must not force a large upfront allocation. The vector still reaches its real
+        // size via `push`, which only grows as far as the reader actually has data for.
+        let _ = values.try_reserve(len.min(1024) as usize);
         for _ in 0..len {
             values.push(T::deserialize_with_mode(&mut reader, compress, Validate::No)?);
         }
