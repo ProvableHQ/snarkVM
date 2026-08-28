@@ -203,7 +203,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             })
             .collect::<Result<Vec<_>>>()?;
         // Sort the deployment transaction IDs by their block heights.
-        deployment_ids.sort_unstable_by_key(|(_, a)| *a);
+        deployment_ids.sort_unstable_by_key(|(_, h)| *h);
 
         // Load the deployments in order of their block heights.
         const PARALLELIZATION_FACTOR: usize = 256;
