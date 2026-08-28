@@ -17,7 +17,7 @@ use std::io::Cursor;
 
 use super::{Affine, Projective};
 use crate::{AffineCurve, ProjectiveCurve, ShortWeierstrassParameters};
-use snarkvm_fields::Zero;
+use snarkvm_fields::{One, Zero};
 use snarkvm_utilities::{
     Compress,
     TestRng,
@@ -48,6 +48,26 @@ pub fn sw_tests<P: ShortWeierstrassParameters>(rng: &mut TestRng) {
 /// decoders, and the same predicate `Affine::from_random_bytes` already applies
 /// a few lines away: `if x.is_zero() && flags.is_infinity()`.
 pub fn sw_non_canonical_infinity_is_rejected<P: ShortWeierstrassParameters>() {
+    // First, the other direction: the serializer must never *emit* a
+    // non-canonical infinity, or the rejection below would refuse our own
+    // output. This is reachable rather than hypothetical -- the uncompressed
+    // deserializer builds `Affine::new(x, y, flags.is_infinity())`, keeping
+    // whatever coordinates were sent, so a point can carry the infinity flag
+    // alongside a non-zero x.
+    {
+        let dirty = Affine::<P>::new(P::BaseField::one(), P::BaseField::one(), true);
+        let mut written = Vec::new();
+        dirty.serialize_with_mode(&mut written, Compress::Yes).unwrap();
+
+        let mut canonical = Vec::new();
+        Affine::<P>::zero().serialize_with_mode(&mut canonical, Compress::Yes).unwrap();
+
+        assert_eq!(
+            written, canonical,
+            "compressing an infinity point with dirty coordinates must still emit the canonical form"
+        );
+    }
+
     for validate in [Validate::Yes, Validate::No] {
         // Validate does not implement Debug, and the mode matters to the report:
         // this must be rejected on the structure of the encoding, not by the
