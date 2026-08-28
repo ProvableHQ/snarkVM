@@ -406,6 +406,8 @@ impl<E: PairingEngine> CanonicalDeserialize for Proof<E> {
             if total_instances > MAX_INSTANCES_PER_BATCH_PROOF {
                 return Err(SerializationError::InvalidData);
             }
+            // Cannot fail: `batch_size` is at most 512 by the check above, and `usize` is
+            // at least 16 bits wide on every target.
             batch_sizes.push(usize::try_from(batch_size)?);
         }
         let commitments = Commitments::deserialize_with_mode(&batch_sizes, &mut reader, compress, validate)?;
