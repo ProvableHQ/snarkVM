@@ -641,24 +641,32 @@ pub trait Network:
     fn dynamic_record_path_hasher() -> &'static Poseidon2<Self>;
 }
 
-/// Every instance permitted by `MAX_BATCH_PROOF_INSTANCES` needs a circuit to live in, and the
-/// Varuna proof deserializer caps the number of circuits it will read. `snarkvm-algorithms` cannot
-/// depend on this crate, so its cap is a hand-written constant; raising the limit here past it
-/// would leave newly produced proofs undeserializable. Pin the relationship at the definition, so
-/// that raising the limit without raising the cap is a build failure rather than a runtime one.
+/// The Varuna proof deserializer caps the batch shapes it will read. `snarkvm-algorithms` cannot
+/// depend on this crate, so those caps are hand-written constants there. Pin each one against the
+/// consensus limit it has to stay above, so that raising a limit here without raising the
+/// corresponding cap is a build failure rather than proofs that stop deserializing.
 const _: () = {
-    assert!(
-        <MainnetV0 as Network>::MAX_BATCH_PROOF_INSTANCES as u64
-            <= snarkvm_algorithms::snark::varuna::MAX_CIRCUITS_PER_BATCH_PROOF
-    );
-    assert!(
-        <TestnetV0 as Network>::MAX_BATCH_PROOF_INSTANCES as u64
-            <= snarkvm_algorithms::snark::varuna::MAX_CIRCUITS_PER_BATCH_PROOF
-    );
-    assert!(
-        <CanaryV0 as Network>::MAX_BATCH_PROOF_INSTANCES as u64
-            <= snarkvm_algorithms::snark::varuna::MAX_CIRCUITS_PER_BATCH_PROOF
-    );
+    /// Asserts the deserializer's caps against one network's limits.
+    const fn assert_batch_proof_caps<N: Network>() {
+        // Every instance needs a circuit to live in, so the number of circuits in a batch cannot
+        // exceed the limit on the number of instances.
+        assert!(N::MAX_BATCH_PROOF_INSTANCES as u64 <= snarkvm_algorithms::snark::varuna::MAX_CIRCUITS_PER_BATCH_PROOF);
+        // The largest single circuit is inclusion, which holds one instance per input record over
+        // every transition but the fee. `Transaction::MAX_TRANSITIONS` is `MAX_FUNCTIONS + 1`
+        // (see `test_transaction_depth_is_correct`), so that is `MAX_FUNCTIONS` transitions.
+        assert!(
+            (N::MAX_FUNCTIONS * N::MAX_INPUTS) as u64 <= snarkvm_algorithms::snark::varuna::MAX_INSTANCES_PER_CIRCUIT
+        );
+        // Across the whole batch: the inclusion circuit's instances, plus one instance per
+        // transition for the function circuits.
+        assert!(
+            (N::MAX_FUNCTIONS * N::MAX_INPUTS + N::MAX_FUNCTIONS + 1) as u64
+                <= snarkvm_algorithms::snark::varuna::MAX_INSTANCES_PER_BATCH_PROOF
+        );
+    }
+    assert_batch_proof_caps::<MainnetV0>();
+    assert_batch_proof_caps::<TestnetV0>();
+    assert_batch_proof_caps::<CanaryV0>();
 };
 
 /// Returns the consensus version heights, initializing them if necessary.

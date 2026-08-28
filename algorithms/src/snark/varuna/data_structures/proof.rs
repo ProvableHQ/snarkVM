@@ -58,10 +58,16 @@ pub const MAX_CIRCUITS_PER_BATCH_PROOF: u64 = 128;
 /// for the fee (see `Transaction::check_execution_size`), so at most
 /// 31 * `Network::MAX_INPUTS` (16) = 496 records. Proofs predating the
 /// consensus limit on total instances can reach that, so this is deliberately
-/// looser than the 128 above; tightening it would reject historical blocks.
+/// looser than the 128 above; tightening it would reject historical blocks. A
+/// compile-time assertion in `snarkvm-console-network` pins it above the 496.
 pub const MAX_INSTANCES_PER_CIRCUIT: u64 = 512;
 
 /// The maximum number of instances across all circuits in a batch proof.
+///
+/// The inclusion circuit contributes the 496 above, and each function circuit
+/// one instance per transition, so a batch holds fewer than 528. As with the
+/// per-circuit bound this keeps room to spare, and a compile-time assertion in
+/// `snarkvm-console-network` pins it above that sum.
 pub const MAX_INSTANCES_PER_BATCH_PROOF: u64 = 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
