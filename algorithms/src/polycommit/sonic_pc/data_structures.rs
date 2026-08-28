@@ -440,8 +440,7 @@ impl<E: PairingEngine> Valid for BatchProof<E> {
     where
         Self: 'a,
     {
-        let batch: Vec<_> = batch.collect();
-        Valid::batch_check(batch.iter().map(|v| &v.0))
+        Valid::batch_check(batch.map(|v| &v.0))
     }
 }
 
