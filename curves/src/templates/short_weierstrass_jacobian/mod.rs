@@ -16,6 +16,9 @@
 pub mod affine;
 pub use affine::*;
 
+pub mod bucket;
+pub use bucket::*;
+
 pub mod projective;
 pub use projective::*;
 
