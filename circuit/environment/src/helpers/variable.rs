@@ -21,7 +21,7 @@ use core::{
     fmt,
     ops::{Add, Sub},
 };
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 pub type Index = u64;
 
@@ -132,7 +132,10 @@ impl<F: PrimeField> Add<Variable<F>> for Variable<F> {
     type Output = LinearCombination<F>;
 
     fn add(self, other: Variable<F>) -> Self::Output {
-        self + &other
+        match (self, other) {
+            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Arc::new(*a + *b)).into(),
+            (first, second) => LinearCombination::from([Cow::Owned(first), Cow::Owned(second)]),
+        }
     }
 }
 
@@ -141,7 +144,10 @@ impl<F: PrimeField> Add<Variable<F>> for &Variable<F> {
     type Output = LinearCombination<F>;
 
     fn add(self, other: Variable<F>) -> Self::Output {
-        self + &other
+        match (self, other) {
+            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Arc::new(**a + *b)).into(),
+            (first, second) => LinearCombination::from([Cow::Borrowed(first), Cow::Owned(second)]),
+        }
     }
 }
 
@@ -150,7 +156,10 @@ impl<F: PrimeField> Add<&Variable<F>> for Variable<F> {
     type Output = LinearCombination<F>;
 
     fn add(self, other: &Variable<F>) -> Self::Output {
-        &self + other
+        match (self, other) {
+            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Arc::new(*a + **b)).into(),
+            (first, second) => LinearCombination::from([Cow::Owned(first), Cow::Borrowed(second)]),
+        }
     }
 }
 
@@ -160,7 +169,7 @@ impl<F: PrimeField> Add<&Variable<F>> for &Variable<F> {
     fn add(self, other: &Variable<F>) -> Self::Output {
         match (self, other) {
             (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Arc::new(**a + **b)).into(),
-            (first, second) => LinearCombination::from([first.clone(), second.clone()]),
+            (first, second) => LinearCombination::from([Cow::Borrowed(first), Cow::Borrowed(second)]),
         }
     }
 }
@@ -170,7 +179,7 @@ impl<F: PrimeField> Add<LinearCombination<F>> for Variable<F> {
     type Output = LinearCombination<F>;
 
     fn add(self, other: LinearCombination<F>) -> Self::Output {
-        self + &other
+        LinearCombination::from(self) + other
     }
 }
 
@@ -179,7 +188,7 @@ impl<F: PrimeField> Add<LinearCombination<F>> for &Variable<F> {
     type Output = LinearCombination<F>;
 
     fn add(self, other: LinearCombination<F>) -> Self::Output {
-        self + &other
+        LinearCombination::from(self) + other
     }
 }
 
@@ -188,7 +197,7 @@ impl<F: PrimeField> Add<&LinearCombination<F>> for Variable<F> {
     type Output = LinearCombination<F>;
 
     fn add(self, other: &LinearCombination<F>) -> Self::Output {
-        &self + other
+        LinearCombination::from(self) + other
     }
 }
 
@@ -205,7 +214,10 @@ impl<F: PrimeField> Sub<Variable<F>> for Variable<F> {
     type Output = LinearCombination<F>;
 
     fn sub(self, other: Variable<F>) -> Self::Output {
-        self - &other
+        match (self, other) {
+            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Arc::new(*a - *b)).into(),
+            (first, second) => LinearCombination::from(first) - second,
+        }
     }
 }
 
@@ -214,7 +226,10 @@ impl<F: PrimeField> Sub<Variable<F>> for &Variable<F> {
     type Output = LinearCombination<F>;
 
     fn sub(self, other: Variable<F>) -> Self::Output {
-        self - &other
+        match (self, other) {
+            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Arc::new(**a - *b)).into(),
+            (first, second) => LinearCombination::from(first) - second,
+        }
     }
 }
 
@@ -223,7 +238,10 @@ impl<F: PrimeField> Sub<&Variable<F>> for Variable<F> {
     type Output = LinearCombination<F>;
 
     fn sub(self, other: &Variable<F>) -> Self::Output {
-        &self - other
+        match (self, other) {
+            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Arc::new(*a - **b)).into(),
+            (first, second) => LinearCombination::from(first) - second,
+        }
     }
 }
 
@@ -243,7 +261,7 @@ impl<F: PrimeField> Sub<LinearCombination<F>> for Variable<F> {
     type Output = LinearCombination<F>;
 
     fn sub(self, other: LinearCombination<F>) -> Self::Output {
-        self - &other
+        LinearCombination::from(self) - other
     }
 }
 
@@ -252,7 +270,7 @@ impl<F: PrimeField> Sub<LinearCombination<F>> for &Variable<F> {
     type Output = LinearCombination<F>;
 
     fn sub(self, other: LinearCombination<F>) -> Self::Output {
-        self - &other
+        LinearCombination::from(self) - other
     }
 }
 
@@ -261,7 +279,7 @@ impl<F: PrimeField> Sub<&LinearCombination<F>> for Variable<F> {
     type Output = LinearCombination<F>;
 
     fn sub(self, other: &LinearCombination<F>) -> Self::Output {
-        &self - other
+        LinearCombination::from(self) - other
     }
 }
 
