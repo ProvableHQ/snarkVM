@@ -95,7 +95,7 @@ impl<N: Network> EpochProgram<N> {
         lap!(timer, "Ensure the circuit is satisfied");
 
         // Eject the R1CS and reset the circuit.
-        let r1cs = A::eject_r1cs_and_reset();
+        let r1cs = A::eject_r1cs_and_reset().into_r1cs();
         finish!(timer, "Eject the circuit assignment and reset the circuit");
 
         Ok(r1cs)

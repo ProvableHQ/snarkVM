@@ -44,7 +44,7 @@ use snarkvm_circuit_types::{
     Field,
     Group,
     Scalar,
-    environment::{Assignment, CanaryCircuit, R1CS, prelude::*},
+    environment::{Assignment, CanaryCircuit, EjectedR1cs, prelude::*},
 };
 
 use core::fmt;
@@ -538,13 +538,13 @@ impl Environment for AleoCanaryV0 {
         E::halt(message)
     }
 
-    /// Returns the R1CS circuit, resetting the circuit.
-    fn inject_r1cs(r1cs: R1CS<Self::BaseField>) {
-        E::inject_r1cs(r1cs)
+    /// Injects the ejected R1CS circuit and restores the preserved environment state.
+    fn inject_r1cs(ejected: EjectedR1cs<Self::BaseField>) {
+        E::inject_r1cs(ejected)
     }
 
-    /// Returns the R1CS circuit, resetting the circuit.
-    fn eject_r1cs_and_reset() -> R1CS<Self::BaseField> {
+    /// Returns the R1CS circuit and preserved environment state, resetting the circuit.
+    fn eject_r1cs_and_reset() -> EjectedR1cs<Self::BaseField> {
         E::eject_r1cs_and_reset()
     }
 
