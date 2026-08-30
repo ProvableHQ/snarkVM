@@ -82,20 +82,31 @@ macro_rules! impl_store_and_remote_fetch {
             // Retry up to 3 times on transient errors (5xx, 429, IO, timeout).
             let mut attempts = 3u32;
             loop {
-                // Bounded per phase and not globally: these files are hundreds
-                // of megabytes, so a whole-request bound large enough not to
-                // break an honest download over a slow link is too large to
-                // catch anything.
-                match ureq::get(url)
+                // Progress is what is bounded, not duration. These files are
+                // hundreds of megabytes, so any cap on the whole download is
+                // either short enough to break an honest one over a slow link or
+                // too long to catch anything; `timeout_recv_body` resets on each
+                // successful read, so it ends a download that has stopped moving
+                // without limiting how large one may be.
+                let outcome = ureq::get(url)
                     .config()
                     .max_redirects(10)
                     .timeout_connect(Some(std::time::Duration::from_secs(10)))
-                    .timeout_recv_response(Some(std::time::Duration::from_secs(30)))
+                    .timeout_recv_body(Some(std::time::Duration::from_secs(60)))
                     .build()
                     .call()
-                {
-                    Ok(mut response) => {
+                    .and_then(|mut response| {
+                        // Read inside the retriable expression, so that a stall
+                        // partway through the body reaches the arms below. Read
+                        // after the `match`, it would leave by `?` on the first
+                        // attempt, which is the case the timeout exists for.
+                        buffer.clear();
                         response.body_mut().as_reader().read_to_end(buffer)?;
+                        Ok(())
+                    });
+
+                match outcome {
+                    Ok(()) => {
                         break;
                     }
                     Err(ureq::Error::StatusCode(code)) if attempts > 0 && (code >= 500 || code == 429) => {
