@@ -27,18 +27,57 @@ use anyhow::{Context, Result, anyhow, bail, ensure};
 use serde::{Deserialize, de::DeserializeOwned};
 use ureq::http::{self, uri};
 
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
+
+/// How long to wait for a connection to be established.
+const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long to wait for a node to begin answering.
+///
+/// Bounds time to the first byte of the response, which is where a node that
+/// accepts a connection and then stops responding shows up.
+const DEFAULT_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long a whole request may take, including the body.
+///
+/// Backstop for what the phase bounds above cannot see: a peer sending one byte
+/// at a time keeps resetting them while never delivering an answer. Sized for
+/// the largest response these routes return over a slow link rather than for
+/// latency, since it caps honest transfers as readily as stalled ones.
+const DEFAULT_GLOBAL_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Queries that use a node's REST API as their source of information.
 #[derive(Clone)]
 pub struct RestQuery<N: Network> {
     base_url: http::Uri,
+    connect_timeout: Duration,
+    response_timeout: Duration,
+    global_timeout: Duration,
     _marker: std::marker::PhantomData<N>,
 }
 
 impl<N: Network> From<http::Uri> for RestQuery<N> {
     fn from(base_url: http::Uri) -> Self {
-        Self { base_url, _marker: Default::default() }
+        Self {
+            base_url,
+            connect_timeout: DEFAULT_CONNECT_TIMEOUT,
+            response_timeout: DEFAULT_RESPONSE_TIMEOUT,
+            global_timeout: DEFAULT_GLOBAL_TIMEOUT,
+            _marker: Default::default(),
+        }
+    }
+}
+
+impl<N: Network> RestQuery<N> {
+    /// Sets how long each request to the node may take.
+    ///
+    /// `connect` bounds establishing the connection, `response` the wait for the
+    /// first byte of the answer, and `global` the request as a whole.
+    pub fn with_timeouts(mut self, connect: Duration, response: Duration, global: Duration) -> Self {
+        self.connect_timeout = connect;
+        self.response_timeout = response;
+        self.global_timeout = global;
+        self
     }
 }
 
@@ -221,6 +260,9 @@ impl<N: Network> RestQuery<N> {
         let mut response = ureq::get(&endpoint)
             .config()
             .http_status_as_error(false)
+            .timeout_connect(Some(self.connect_timeout))
+            .timeout_recv_response(Some(self.response_timeout))
+            .timeout_global(Some(self.global_timeout))
             .build()
             .call()
             // This handles I/O errors.
@@ -262,7 +304,16 @@ impl<N: Network> RestQuery<N> {
     #[cfg(feature = "async")]
     async fn get_request_async<T: DeserializeOwned>(&self, route: &str) -> Result<T> {
         let endpoint = self.build_endpoint(route)?;
-        let response = reqwest::get(&endpoint).await.with_context(|| format!("Failed to fetch from {endpoint}"))?;
+        let response = reqwest::Client::builder()
+            .connect_timeout(self.connect_timeout)
+            .read_timeout(self.response_timeout)
+            .timeout(self.global_timeout)
+            .build()
+            .with_context(|| format!("Failed to build an HTTP client for {endpoint}"))?
+            .get(&endpoint)
+            .send()
+            .await
+            .with_context(|| format!("Failed to fetch from {endpoint}"))?;
 
         if response.status().is_success() {
             response.json().await.with_context(|| format!("Failed to parse JSON response from {endpoint}"))
@@ -293,12 +344,57 @@ impl<N: Network> RestQuery<N> {
 
 #[cfg(test)]
 mod tests {
-    use crate::Query;
+    use super::RestQuery;
+    use crate::{Query, QueryTrait};
 
     use snarkvm_console::network::TestnetV0;
     use snarkvm_ledger_store::helpers::memory::BlockMemory;
 
     use anyhow::Result;
+
+    use std::{
+        io::Read,
+        net::{TcpListener, TcpStream},
+        str::FromStr,
+        time::{Duration, Instant},
+    };
+
+    /// A node that accepts a connection, reads the request and then answers
+    /// nothing, holding the socket open.
+    ///
+    /// Distinct from a refused connection, which returns on its own. This is the
+    /// case a caller cannot tell from a slow node.
+    fn silent_node() -> (String, std::thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let url = format!("http://{}", listener.local_addr().expect("the bound address"));
+        let handle = std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buffer = [0u8; 1024];
+                let _: Result<usize, _> = stream.read(&mut buffer);
+                // Held, not answered, until the client gives up and closes.
+                let _: Result<usize, _> = TcpStream::read(&mut stream, &mut buffer);
+            }
+        });
+        (url, handle)
+    }
+
+    #[test]
+    fn a_node_that_never_answers_does_not_block_for_ever() {
+        let (url, handle) = silent_node();
+        let query = RestQuery::<CurrentNetwork>::from_str(&url).expect("a loopback URL").with_timeouts(
+            Duration::from_secs(5),
+            Duration::from_millis(300),
+            Duration::from_secs(5),
+        );
+
+        let started = Instant::now();
+        let result = query.current_state_root();
+        let waited = started.elapsed();
+
+        assert!(result.is_err(), "a node that answers nothing cannot produce a state root");
+        assert!(waited < Duration::from_secs(5), "the request was not bounded, it waited {waited:?}");
+        drop(handle);
+    }
 
     type CurrentNetwork = TestnetV0;
     type CurrentQuery = Query<CurrentNetwork, BlockMemory<CurrentNetwork>>;
