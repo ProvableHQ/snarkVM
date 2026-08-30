@@ -52,10 +52,9 @@ const DEFAULT_TOTAL_TIMEOUT: Duration = Duration::from_secs(300);
 #[derive(Clone)]
 pub struct RestQuery<N: Network> {
     base_url: http::Uri,
+    /// Carries the bounds as well as the connection pool, and is the one place
+    /// they are held: the async client is configured from these on first use.
     agent: ureq::Agent,
-    connect_timeout: Duration,
-    stall_timeout: Duration,
-    total_timeout: Duration,
     /// Built on first use and shared by every clone, so that repeated queries
     /// reuse a connection. Deferred because building one can fail and this type
     /// is constructed infallibly; the error surfaces on the request instead.
@@ -81,9 +80,6 @@ impl<N: Network> From<http::Uri> for RestQuery<N> {
         Self {
             base_url,
             agent: agent(DEFAULT_CONNECT_TIMEOUT, DEFAULT_STALL_TIMEOUT, DEFAULT_TOTAL_TIMEOUT),
-            connect_timeout: DEFAULT_CONNECT_TIMEOUT,
-            stall_timeout: DEFAULT_STALL_TIMEOUT,
-            total_timeout: DEFAULT_TOTAL_TIMEOUT,
             #[cfg(feature = "async")]
             client: Default::default(),
             _marker: Default::default(),
@@ -101,12 +97,18 @@ impl<N: Network> RestQuery<N> {
         if let Some(client) = self.client.get() {
             return Ok(client);
         }
-        let built = reqwest::Client::builder()
-            .connect_timeout(self.connect_timeout)
-            .read_timeout(self.stall_timeout)
-            .timeout(self.total_timeout)
-            .build()
-            .with_context(|| format!("Failed to build an HTTP client for {}", self.base_url))?;
+        let timeouts = self.agent.config().timeouts();
+        let mut builder = reqwest::Client::builder();
+        if let Some(connect) = timeouts.connect {
+            builder = builder.connect_timeout(connect);
+        }
+        if let Some(stall) = timeouts.recv_body {
+            builder = builder.read_timeout(stall);
+        }
+        if let Some(total) = timeouts.global {
+            builder = builder.timeout(total);
+        }
+        let built = builder.build().with_context(|| format!("Failed to build an HTTP client for {}", self.base_url))?;
         Ok(self.client.get_or_init(|| built))
     }
 
@@ -115,9 +117,6 @@ impl<N: Network> RestQuery<N> {
     /// `connect` bounds establishing the connection, `stall` the gap between
     /// successive reads of the answer, and `total` the request as a whole.
     pub fn with_timeouts(mut self, connect: Duration, stall: Duration, total: Duration) -> Self {
-        self.connect_timeout = connect;
-        self.stall_timeout = stall;
-        self.total_timeout = total;
         self.agent = agent(connect, stall, total);
         #[cfg(feature = "async")]
         {
@@ -442,14 +441,27 @@ mod tests {
                 let Ok(mut stream) = stream else { break };
                 seen.fetch_add(1, Ordering::SeqCst);
                 std::thread::spawn(move || {
-                    let mut buffer = [0u8; 1024];
-                    // A complete, correctly framed answer, so the connection is
-                    // returned to the pool rather than closed.
-                    while matches!(stream.read(&mut buffer), Ok(read) if read > 0) {
-                        let _: Result<(), _> = stream.write_all(
-                            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 3\r\n\r\n123",
-                        );
-                        let _: Result<(), _> = stream.flush();
+                    let mut chunk = [0u8; 1024];
+                    let mut pending: Vec<u8> = Vec::new();
+                    loop {
+                        match stream.read(&mut chunk) {
+                            Ok(0) | Err(_) => break,
+                            Ok(read) => pending.extend_from_slice(&chunk[..read]),
+                        }
+                        // One answer per request, found by its header
+                        // terminator rather than per read: a request split
+                        // across segments would otherwise be answered twice,
+                        // and the spare answer would be served from the pool to
+                        // the next query, which is what this test is measuring.
+                        while let Some(end) = pending.windows(4).position(|w| w == b"\r\n\r\n") {
+                            pending.drain(..end + 4);
+                            // Complete and correctly framed, so the connection
+                            // returns to the pool rather than closing.
+                            let _: Result<(), _> = stream.write_all(
+                                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 3\r\n\r\n123",
+                            );
+                            let _: Result<(), _> = stream.flush();
+                        }
                     }
                 });
             }
@@ -463,7 +475,9 @@ mod tests {
     #[test]
     fn repeated_queries_share_a_connection() {
         let (url, connections) = counting_node();
-        let query = RestQuery::<CurrentNetwork>::from_str(&url).expect("a loopback URL");
+        // Bounded like its neighbours: a stub that desynchronised would
+        // otherwise hold this for the default five minutes rather than fail.
+        let query = bounded_query(&url, Duration::from_secs(5), Duration::from_secs(10));
 
         // A height, because the body has to deserialize: a reader abandoned
         // part way leaves the connection unusable, so a failed parse would not
