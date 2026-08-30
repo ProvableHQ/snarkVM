@@ -97,17 +97,26 @@ impl<N: Network> RestQuery<N> {
         if let Some(client) = self.client.get() {
             return Ok(client);
         }
-        let timeouts = self.agent.config().timeouts();
-        let mut builder = reqwest::Client::builder();
-        if let Some(connect) = timeouts.connect {
-            builder = builder.connect_timeout(connect);
-        }
-        if let Some(stall) = timeouts.recv_body {
-            builder = builder.read_timeout(stall);
-        }
-        if let Some(total) = timeouts.global {
-            builder = builder.timeout(total);
-        }
+        let builder = reqwest::Client::builder();
+        // Bounds are set off wasm only. reqwest's wasm `ClientBuilder` has no
+        // timeout methods to call -- the browser owns the request and its
+        // deadlines -- so naming one there does not compile. A wasm build keeps
+        // the shared client and carries no bounds of its own.
+        #[cfg(not(target_arch = "wasm32"))]
+        let builder = {
+            let timeouts = self.agent.config().timeouts();
+            let mut builder = builder;
+            if let Some(connect) = timeouts.connect {
+                builder = builder.connect_timeout(connect);
+            }
+            if let Some(stall) = timeouts.recv_body {
+                builder = builder.read_timeout(stall);
+            }
+            if let Some(total) = timeouts.global {
+                builder = builder.timeout(total);
+            }
+            builder
+        };
         let built = builder.build().with_context(|| format!("Failed to build an HTTP client for {}", self.base_url))?;
         Ok(self.client.get_or_init(|| built))
     }
