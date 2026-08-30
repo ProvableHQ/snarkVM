@@ -311,12 +311,25 @@ impl<N: Network> RestQuery<N> {
     ///  - `route`: the specific API route to use, e.g., `stateRoot/latest`
     fn get_request<T: DeserializeOwned>(&self, route: &str) -> Result<T> {
         let endpoint = self.build_endpoint(route)?;
-        let mut response = self
-            .agent
-            .get(&endpoint)
-            .call()
-            // This handles I/O errors.
-            .with_context(|| format!("Failed to fetch from {endpoint}"))?;
+        // A connection taken from the pool may have been closed by the peer
+        // since it was returned, and ureq has no retry of its own.
+        // `ConnectionPool::reuse` catches only a close that has already landed,
+        // so the request goes out on a socket that looks open and is not, and
+        // the loss reaches the caller as an error it cannot tell from a node
+        // being down. These GETs are idempotent, so it is asked again.
+        //
+        // Only the call is retried, never the body read below, so a second
+        // attempt happens only when no part of an answer had arrived.
+        //
+        // Deliberately not on `Error::Timeout`. That has already spent the
+        // bound `with_timeouts` sets, and a bound that can be paid twice is not
+        // the bound the caller asked for.
+        let mut response = match self.agent.get(&endpoint).call() {
+            Err(ureq::Error::Io(_)) => self.agent.get(&endpoint).call(),
+            first => first,
+        }
+        // This handles I/O errors.
+        .with_context(|| format!("Failed to fetch from {endpoint}"))?;
 
         if response.status().is_success() {
             response.body_mut().read_json().with_context(|| format!("Failed to parse JSON response from {endpoint}"))
@@ -476,6 +489,102 @@ mod tests {
             }
         });
         (url, connections)
+    }
+
+    /// Answers the first request on a connection and abandons the second.
+    ///
+    /// This is what a peer that has given up on a pooled connection looks like
+    /// to a client still holding it: the socket is open when the request goes
+    /// out, and no answer comes back.
+    fn abandoning_node() -> (String, Arc<AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let url = format!("http://{}", listener.local_addr().expect("the bound address"));
+        let connections = Arc::new(AtomicUsize::new(0));
+
+        let seen = connections.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
+                seen.fetch_add(1, Ordering::SeqCst);
+                std::thread::spawn(move || {
+                    let mut chunk = [0u8; 1024];
+                    let mut pending: Vec<u8> = Vec::new();
+                    let mut answered = false;
+                    loop {
+                        match stream.read(&mut chunk) {
+                            Ok(0) | Err(_) => break,
+                            Ok(read) => pending.extend_from_slice(&chunk[..read]),
+                        }
+                        while let Some(end) = pending.windows(4).position(|w| w == b"\r\n\r\n") {
+                            pending.drain(..end + 4);
+                            if answered {
+                                // Gone without answering, which is the case
+                                // under test: the client sent this on a
+                                // connection the pool believed was good.
+                                return;
+                            }
+                            let _: Result<(), _> = stream.write_all(
+                                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 3\r\n\r\n123",
+                            );
+                            let _: Result<(), _> = stream.flush();
+                            answered = true;
+                        }
+                    }
+                });
+            }
+        });
+        (url, connections)
+    }
+
+    /// Accepts every connection and answers none, counting what it is given.
+    fn silent_node() -> (String, Arc<AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let url = format!("http://{}", listener.local_addr().expect("the bound address"));
+        let connections = Arc::new(AtomicUsize::new(0));
+
+        let seen = connections.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
+                seen.fetch_add(1, Ordering::SeqCst);
+                std::thread::spawn(move || {
+                    // Read and hold, so the client waits out its bound rather
+                    // than being released by a close.
+                    let mut chunk = [0u8; 1024];
+                    while matches!(stream.read(&mut chunk), Ok(read) if read > 0) {}
+                });
+            }
+        });
+        (url, connections)
+    }
+
+    /// A timeout is not a lost request, so it is not asked again: the bounds
+    /// `with_timeouts` sets are what they say only if they are spent once.
+    #[test]
+    fn a_query_that_times_out_is_not_asked_again() {
+        let (url, connections) = silent_node();
+        let query = bounded_query(&url, Duration::from_secs(30), Duration::from_millis(500));
+
+        let started = Instant::now();
+        assert!(query.current_block_height().is_err(), "a node that answers nothing cannot produce a height");
+        let waited = started.elapsed();
+
+        assert_eq!(connections.load(Ordering::SeqCst), 1, "the request was asked again and the bound paid twice");
+        assert!(waited < Duration::from_secs(5), "the bound was not spent once, it waited {waited:?}");
+    }
+
+    /// ureq has no retry of its own, so a request lost on a pooled connection
+    /// the peer has since abandoned reaches the caller as an error. The second
+    /// query here goes out on the connection the first left in the pool.
+    #[test]
+    fn a_query_lost_on_a_pooled_connection_is_asked_again() {
+        let (url, connections) = abandoning_node();
+        let query = bounded_query(&url, Duration::from_secs(5), Duration::from_secs(10));
+
+        query.current_block_height().expect("the node answers the first height");
+        query.current_block_height().expect("the second height survives the abandoned connection");
+
+        assert_eq!(connections.load(Ordering::SeqCst), 2, "the request was not asked again on a fresh connection");
     }
 
     /// The point of holding the agent rather than building one per call: a
