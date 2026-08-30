@@ -46,28 +46,70 @@ const DEFAULT_STALL_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_TOTAL_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Queries that use a node's REST API as their source of information.
+///
+/// Cloning is cheap and shares the underlying connections: `ureq::Agent` and
+/// `reqwest::Client` are both handles onto a pool.
 #[derive(Clone)]
 pub struct RestQuery<N: Network> {
     base_url: http::Uri,
+    agent: ureq::Agent,
     connect_timeout: Duration,
     stall_timeout: Duration,
     total_timeout: Duration,
+    /// Built on first use and shared by every clone, so that repeated queries
+    /// reuse a connection. Deferred because building one can fail and this type
+    /// is constructed infallibly; the error surfaces on the request instead.
+    #[cfg(feature = "async")]
+    client: std::sync::Arc<std::sync::OnceLock<reqwest::Client>>,
     _marker: std::marker::PhantomData<N>,
+}
+
+/// Builds the agent that carries these bounds and its connection pool.
+fn agent(connect: Duration, stall: Duration, total: Duration) -> ureq::Agent {
+    ureq::Agent::new_with_config(
+        ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_connect(Some(connect))
+            .timeout_recv_body(Some(stall))
+            .timeout_global(Some(total))
+            .build(),
+    )
 }
 
 impl<N: Network> From<http::Uri> for RestQuery<N> {
     fn from(base_url: http::Uri) -> Self {
         Self {
             base_url,
+            agent: agent(DEFAULT_CONNECT_TIMEOUT, DEFAULT_STALL_TIMEOUT, DEFAULT_TOTAL_TIMEOUT),
             connect_timeout: DEFAULT_CONNECT_TIMEOUT,
             stall_timeout: DEFAULT_STALL_TIMEOUT,
             total_timeout: DEFAULT_TOTAL_TIMEOUT,
+            #[cfg(feature = "async")]
+            client: Default::default(),
             _marker: Default::default(),
         }
     }
 }
 
 impl<N: Network> RestQuery<N> {
+    /// The client shared by every request this query makes, built on first use.
+    ///
+    /// A racing caller may build a second one, which is dropped; both carry the
+    /// same configuration, so which survives does not matter.
+    #[cfg(feature = "async")]
+    fn client(&self) -> Result<&reqwest::Client> {
+        if let Some(client) = self.client.get() {
+            return Ok(client);
+        }
+        let built = reqwest::Client::builder()
+            .connect_timeout(self.connect_timeout)
+            .read_timeout(self.stall_timeout)
+            .timeout(self.total_timeout)
+            .build()
+            .with_context(|| format!("Failed to build an HTTP client for {}", self.base_url))?;
+        Ok(self.client.get_or_init(|| built))
+    }
+
     /// Sets how long each request to the node may take.
     ///
     /// `connect` bounds establishing the connection, `stall` the gap between
@@ -76,6 +118,11 @@ impl<N: Network> RestQuery<N> {
         self.connect_timeout = connect;
         self.stall_timeout = stall;
         self.total_timeout = total;
+        self.agent = agent(connect, stall, total);
+        #[cfg(feature = "async")]
+        {
+            self.client = Default::default();
+        }
         self
     }
 }
@@ -256,13 +303,9 @@ impl<N: Network> RestQuery<N> {
     ///  - `route`: the specific API route to use, e.g., `stateRoot/latest`
     fn get_request<T: DeserializeOwned>(&self, route: &str) -> Result<T> {
         let endpoint = self.build_endpoint(route)?;
-        let mut response = ureq::get(&endpoint)
-            .config()
-            .http_status_as_error(false)
-            .timeout_connect(Some(self.connect_timeout))
-            .timeout_recv_body(Some(self.stall_timeout))
-            .timeout_global(Some(self.total_timeout))
-            .build()
+        let mut response = self
+            .agent
+            .get(&endpoint)
             .call()
             // This handles I/O errors.
             .with_context(|| format!("Failed to fetch from {endpoint}"))?;
@@ -303,16 +346,8 @@ impl<N: Network> RestQuery<N> {
     #[cfg(feature = "async")]
     async fn get_request_async<T: DeserializeOwned>(&self, route: &str) -> Result<T> {
         let endpoint = self.build_endpoint(route)?;
-        let response = reqwest::Client::builder()
-            .connect_timeout(self.connect_timeout)
-            .read_timeout(self.stall_timeout)
-            .timeout(self.total_timeout)
-            .build()
-            .with_context(|| format!("Failed to build an HTTP client for {endpoint}"))?
-            .get(&endpoint)
-            .send()
-            .await
-            .with_context(|| format!("Failed to fetch from {endpoint}"))?;
+        let response =
+            self.client()?.get(&endpoint).send().await.with_context(|| format!("Failed to fetch from {endpoint}"))?;
 
         if response.status().is_success() {
             response.json().await.with_context(|| format!("Failed to parse JSON response from {endpoint}"))
@@ -355,6 +390,10 @@ mod tests {
         io::{Read, Write},
         net::TcpListener,
         str::FromStr,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
         time::{Duration, Instant},
     };
 
@@ -388,6 +427,51 @@ mod tests {
             stall,
             total,
         )
+    }
+
+    /// Answers every request on a connection, counting the connections it is
+    /// asked to accept.
+    fn counting_node() -> (String, Arc<AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let url = format!("http://{}", listener.local_addr().expect("the bound address"));
+        let connections = Arc::new(AtomicUsize::new(0));
+
+        let seen = connections.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
+                seen.fetch_add(1, Ordering::SeqCst);
+                std::thread::spawn(move || {
+                    let mut buffer = [0u8; 1024];
+                    // A complete, correctly framed answer, so the connection is
+                    // returned to the pool rather than closed.
+                    while matches!(stream.read(&mut buffer), Ok(read) if read > 0) {
+                        let _: Result<(), _> = stream.write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 3\r\n\r\n123",
+                        );
+                        let _: Result<(), _> = stream.flush();
+                    }
+                });
+            }
+        });
+        (url, connections)
+    }
+
+    /// The point of holding the agent rather than building one per call: a
+    /// caller reading the chain per transaction should not pay a handshake each
+    /// time.
+    #[test]
+    fn repeated_queries_share_a_connection() {
+        let (url, connections) = counting_node();
+        let query = RestQuery::<CurrentNetwork>::from_str(&url).expect("a loopback URL");
+
+        // A height, because the body has to deserialize: a reader abandoned
+        // part way leaves the connection unusable, so a failed parse would not
+        // exercise pooling at all.
+        query.current_block_height().expect("the node answers a height");
+        query.current_block_height().expect("the node answers a height");
+
+        assert_eq!(connections.load(Ordering::SeqCst), 1, "each query opened its own connection");
     }
 
     /// A node that answers nothing has no gap between reads to measure, so only
