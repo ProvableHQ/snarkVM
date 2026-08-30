@@ -32,27 +32,26 @@ use std::{str::FromStr, time::Duration};
 /// How long to wait for a connection to be established.
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// How long to wait for a node to begin answering.
+/// How long a response may go without delivering more of itself.
 ///
-/// Bounds time to the first byte of the response, which is where a node that
-/// accepts a connection and then stops responding shows up.
-const DEFAULT_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+/// Resets on every successful read, so it bounds a peer that stops mid-answer
+/// without capping how large an answer may be.
+const DEFAULT_STALL_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// How long a whole request may take, including the body.
+/// How long a whole request may take.
 ///
-/// Backstop for what the phase bounds above cannot see: a peer sending one byte
-/// at a time keeps resetting them while never delivering an answer. Sized for
-/// the largest response these routes return over a slow link rather than for
-/// latency, since it caps honest transfers as readily as stalled ones.
-const DEFAULT_GLOBAL_TIMEOUT: Duration = Duration::from_secs(300);
+/// The only bound that covers a peer which accepts the connection, takes the
+/// request and then sends nothing at all: the stall bound above measures gaps
+/// between reads, and a response that never starts has none.
+const DEFAULT_TOTAL_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Queries that use a node's REST API as their source of information.
 #[derive(Clone)]
 pub struct RestQuery<N: Network> {
     base_url: http::Uri,
     connect_timeout: Duration,
-    response_timeout: Duration,
-    global_timeout: Duration,
+    stall_timeout: Duration,
+    total_timeout: Duration,
     _marker: std::marker::PhantomData<N>,
 }
 
@@ -61,8 +60,8 @@ impl<N: Network> From<http::Uri> for RestQuery<N> {
         Self {
             base_url,
             connect_timeout: DEFAULT_CONNECT_TIMEOUT,
-            response_timeout: DEFAULT_RESPONSE_TIMEOUT,
-            global_timeout: DEFAULT_GLOBAL_TIMEOUT,
+            stall_timeout: DEFAULT_STALL_TIMEOUT,
+            total_timeout: DEFAULT_TOTAL_TIMEOUT,
             _marker: Default::default(),
         }
     }
@@ -71,12 +70,12 @@ impl<N: Network> From<http::Uri> for RestQuery<N> {
 impl<N: Network> RestQuery<N> {
     /// Sets how long each request to the node may take.
     ///
-    /// `connect` bounds establishing the connection, `response` the wait for the
-    /// first byte of the answer, and `global` the request as a whole.
-    pub fn with_timeouts(mut self, connect: Duration, response: Duration, global: Duration) -> Self {
+    /// `connect` bounds establishing the connection, `stall` the gap between
+    /// successive reads of the answer, and `total` the request as a whole.
+    pub fn with_timeouts(mut self, connect: Duration, stall: Duration, total: Duration) -> Self {
         self.connect_timeout = connect;
-        self.response_timeout = response;
-        self.global_timeout = global;
+        self.stall_timeout = stall;
+        self.total_timeout = total;
         self
     }
 }
@@ -261,8 +260,8 @@ impl<N: Network> RestQuery<N> {
             .config()
             .http_status_as_error(false)
             .timeout_connect(Some(self.connect_timeout))
-            .timeout_recv_response(Some(self.response_timeout))
-            .timeout_global(Some(self.global_timeout))
+            .timeout_recv_body(Some(self.stall_timeout))
+            .timeout_global(Some(self.total_timeout))
             .build()
             .call()
             // This handles I/O errors.
@@ -306,8 +305,8 @@ impl<N: Network> RestQuery<N> {
         let endpoint = self.build_endpoint(route)?;
         let response = reqwest::Client::builder()
             .connect_timeout(self.connect_timeout)
-            .read_timeout(self.response_timeout)
-            .timeout(self.global_timeout)
+            .read_timeout(self.stall_timeout)
+            .timeout(self.total_timeout)
             .build()
             .with_context(|| format!("Failed to build an HTTP client for {endpoint}"))?
             .get(&endpoint)
@@ -353,39 +352,50 @@ mod tests {
     use anyhow::Result;
 
     use std::{
-        io::Read,
-        net::{TcpListener, TcpStream},
+        io::{Read, Write},
+        net::TcpListener,
         str::FromStr,
         time::{Duration, Instant},
     };
 
-    /// A node that accepts a connection, reads the request and then answers
-    /// nothing, holding the socket open.
+    type CurrentNetwork = TestnetV0;
+    type CurrentQuery = Query<CurrentNetwork, BlockMemory<CurrentNetwork>>;
+
+    /// Serves `reply` on the first connection, then holds the socket open.
     ///
-    /// Distinct from a refused connection, which returns on its own. This is the
-    /// case a caller cannot tell from a slow node.
-    fn silent_node() -> (String, std::thread::JoinHandle<()>) {
+    /// Returns the base URL. An empty `reply` is a node that accepts the request
+    /// and answers nothing, which is distinct from a refused connection: that
+    /// returns on its own, while this is indistinguishable from a slow node.
+    fn stalling_node(reply: &'static [u8]) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
         let url = format!("http://{}", listener.local_addr().expect("the bound address"));
-        let handle = std::thread::spawn(move || {
+        std::thread::spawn(move || {
             if let Ok((mut stream, _)) = listener.accept() {
                 let mut buffer = [0u8; 1024];
                 let _: Result<usize, _> = stream.read(&mut buffer);
-                // Held, not answered, until the client gives up and closes.
-                let _: Result<usize, _> = TcpStream::read(&mut stream, &mut buffer);
+                let _: Result<(), _> = stream.write_all(reply);
+                let _: Result<(), _> = stream.flush();
+                // Held, not finished, until the client gives up and closes.
+                let _: Result<usize, _> = stream.read(&mut buffer);
             }
         });
-        (url, handle)
+        url
     }
 
+    fn bounded_query(url: &str, stall: Duration, total: Duration) -> RestQuery<CurrentNetwork> {
+        RestQuery::<CurrentNetwork>::from_str(url).expect("a loopback URL").with_timeouts(
+            Duration::from_secs(5),
+            stall,
+            total,
+        )
+    }
+
+    /// A node that answers nothing has no gap between reads to measure, so only
+    /// the total bound can end the wait.
     #[test]
     fn a_node_that_never_answers_does_not_block_for_ever() {
-        let (url, handle) = silent_node();
-        let query = RestQuery::<CurrentNetwork>::from_str(&url).expect("a loopback URL").with_timeouts(
-            Duration::from_secs(5),
-            Duration::from_millis(300),
-            Duration::from_secs(5),
-        );
+        let url = stalling_node(b"");
+        let query = bounded_query(&url, Duration::from_secs(30), Duration::from_millis(500));
 
         let started = Instant::now();
         let result = query.current_state_root();
@@ -393,11 +403,22 @@ mod tests {
 
         assert!(result.is_err(), "a node that answers nothing cannot produce a state root");
         assert!(waited < Duration::from_secs(5), "the request was not bounded, it waited {waited:?}");
-        drop(handle);
     }
 
-    type CurrentNetwork = TestnetV0;
-    type CurrentQuery = Query<CurrentNetwork, BlockMemory<CurrentNetwork>>;
+    /// A node that begins answering and then stops is caught by the stall bound,
+    /// well before the total one it would otherwise wait out.
+    #[test]
+    fn a_node_that_stops_mid_answer_does_not_block_for_ever() {
+        let url = stalling_node(b"HTTP/1.1 200 OK\r\nContent-Length: 4096\r\n\r\npartial");
+        let query = bounded_query(&url, Duration::from_millis(500), Duration::from_secs(120));
+
+        let started = Instant::now();
+        let result = query.current_state_root();
+        let waited = started.elapsed();
+
+        assert!(result.is_err(), "a truncated body cannot produce a state root");
+        assert!(waited < Duration::from_secs(5), "the stall bound did not fire, it waited {waited:?}");
+    }
 
     /// Tests HTTP's behavior of printing an empty path `/`
     ///
