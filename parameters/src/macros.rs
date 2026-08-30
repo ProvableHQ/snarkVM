@@ -82,7 +82,18 @@ macro_rules! impl_store_and_remote_fetch {
             // Retry up to 3 times on transient errors (5xx, 429, IO, timeout).
             let mut attempts = 3u32;
             loop {
-                match ureq::get(url).config().max_redirects(10).build().call() {
+                // Bounded per phase and not globally: these files are hundreds
+                // of megabytes, so a whole-request bound large enough not to
+                // break an honest download over a slow link is too large to
+                // catch anything.
+                match ureq::get(url)
+                    .config()
+                    .max_redirects(10)
+                    .timeout_connect(Some(std::time::Duration::from_secs(10)))
+                    .timeout_recv_response(Some(std::time::Duration::from_secs(30)))
+                    .build()
+                    .call()
+                {
                     Ok(mut response) => {
                         response.body_mut().as_reader().read_to_end(buffer)?;
                         break;
