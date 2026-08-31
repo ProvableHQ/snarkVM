@@ -129,6 +129,8 @@ macro_rules! impl_sw_curve_serializer {
                         // The x-coordinate must be zero when the infinity flag is
                         // set, or the encoding is non-canonical.
                         if !x.is_zero() {
+                            // TODO (Antonio) remove
+                            println!("[ERROR]  Non-canonical infinity encoding detected");
                             return Err(snarkvm_utilities::serialize::SerializationError::InvalidData);
                         }
                         Self::zero()
