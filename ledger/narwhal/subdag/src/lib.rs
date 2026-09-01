@@ -258,15 +258,14 @@ impl<N: Network> Subdag<N> {
         }
     }
 
-    /// Returns a lower-bound certificate count for a subdag at `block_height`.
+    /// Returns a lower-bound certificate count for a subdag with `max_certificates` per round.
     ///
-    /// For `N = MAX_CERTIFICATES(block_height)` written as `N = 3f + 1`, this is the integer
-    /// `2 * (f + 1)`. In general (including `N = 3f + 1 + k` with `0 <= k < 3`), this is two
-    /// rounds of the availability threshold: `2 * ((N + 2) / 3)`.
+    /// For `N = max_certificates` written as `N = 3f + 1`, this is the integer `2 * (f + 1)`.
+    /// In general (including `N = 3f + 1 + k` with `0 <= k < 3`), this is two rounds of the
+    /// availability threshold: `2 * ((N + 2) / 3)`.
     #[inline]
-    pub fn min_certificates(block_height: u32) -> u64 {
-        // unwrap: `MAX_CERTIFICATES` is defined for every consensus height.
-        let n = consensus_config_value!(N, MAX_CERTIFICATES, block_height).unwrap() as u64;
+    pub fn min_certificates(max_certificates: u16) -> u64 {
+        let n = max_certificates as u64;
         // `(N + 2) / 3 = f + 1` when `N = 3f + 1 + k` with `0 <= k < 3`.
         n.saturating_add(2).saturating_div(3).saturating_mul(2)
     }
@@ -278,7 +277,9 @@ impl<N: Network> Subdag<N> {
     pub fn min_spend_limit(block_height: u32) -> Option<u64> {
         // unwrap: `CONSENSUS_HEIGHT` is defined for every `ConsensusVersion`.
         if block_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap() {
-            Some(Self::min_certificates(block_height).saturating_mul(BatchHeader::<N>::batch_spend_limit(block_height)))
+            // unwrap: `MAX_CERTIFICATES` is defined for every consensus height.
+            let max_certs = consensus_config_value!(N, MAX_CERTIFICATES, block_height).unwrap();
+            Some(Self::min_certificates(max_certs).saturating_mul(BatchHeader::<N>::batch_spend_limit(block_height)))
         } else {
             None
         }
@@ -296,9 +297,9 @@ impl<N: Network> Subdag<N> {
         {
             let synthesis_per_second_runtime = 5_f64 * N::SYNTHESIS_PER_SECOND_OF_RUNTIME as f64;
             // unwrap: `MAX_CERTIFICATES` is defined for every consensus height.
-            let synthesis_per_certificate = synthesis_per_second_runtime
-                / consensus_config_value!(N, MAX_CERTIFICATES, block_height).unwrap() as f64;
-            Some((synthesis_per_certificate * Self::min_certificates(block_height) as f64) as u64)
+            let max_certificates = consensus_config_value!(N, MAX_CERTIFICATES, block_height).unwrap();
+            let synthesis_per_certificate = synthesis_per_second_runtime / max_certificates as f64;
+            Some((synthesis_per_certificate * Self::min_certificates(max_certificates) as f64) as u64)
         } else {
             None
         }
@@ -704,27 +705,15 @@ mod tests {
         }
     }
 
-    /// Beacon min limits match a subdag with `min_certificates` certificates.
+    /// Minimum certificates must be equal to 2*(f+1) for N=3f+1+k with 0<=k<3.
     #[test]
-    fn test_min_limits_use_min_certificates() {
-        let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
-        let v18_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap();
-
-        for height in [v16_height, v18_height, u32::MAX] {
-            let n = consensus_config_value!(CurrentNetwork, MAX_CERTIFICATES, height).unwrap() as u64;
-            let min_certs = n.saturating_add(2).saturating_div(3).saturating_mul(2);
-            assert_eq!(Subdag::<CurrentNetwork>::min_certificates(height), min_certs);
-            if n % 3 == 1 {
-                let f = n.saturating_sub(1) / 3;
-                assert_eq!(min_certs, 2 * (f + 1));
-            }
-
-            if height >= v16_height {
-                assert_eq!(
-                    Subdag::<CurrentNetwork>::min_spend_limit(height),
-                    Some(min_certs.saturating_mul(BatchHeader::<CurrentNetwork>::batch_spend_limit(height)))
-                );
-            }
+    fn test_min_certificates() {
+        for n in 1u16..=200 {
+            let n_u64 = n as u64;
+            let min_certs = n_u64.saturating_add(2).saturating_div(3).saturating_mul(2);
+            let f = n_u64.saturating_sub(1) / 3;
+            assert_eq!(min_certs, 2 * (f + 1), "min_certificates must equal 2*(f+1) for N={n}");
+            assert_eq!(Subdag::<CurrentNetwork>::min_certificates(n), min_certs);
         }
     }
 }
