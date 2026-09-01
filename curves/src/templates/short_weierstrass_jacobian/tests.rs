@@ -33,6 +33,7 @@ pub fn sw_tests<P: ShortWeierstrassParameters>(rng: &mut TestRng) {
     sw_from_random_bytes::<P>(rng);
     sw_from_x_coordinate::<P>(rng);
     sw_non_canonical_infinity_is_rejected::<P>();
+    sw_uncompressed_positive_y_flag_is_rejected::<P>();
 }
 
 /// The point at infinity must have exactly one compressed encoding.
@@ -111,6 +112,51 @@ pub fn sw_non_canonical_infinity_is_rejected<P: ShortWeierstrassParameters>() {
                 &round_tripped[..4],
             );
         }
+    }
+}
+
+/// A finite point has exactly one uncompressed encoding.
+///
+/// In uncompressed form the full y-coordinate is present, so the sign bit carries
+/// no information and the serializer always emits the negative-y flag (the default).
+/// A PositiveY-flagged uncompressed encoding is therefore non-canonical: it would be
+/// a second byte representation of the same point. The deserializer must reject it,
+/// on the structure of the encoding, so it fails under `Validate::No` as well.
+pub fn sw_uncompressed_positive_y_flag_is_rejected<P: ShortWeierstrassParameters>() {
+    let point = Affine::<P>::prime_subgroup_generator();
+    assert!(!point.is_zero());
+
+    // The canonical uncompressed encoding: the serializer emits the negative-y flag.
+    let mut canonical = Vec::new();
+    point.serialize_uncompressed(&mut canonical).unwrap();
+
+    // The 2-bit SW flag lives in the top bits of the final byte; PositiveY is bit 7.
+    // The canonical encoding must not already have it set.
+    let last = canonical.len() - 1;
+    assert_eq!(canonical[last] & (1 << 7), 0, "uncompressed serialization must use the negative-y flag");
+
+    // Flip the flag to PositiveY, leaving x and y untouched.
+    let mut positive_y = canonical.clone();
+    positive_y[last] |= 1 << 7;
+    assert_ne!(positive_y, canonical);
+
+    for validate in [Validate::Yes, Validate::No] {
+        // Validate does not implement Debug, and the mode matters to the report:
+        // rejection must be structural, so it has to fail under Validate::No too.
+        let mode = match validate {
+            Validate::Yes => "Validate::Yes",
+            Validate::No => "Validate::No",
+        };
+
+        // The canonical (negative-y) encoding must still deserialize and round-trip.
+        let mut cursor = Cursor::new(&canonical[..]);
+        let recovered = Affine::<P>::deserialize_with_mode(&mut cursor, Compress::No, validate).unwrap();
+        assert_eq!(recovered, point, "the canonical uncompressed encoding must round-trip ({mode})");
+
+        // The PositiveY-flagged encoding must be rejected.
+        let mut cursor = Cursor::new(&positive_y[..]);
+        let result = Affine::<P>::deserialize_with_mode(&mut cursor, Compress::No, validate);
+        assert!(result.is_err(), "a PositiveY-flagged uncompressed encoding must be rejected ({mode})");
     }
 }
 
