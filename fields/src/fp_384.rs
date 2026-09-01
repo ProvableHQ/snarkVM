@@ -25,8 +25,6 @@ use crate::{
     PrimeField,
     SquareRootField,
     Zero,
-    impl_add_sub_from_field_ref,
-    impl_mul_div_from_field_ref,
 };
 use snarkvm_utilities::{
     FromBytes,

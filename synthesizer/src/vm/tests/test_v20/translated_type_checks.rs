@@ -303,7 +303,7 @@ fn test_dynamic_id_variant_checks() {
             &caller_private_key,
             issuer.id(),
             "consume",
-            &[record_value.clone()],
+            std::slice::from_ref(&record_value),
             &["Incorrect input variant", "record_with_dynamic_id", "ticket.record"],
             |transitions| {
                 let index = transitions.len() - 1;

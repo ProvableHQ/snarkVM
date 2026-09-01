@@ -136,10 +136,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             .max_by_key(|d| d.size())
             .ok_or(anyhow!("could not find max domain"))?;
         let mut max_non_zero_domain = Some(new_candidate);
-        if let Some(max_candidate) = max_candidate {
-            if max_candidate.size() > new_candidate.size() {
-                max_non_zero_domain = Some(max_candidate);
-            }
+        if let Some(max_candidate) = max_candidate
+            && max_candidate.size() > new_candidate.size()
+        {
+            max_non_zero_domain = Some(max_candidate);
         }
         Ok(NonZeroDomains { max_non_zero_domain, domain_a, domain_b, domain_c })
     }

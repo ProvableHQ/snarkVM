@@ -176,7 +176,7 @@ pub(crate) fn evaluate_view_inner<N: Network>(
     }
 
     // Store the inputs.
-    for (input_stmt, value) in view.inputs().iter().zip(inputs.into_iter()) {
+    for (input_stmt, value) in view.inputs().iter().zip(inputs) {
         registers.store(stack, input_stmt.register(), value)?;
     }
 

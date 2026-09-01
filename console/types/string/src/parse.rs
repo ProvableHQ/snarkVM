@@ -18,7 +18,7 @@ use super::*;
 impl<E: Environment> Parser for StringType<E> {
     /// Parses a string into a string type.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the starting and ending quote '"' keyword from the string.
         let (string, value) = string_parser::parse_string(string)?;
 
