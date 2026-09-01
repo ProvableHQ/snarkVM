@@ -139,6 +139,20 @@ macro_rules! impl_sw_curve_serializer {
                 } else {
                     let x = P::BaseField::deserialize_uncompressed(&mut reader)?;
                     let (y, flags) = P::BaseField::deserialize_with_flags::<_, SWFlags>(&mut reader)?;
+
+                    if flags.is_infinity() && !(x.is_zero() && y.is_one()) {
+                        // The (x, y) pair must be (0, 1) when the infinity flag is
+                        // set, or the encoding is non-canonical.
+                        return Err(snarkvm_utilities::serialize::SerializationError::InvalidData);
+                    }
+
+                    if matches!(flags, SWFlags::PositiveY) {
+                        // In uncompressed form, the non-infinity points are always
+                        // serialized with the negative-y flag, as no sign information
+                        // is required due to the explicit presence of y.
+                        return Err(snarkvm_utilities::serialize::SerializationError::InvalidData);
+                    }
+
                     Affine::<P>::new(x, y, flags.is_infinity())
                 };
                 if validate == Validate::Yes {
