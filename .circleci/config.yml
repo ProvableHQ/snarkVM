@@ -1340,7 +1340,7 @@ workflows:
       or pipeline.git.branch == "canary"
       or pipeline.git.branch == "testnet"
       or pipeline.git.branch == "mainnet"
-      or pipeline.git.branch == "fix_ci_integration"
+      or pipeline.git.branch == "fix/reject-non-canonical-infinity-encoding"
     jobs:
       - check-unused-dependencies # This can be cleaned up before releases
       - check-cargo-semver-checks # This can be cleaned up before releases
