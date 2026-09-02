@@ -287,9 +287,13 @@ impl<F: FftField> EvaluationDomain<F> {
             #[cfg(feature = "serial")]
             let chunk = core::cmp::max(size, 1);
 
+            // The chunks run unordered, so each seeds itself rather than carrying `r` from
+            // its predecessor. `chunk_gen^i` is the same seed as `g^(i*chunk)` from a
+            // ladder over `log2(chunks)` bits instead of 64.
+            let chunk_gen = self.group_gen.pow([chunk as u64]);
             cfg_chunks_mut!(u, chunk).zip(cfg_chunks_mut!(ls, chunk)).enumerate().for_each(
                 |(i, (u_chunk, ls_chunk))| {
-                    let mut r = self.group_gen.pow([(i * chunk) as u64]);
+                    let mut r = chunk_gen.pow([i as u64]);
                     let mut l = l0 * r;
                     u_chunk.iter_mut().zip(ls_chunk.iter_mut()).for_each(|(tau_minus_r, l_i)| {
                         *tau_minus_r = tau - r;
