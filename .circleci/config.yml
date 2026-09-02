@@ -888,6 +888,15 @@ jobs:
           workspace_member: snarkvm-ledger-store
           flags: --features=rocks
 
+  ledger-store-with-history:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.twoxlarge >>
+    steps:
+      - run_test:
+          workspace_member: snarkvm-ledger-store
+          flags: --features=rocks,history
+          cache_key_suffix: -with-history
+
   ledger-store-prerelease:
     executor: rust-docker
     resource_class: << pipeline.parameters.twoxlarge >>
@@ -1317,6 +1326,7 @@ workflows:
       - ledger-puzzle-epoch
       - ledger-query
       - ledger-store
+      - ledger-store-with-history
       - ledger-test-helpers
 
   synthesizer-workflow:
