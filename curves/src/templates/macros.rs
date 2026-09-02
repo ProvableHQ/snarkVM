@@ -126,6 +126,11 @@ macro_rules! impl_sw_curve_serializer {
                 let point = if let Compress::Yes = compress {
                     let (x, flags) = P::BaseField::deserialize_with_flags::<_, SWFlags>(&mut reader)?;
                     if flags.is_infinity() {
+                        // The x-coordinate must be zero when the infinity flag is
+                        // set, or the encoding is non-canonical.
+                        if !x.is_zero() {
+                            return Err(snarkvm_utilities::serialize::SerializationError::InvalidData);
+                        }
                         Self::zero()
                     } else {
                         Affine::<P>::from_x_coordinate(x, flags.is_positive().unwrap())

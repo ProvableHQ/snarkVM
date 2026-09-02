@@ -16,6 +16,30 @@ parameters:
   twoxlarge:
     type: string
     default: 2xlarge
+  # The toolchain `check-fmt` formats with.
+  #
+  # `.rustfmt.toml` uses options that only exist on nightly -- imports_layout,
+  # imports_granularity, overflow_delimited_expr, reorder_impl_items and
+  # style_edition -- so the formatter cannot be the 1.88.0 this project builds
+  # with, and `cargo fmt` without a toolchain silently drops all five rather
+  # than refusing. The formatter is therefore a second toolchain, and pinning
+  # it is the same act as pinning the first.
+  #
+  # Resolves to rustfmt 1.9.0-nightly (7e46c5f6fb 2026-04-01); rustup's dated
+  # nightlies are built from the previous day's commit. Bumping it may reformat
+  # the tree, so it should be a deliberate change with the reformatting in the
+  # same commit.
+  #
+  # `enum` rather than `string`: this value is interpolated unquoted into the
+  # `rustup toolchain install` and `cargo fmt` commands below, so a `string`
+  # parameter would let anyone able to trigger a pipeline with custom
+  # parameters inject arbitrary shell commands into the job. `enum` rejects
+  # any pipeline-trigger value that isn't in the list below before the config
+  # is compiled, closing that off. Add the new pin to the list when bumping.
+  fmt_nightly:
+    type: enum
+    enum: [nightly-2026-04-02]
+    default: nightly-2026-04-02
 
 orbs:
   windows: circleci/windows@5.0
@@ -473,9 +497,9 @@ commands:
                 cache_key: v4.7.3-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
 
   install_rust_nightly:
-    description: "Install Rust nightly toolchain"
+    description: "Install the pinned Rust nightly toolchain used for formatting"
     steps:
-      - run: rustup toolchain install nightly-x86_64-unknown-linux-gnu
+      - run: rustup toolchain install << pipeline.parameters.fmt_nightly >>-x86_64-unknown-linux-gnu --profile minimal --component rustfmt
 
 jobs:
   snarkvm:
@@ -942,7 +966,7 @@ jobs:
           # `history` enables the per-key historical update map that the `view` evaluation path
           # depends on; gating it here ensures the v15 view tests are exercised in CI.
           flags: >
-            --lib --bins --features test,history
+            --release --lib --bins --features test,history
             --partition count:1/2
             -- --test-threads 8
           cache_key_suffix: -test1
@@ -955,7 +979,7 @@ jobs:
       - run_test:
           workspace_member: snarkvm-synthesizer
           flags: >
-            --lib --bins --features test,history
+            --release --lib --bins --features test,history
             --partition count:2/2
             -- --test-threads 8
           cache_key_suffix: -test2
@@ -1127,7 +1151,7 @@ jobs:
       - run:
           name: Check style
           no_output_timeout: 35m
-          command: cargo +nightly fmt --all -- --check
+          command: cargo +<< pipeline.parameters.fmt_nightly >> fmt --all -- --check
       - clear_environment:
           cache_key: v4.7.3-rust-1.88.0-snarkvm-fmt-cache
 
@@ -1324,8 +1348,7 @@ workflows:
       or pipeline.git.branch == "canary"
       or pipeline.git.branch == "testnet"
       or pipeline.git.branch == "mainnet"
-      or pipeline.git.branch == "profile_verifier_multirecord_compatible"
-      or pipeline.git.branch == "revert_density_checks"
+      or pipeline.git.branch == "fix_ci_integration"
     jobs:
       - check-unused-dependencies # This can be cleaned up before releases
       - check-cargo-semver-checks # This can be cleaned up before releases
@@ -1354,7 +1377,6 @@ workflows:
     when: pipeline.git.branch == "canary"
       or pipeline.git.branch == "testnet"
       or pipeline.git.branch == "mainnet"
-      or pipeline.git.branch == "main_net_v48"
     jobs:
       - verify-windows: # Windows has never failed us when linux passed
           matrix:
