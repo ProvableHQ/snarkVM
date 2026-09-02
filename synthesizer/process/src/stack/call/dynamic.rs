@@ -978,11 +978,12 @@ impl<'a, N: Network> ResolvedTarget<'a, N> {
     }
 }
 
-// A helper function that attempts to resolve the target of a dynamic call.
-// This function returns:
-// - Ok(Some(ResolvedTarget)) if the target is successfully resolved.
+// A helper function that attempts to resolve the target of a dynamic call. This function returns:
+// - Ok(Some(ResolvedTarget)) if the target is successfully resolved to a non-closure.
 // - Ok(None) in `Synthesize` or `CheckDeployment` mode when the target cannot be resolved.
-// - Err(_) in other modes when the target cannot be resolved.
+// - Err(_) in
+//    - `Synthesize` or `CheckDeployment` mode when the target is resolved to a closure.
+//    - other modes when the target cannot be resolved or it is resolved to a closure.
 fn resolve_dynamic_target<'a, N: Network>(
     call_stack: &'a CallStack<N>,
     stack: &'a Stack<N>,
