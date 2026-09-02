@@ -263,7 +263,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Committee lookback for `block.round()` semantics matching `Ledger::get_committee_lookback_for_round`.
     #[cfg(any(test, feature = "test"))]
     fn committee_lookback_for_round(&self, round: u64) -> Result<Option<Committee<N>>> {
-        let previous_round = match round % 2 == 0 {
+        let previous_round = match round.is_multiple_of(2) {
             true => round.saturating_sub(1),
             false => round.saturating_sub(2),
         };
@@ -311,7 +311,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
             (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
         } else {
-            (None, None)
+            Authority::<N>::beacon_limits(block.height())
         };
         let state = FinalizeGlobalState::new::<N>(
             block.round(),
@@ -659,15 +659,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // per-certificate basis whether or not transactions
                         // exceed it.
                         if consensus_version >= ConsensusVersion::V16 {
-                            if let Some(block_spend_limit) = block_spend_limit {
-                                if block_spend.saturating_add(compute_spend) > block_spend_limit {
-                                    aborted.push((
-                                        transaction.clone(),
-                                        format!("Exceeds the block spend limit with compute_spend: '{compute_spend}'"),
-                                    ));
-                                    // Continue to the next transaction.
-                                    continue 'outer;
-                                }
+                            if let Some(block_spend_limit) = block_spend_limit
+                                && block_spend.saturating_add(compute_spend) > block_spend_limit
+                            {
+                                aborted.push((
+                                    transaction.clone(),
+                                    format!("Exceeds the block spend limit with compute_spend: '{compute_spend}'"),
+                                ));
+                                // Continue to the next transaction.
+                                continue 'outer;
                             }
                             // Track the compute_spend used so far.
                             block_spend = block_spend.saturating_add(compute_spend);
@@ -1375,12 +1375,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // If the transaction is a deployment, ensure that it is not another deployment in the block from the same public fee payer.
         if let Transaction::Deploy(_, _, _, _, fee) = transaction {
             // If any public deployment payer has already deployed in this block, abort the transaction.
-            if let Some(payer) = fee.payer() {
-                if candidate_transaction_details.deployment_payers.contains(&payer) {
-                    return ShouldAbortResult::Abort(format!(
-                        "Another deployment in the block from the same public fee payer {payer}"
-                    ));
-                }
+            if let Some(payer) = fee.payer()
+                && candidate_transaction_details.deployment_payers.contains(&payer)
+            {
+                return ShouldAbortResult::Abort(format!(
+                    "Another deployment in the block from the same public fee payer {payer}"
+                ));
             }
         }
 
@@ -3963,7 +3963,7 @@ finalize compute:
 
         // Generate the next block.
         let next_block =
-            sample_next_block(&vm, validators.keys().next().unwrap(), &vec![transaction], &block, &mut vec![], rng)
+            sample_next_block(&vm, validators.keys().next().unwrap(), &[transaction], &block, &mut vec![], rng)
                 .unwrap();
 
         // Add the next block.
@@ -4001,15 +4001,9 @@ finalize compute:
             .unwrap();
 
         // Generate the next block.
-        let next_block = sample_next_block(
-            &vm,
-            validators.keys().next().unwrap(),
-            &vec![transaction],
-            &next_block,
-            &mut vec![],
-            rng,
-        )
-        .unwrap();
+        let next_block =
+            sample_next_block(&vm, validators.keys().next().unwrap(), &[transaction], &next_block, &mut vec![], rng)
+                .unwrap();
 
         // Add the next block.
         vm.add_next_block(&next_block).unwrap();

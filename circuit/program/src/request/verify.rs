@@ -74,7 +74,7 @@ impl<A: Aleo> Request<A> {
         // Verify the transition public key and commitments are well-formed.
         let tpk_checks = {
             // Compute the transition commitment as `Hash(tvk)`.
-            let tcm = A::hash_psd2(&[self.tvk.clone()]);
+            let tcm = A::hash_psd2(std::slice::from_ref(&self.tvk));
             // Compute the signer commitment as `Hash(signer || root_tvk)`.
             let scm = A::hash_psd2(&[self.signer.to_field(), root_tvk]);
 
