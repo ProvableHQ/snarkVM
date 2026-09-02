@@ -119,20 +119,10 @@ impl<F: Field> DensePolynomial<F> {
             return self.coeffs[0];
         }
 
-        // Horner's rule: `degree` multiplications and no allocation, where
-        // materialising the powers of the point needs two multiplications per
-        // coefficient -- once to build the power, once to weight the
-        // coefficient -- and a vector the size of the polynomial to hold them.
-        //
-        // It is fully serial, where the powers form parallelised the weighting.
-        // That is the trade, and it is worth taking: the deleted half of the
-        // arithmetic outweighs the parallelism given up, and the allocation it
-        // also deletes is proportional to the polynomial.
-        //
-        // Unlike the powers form this tolerates trailing zero coefficients,
-        // which reach it because `coeffs` is public and callers do build such
-        // polynomials. The powers form called `degree()` and panicked on that
-        // input; `evaluate_tolerates_trailing_zeros` pins the new behaviour.
+        // Horner's rule. It never calls `degree()`, so unlike the powers form it
+        // replaced it tolerates trailing zero coefficients, which reach it
+        // because `coeffs` is public. `evaluate_tolerates_trailing_zeros` pins
+        // that.
         let mut acc = F::zero();
         for coeff in self.coeffs.iter().rev() {
             acc = acc * point + *coeff;
@@ -205,16 +195,8 @@ impl<F: PrimeField> DensePolynomial<F> {
         DensePolynomial::from_coefficients_vec(shifted)
     }
 
-    /// Divides by the monic linear polynomial `X - z`, returning the quotient
-    /// and the remainder.
-    ///
-    /// Ruffini's rule: one multiply-add per coefficient. Generic long division
-    /// reaches the same answer with two multiplications per coefficient, a
-    /// clone of the dividend, and a trailing-zero trim and degree check on
-    /// every iteration.
-    ///
-    /// The remainder is the scalar `self(z)`, which is what the divisor's
-    /// degree makes it.
+    /// Divides by the monic linear polynomial `X - z` using Ruffini's rule,
+    /// returning the quotient and the remainder `self(z)`.
     pub fn divide_by_monic_linear(&self, z: F) -> (Self, F) {
         match self.coeffs.len() {
             0 => (Self::zero(), F::zero()),

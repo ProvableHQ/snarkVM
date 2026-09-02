@@ -110,18 +110,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     let mut rowcheck = multiplier_2.multiply().unwrap();
                     rowcheck.coeffs.iter_mut().zip(&z_c.coeffs).for_each(|(ab, c)| *ab -= c);
 
-                    // `instance_lhs` is this and nothing else -- one job, one instance combiner,
-                    // one `+=` onto a zero polynomial -- so the accumulation
-                    // the expression was named for never accumulated. Written
-                    // that way it costs three passes over the coefficients and two
-                    // allocations: `Mul<F> for &DensePolynomial` clones and then scales the clone,
-                    // and `AddAssign<&DensePolynomial>` onto a zero `self`
-                    // clears and copies it again. On the larger circuit
-                    // `rowcheck` is twice the constraint domain, so those are not small.
-                    //
-                    // Scaling it where it lies is one pass and no allocation. The trim is not
-                    // tidiness: `AddAssign` used to do it, and
-                    // `apply_randomized_selector` below is degree-sensitive.
+                    // Initialise `instance_lhs` as `instance_combiner * rowcheck`: one job
+                    // contributes one term, so there is nothing to accumulate onto. The trim is
+                    // necessary because `apply_randomized_selector` below is degree-sensitive,
+                    // and the `AddAssign` this replaced used to do it.
                     let mut instance_lhs = rowcheck;
                     instance_lhs.coeffs.iter_mut().for_each(|c| *c *= instance_combiner);
                     instance_lhs.trim_trailing_zeros();

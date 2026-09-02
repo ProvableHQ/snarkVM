@@ -276,10 +276,10 @@ impl<F: FftField> EvaluationDomain<F> {
             let mut u = vec![F::zero(); size];
             let mut ls = vec![F::zero(); size];
 
-            // Both sequences are powers of `group_gen`, so a block can seed itself with
-            // `group_gen^start` rather than walking there from zero. Written serially this
-            // is one dependency chain the length of the domain, which neither
-            // more cores nor wider registers can shorten.
+            // Fill `u[i] = tau - g^i` and `ls[i] = l0 * g^i`, where `g = group_gen`. Both
+            // sequences are powers of `g`, so a block can seed itself with `g^start`
+            // instead of walking there from zero, which is what lets the fill
+            // run in parallel.
             //
             // Same shape as `distribute_powers_and_mul_by_const` above.
             #[cfg(not(feature = "serial"))]
