@@ -135,9 +135,10 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         } else {
             // With `m = |H_i|` and `n = |H|`, both powers of two and `m` dividing `n`, the
             // quotient `v_H / v_H_i` is `(X^n - 1) / (X^m - 1) = 1 + X^m + X^2m + ... +
-            // X^(n-m)`. Multiplying `xg` by that places a copy of `xg` at every multiple of
-            // `m`, and since `deg(xg) < m` the copies do not overlap and nothing has to be
-            // added. So the result is `xg`'s coefficients repeated `n/m` times.
+            // X^(n-m)`. Multiplying `xg_i` by that places a copy of `xg_i` at every
+            // multiple of `m`, and since `deg(xg_i) < m` the copies do not
+            // overlap and nothing has to be added. So the result is `xg_i`'s
+            // coefficients repeated `n/m` times.
             let m = src_domain.size();
             let n = target_domain.size();
             ensure!(
