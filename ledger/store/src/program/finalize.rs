@@ -372,22 +372,8 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
             #[cfg(feature = "history")]
             {
                 let current_height = self.current_block_height().load(Ordering::SeqCst);
-                let heights_key = (program_id, mapping_name, key.clone());
-
-                // If this key has a legacy heights-map entry it was written before the BE schema
-                // change; continue appending to the heights vec and write with the original LE
-                // encoding so that reads using the heights-map path remain correct.
-                if let Some(heights) = self.mapping_update_heights_map().get_confirmed(&heights_key)? {
-                    let mut heights = heights.into_owned();
-                    self.mapping_update_map()
-                        .insert((program_id, mapping_name, key.clone(), current_height.to_le_bytes()), value.clone())?;
-                    heights.push(current_height);
-                    self.mapping_update_heights_map().insert(heights_key, heights)?;
-                } else {
-                    // New key: use the big-endian encoding so floor seeks work correctly.
-                    self.mapping_update_map()
-                        .insert((program_id, mapping_name, key.clone(), current_height.to_be_bytes()), value.clone())?;
-                }
+                self.mapping_update_map()
+                    .insert((program_id, mapping_name, key.clone(), current_height.to_be_bytes()), value.clone())?;
             }
 
             // Update the key-value map with the new key-value.
@@ -456,24 +442,8 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
                 #[cfg(feature = "history")]
                 {
                     let current_height = self.current_block_height().load(Ordering::SeqCst);
-                    let heights_key = (program_id, mapping_name, key.clone());
-
-                    // Legacy keys (pre-BE schema) continue using LE encoding + heights vec.
-                    if let Some(heights) = self.mapping_update_heights_map().get_confirmed(&heights_key)? {
-                        let mut heights = heights.into_owned();
-                        self.mapping_update_map().insert(
-                            (program_id, mapping_name, key.clone(), current_height.to_le_bytes()),
-                            value.clone(),
-                        )?;
-                        heights.push(current_height);
-                        self.mapping_update_heights_map().insert(heights_key, heights)?;
-                    } else {
-                        // New key: big-endian encoding.
-                        self.mapping_update_map().insert(
-                            (program_id, mapping_name, key.clone(), current_height.to_be_bytes()),
-                            value.clone(),
-                        )?;
-                    }
+                    self.mapping_update_map()
+                        .insert((program_id, mapping_name, key.clone(), current_height.to_be_bytes()), value.clone())?;
                 }
 
                 // Insert the key-value entry.
@@ -859,13 +829,8 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
 
     /// Returns the historical value of a mapping at or before the given block height.
     ///
-    /// **Fast path** (new keys, no `mapping_update_heights_map` entry): single O(log n)
-    /// floor seek on `mapping_update_map`, which uses big-endian height encoding.
-    ///
-    /// **Legacy path** (keys written before the BE schema change, heights-map entry
-    /// present): O(n) binary search over the heights `Vec`, then a point lookup using
-    /// the original little-endian encoding. Correct but slower; these keys stay on this
-    /// path until the node is resynced or an offline migration is performed.
+    /// A single O(log n) floor seek on `mapping_update_map`, whose height keys are big-endian so
+    /// that lexicographic key order matches numeric height order.
     #[cfg(feature = "history")]
     pub fn get_historical_mapping_value(
         &self,
@@ -879,26 +844,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             return Ok(None);
         }
 
-        // Check for a legacy heights-map entry (pre-BE schema change).
-        let heights_key = (program_id, mapping_name, mapping_key.clone());
-        if let Some(heights) = self.storage.mapping_update_heights_map().get_confirmed(&heights_key)? {
-            // Legacy O(n) path: binary search on the heights Vec.
-            let heights = heights.into_owned();
-            let applicable_height = match heights.binary_search(&height) {
-                Ok(_) => height,
-                Err(0) => return Ok(None),
-                Err(idx) => heights[idx - 1],
-            };
-            // Look up with the original little-endian encoding.
-            return self.storage.mapping_update_map().get_confirmed(&(
-                program_id,
-                mapping_name,
-                mapping_key,
-                applicable_height.to_le_bytes(),
-            ));
-        }
-
-        // New fast path: O(log n) floor seek with big-endian encoding.
+        // Find the most recent update at or before the requested height.
         let seek_key = (program_id, mapping_name, mapping_key.clone(), height.to_be_bytes());
         match self.storage.mapping_update_map().get_floor_confirmed(&seek_key)? {
             Some((found_key, found_value)) => {
@@ -911,9 +857,8 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
 
     /// Returns the heights at which past mapping updates occurred, in ascending order.
     ///
-    /// For legacy keys (heights-map entry present) the list is read directly from the
-    /// heights map. For new keys it is reconstructed by scanning `mapping_update_map`.
-    /// Either way this is O(n updates) and is intended for diagnostic / test use only.
+    /// Reconstructed by scanning `mapping_update_map`. This is O(n updates) and is intended for
+    /// diagnostic / test use only.
     #[cfg(feature = "history")]
     pub fn get_mapping_update_heights(
         &self,
@@ -921,13 +866,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         mapping_name: Identifier<N>,
         mapping_key: Plaintext<N>,
     ) -> Result<Option<Cow<'_, Vec<u32>>>, Error> {
-        // Legacy path: heights are stored explicitly in the heights map.
-        let heights_key = (program_id, mapping_name, mapping_key.clone());
-        if let Some(heights) = self.storage.mapping_update_heights_map().get_confirmed(&heights_key)? {
-            return Ok(Some(heights));
-        }
-
-        // New path: reconstruct from mapping_update_map keys (big-endian encoded heights).
+        // Reconstruct from the mapping_update_map keys, whose heights are big-endian encoded.
         let mut heights: Vec<u32> = self
             .storage
             .mapping_update_map()
@@ -2032,5 +1971,284 @@ mod tests {
         let heights =
             finalize_store.get_mapping_update_heights(program_id, mapping_name, key.clone()).unwrap().unwrap();
         assert_eq!(&*heights, &[5, 10]);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Legacy history migration.
+    //
+    // These exercise the raw migration end to end through the real store: legacy data is laid
+    // down exactly as a pre-#3323 node would have left it (little-endian height keys plus a
+    // heights vector), migrated, and then read back through the ordinary public API.
+    // ---------------------------------------------------------------------------------------
+
+    /// Opens a RocksDB-backed finalize store over a fresh temporary directory.
+    #[cfg(all(feature = "rocks", feature = "history"))]
+    fn rocks_store() -> crate::helpers::rocksdb::FinalizeDB<CurrentNetwork> {
+        let temp_dir = std::sync::Arc::new(tempfile::tempdir().expect("Failed to open temporary directory"));
+        crate::helpers::rocksdb::FinalizeDB::open(temp_dir).unwrap()
+    }
+
+    /// Writes `(height, value)` pairs for `key` in the pre-#3323 layout: little-endian height keys
+    /// in the update map, plus the heights vector that marked the key as legacy.
+    #[cfg(all(feature = "rocks", feature = "history"))]
+    fn seed_legacy_key<P: FinalizeStorage<CurrentNetwork>>(
+        storage: &P,
+        program_id: ProgramID<CurrentNetwork>,
+        mapping_name: Identifier<CurrentNetwork>,
+        key: &Plaintext<CurrentNetwork>,
+        updates: &[(u32, Value<CurrentNetwork>)],
+    ) {
+        for (height, value) in updates {
+            storage
+                .mapping_update_map()
+                .insert((program_id, mapping_name, key.clone(), height.to_le_bytes()), value.clone())
+                .unwrap();
+        }
+        let heights = updates.iter().map(|(height, _)| *height).collect::<Vec<_>>();
+        storage.mapping_update_heights_map().insert((program_id, mapping_name, key.clone()), heights).unwrap();
+    }
+
+    /// Runs the migration against a RocksDB-backed store.
+    #[cfg(all(feature = "rocks", feature = "history"))]
+    fn migrate(
+        storage: &crate::helpers::rocksdb::FinalizeDB<CurrentNetwork>,
+    ) -> crate::helpers::rocksdb::MigrationStats {
+        crate::helpers::rocksdb::migrate_finalize_history(
+            storage.mapping_update_heights_map(),
+            storage.mapping_update_map(),
+        )
+        .unwrap()
+    }
+
+    /// The value a correct implementation must return: the most recent update at or before
+    /// `height`, computed directly from the seeded data rather than from the store.
+    #[cfg(all(feature = "rocks", feature = "history"))]
+    fn oracle(updates: &[(u32, Value<CurrentNetwork>)], height: u32) -> Option<Value<CurrentNetwork>> {
+        updates.iter().filter(|(h, _)| *h <= height).max_by_key(|(h, _)| *h).map(|(_, v)| v.clone())
+    }
+
+    /// Verifies that every historical read after migration matches the oracle, at every seeded
+    /// height and at the points either side of it.
+    #[cfg(all(feature = "rocks", feature = "history"))]
+    fn assert_matches_oracle(
+        store: &FinalizeStore<CurrentNetwork, crate::helpers::rocksdb::FinalizeDB<CurrentNetwork>>,
+        program_id: ProgramID<CurrentNetwork>,
+        mapping_name: Identifier<CurrentNetwork>,
+        key: &Plaintext<CurrentNetwork>,
+        updates: &[(u32, Value<CurrentNetwork>)],
+    ) {
+        let mut probes = Vec::new();
+        for (height, _) in updates {
+            probes.extend([height.saturating_sub(1), *height, height.saturating_add(1)]);
+        }
+        for height in probes {
+            let expected = oracle(updates, height);
+            let actual = store
+                .get_historical_mapping_value(program_id, mapping_name, key.clone(), height)
+                .unwrap()
+                .map(|value| value.into_owned());
+            assert_eq!(actual, expected, "mismatch at height {height} for key {key}");
+        }
+    }
+
+    /// Verifies a straightforward migration: the heights map is drained, and every historical
+    /// read returns what it did before.
+    #[test]
+    #[cfg(all(feature = "rocks", feature = "history"))]
+    fn test_migrate_legacy_history() {
+        let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let mapping_name = Identifier::from_str("account").unwrap();
+        let key = Plaintext::from_str("1field").unwrap();
+        let updates =
+            (0..64u32).map(|i| (i * 7 + 3, Value::from_str(&format!("{}u64", i * 11)).unwrap())).collect::<Vec<_>>();
+
+        let storage = rocks_store();
+        seed_legacy_key(&storage, program_id, mapping_name, &key, &updates);
+        storage.current_block_height().store(u32::MAX - 1, Ordering::SeqCst);
+
+        let stats = migrate(&storage);
+        assert_eq!(stats.keys, 1);
+        assert_eq!(stats.entries, updates.len() as u64);
+        assert_eq!(stats.resumed, 0);
+
+        // The legacy index is gone, and nothing is left on the old encoding.
+        assert_eq!(storage.mapping_update_heights_map().iter_confirmed().count(), 0);
+        assert_eq!(storage.mapping_update_map().iter_confirmed().count(), updates.len());
+
+        let store = FinalizeStore::from(storage).unwrap();
+        assert_matches_oracle(&store, program_id, mapping_name, &key, &updates);
+    }
+
+    /// Verifies that heights whose two encodings collide survive the migration.
+    ///
+    /// `LE(h)` and `BE(h')` are the same four bytes exactly when `h' == byte_reverse(h)`, so a
+    /// naive per-entry rewrite can delete a value it has already migrated.
+    #[test]
+    #[cfg(all(feature = "rocks", feature = "history"))]
+    fn test_migrate_legacy_history_endian_collisions() {
+        let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let mapping_name = Identifier::from_str("bonded").unwrap();
+        let key = Plaintext::from_str("7field").unwrap();
+
+        // A height that is its own partner, a pair that swap with each other, and ordinary
+        // heights interleaved so the colliding set is not the whole key.
+        let self_collision = 65_792u32;
+        assert_eq!(self_collision.to_le_bytes(), self_collision.to_be_bytes());
+        let swap_a = 256u32;
+        let swap_b = 65_536u32;
+        assert_eq!(swap_a.to_le_bytes(), swap_b.to_be_bytes());
+        assert_eq!(swap_b.to_le_bytes(), swap_a.to_be_bytes());
+
+        let mut updates = vec![
+            (swap_a, Value::from_str("2u64").unwrap()),
+            (1_000u32, Value::from_str("9u64").unwrap()),
+            (swap_b, Value::from_str("3u64").unwrap()),
+            (self_collision, Value::from_str("1u64").unwrap()),
+            (70_000u32, Value::from_str("8u64").unwrap()),
+        ];
+        updates.sort_by_key(|(height, _)| *height);
+
+        let storage = rocks_store();
+        seed_legacy_key(&storage, program_id, mapping_name, &key, &updates);
+        storage.current_block_height().store(u32::MAX - 1, Ordering::SeqCst);
+
+        let stats = migrate(&storage);
+        assert_eq!(stats.entries, updates.len() as u64);
+        // The three colliding heights must have been recognised as such.
+        assert_eq!(stats.collisions, 3);
+
+        let store = FinalizeStore::from(storage).unwrap();
+        assert_matches_oracle(&store, program_id, mapping_name, &key, &updates);
+    }
+
+    /// Verifies the migration is idempotent, so an interrupted run can simply be repeated.
+    #[test]
+    #[cfg(all(feature = "rocks", feature = "history"))]
+    fn test_migrate_legacy_history_is_idempotent() {
+        let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let mapping_name = Identifier::from_str("account").unwrap();
+        let key = Plaintext::from_str("3field").unwrap();
+        let updates = (0..32u32).map(|i| (i * 3, Value::from_str(&format!("{i}u64")).unwrap())).collect::<Vec<_>>();
+
+        let storage = rocks_store();
+        seed_legacy_key(&storage, program_id, mapping_name, &key, &updates);
+        storage.current_block_height().store(u32::MAX - 1, Ordering::SeqCst);
+
+        assert_eq!(migrate(&storage).entries, updates.len() as u64);
+        // A second run has nothing to do: the heights map is empty, so no key is even visited.
+        let second = migrate(&storage);
+        assert_eq!(second, crate::helpers::rocksdb::MigrationStats::default());
+
+        let store = FinalizeStore::from(storage).unwrap();
+        assert_matches_oracle(&store, program_id, mapping_name, &key, &updates);
+    }
+
+    /// Verifies that a run interrupted partway through a key resumes without loss.
+    ///
+    /// Simulates the crash by migrating a prefix of the key's entries by hand and leaving the
+    /// heights row in place, which is exactly the state an interrupted run leaves behind.
+    #[test]
+    #[cfg(all(feature = "rocks", feature = "history"))]
+    fn test_migrate_legacy_history_resumes_mid_key() {
+        let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let mapping_name = Identifier::from_str("account").unwrap();
+        let key = Plaintext::from_str("5field").unwrap();
+        let updates = (0..40u32).map(|i| (i * 5 + 1, Value::from_str(&format!("{i}u64")).unwrap())).collect::<Vec<_>>();
+
+        let storage = rocks_store();
+        seed_legacy_key(&storage, program_id, mapping_name, &key, &updates);
+        storage.current_block_height().store(u32::MAX - 1, Ordering::SeqCst);
+
+        // Move the first 12 entries to the new encoding, as a partial run would have.
+        for (height, value) in updates.iter().take(12) {
+            storage
+                .mapping_update_map()
+                .insert((program_id, mapping_name, key.clone(), height.to_be_bytes()), value.clone())
+                .unwrap();
+            storage
+                .mapping_update_map()
+                .remove(&(program_id, mapping_name, key.clone(), height.to_le_bytes()))
+                .unwrap();
+        }
+
+        let stats = migrate(&storage);
+        // The already-moved entries are recognised rather than treated as missing history.
+        assert_eq!(stats.resumed, 12);
+        assert_eq!(stats.entries, (updates.len() - 12) as u64);
+        assert_eq!(storage.mapping_update_heights_map().iter_confirmed().count(), 0);
+
+        let store = FinalizeStore::from(storage).unwrap();
+        assert_matches_oracle(&store, program_id, mapping_name, &key, &updates);
+    }
+
+    /// Verifies that genuinely missing history is reported rather than silently dropped.
+    #[test]
+    #[cfg(all(feature = "rocks", feature = "history"))]
+    fn test_migrate_legacy_history_rejects_missing_entries() {
+        let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let mapping_name = Identifier::from_str("account").unwrap();
+        let key = Plaintext::from_str("11field").unwrap();
+        let updates = (0..8u32).map(|i| (i * 2 + 1, Value::from_str(&format!("{i}u64")).unwrap())).collect::<Vec<_>>();
+
+        let storage = rocks_store();
+        seed_legacy_key(&storage, program_id, mapping_name, &key, &updates);
+
+        // Delete one entry outright, leaving its height listed. Neither encoding holds it now.
+        storage
+            .mapping_update_map()
+            .remove(&(program_id, mapping_name, key.clone(), updates[3].0.to_le_bytes()))
+            .unwrap();
+
+        let result = crate::helpers::rocksdb::migrate_finalize_history(
+            storage.mapping_update_heights_map(),
+            storage.mapping_update_map(),
+        );
+        assert!(result.is_err(), "migration must not silently drop missing history");
+    }
+
+    /// Verifies both populations that share the heights map: many keys with short histories,
+    /// and a few keys with long ones. A design tuned for only one of them fails the other.
+    #[test]
+    #[cfg(all(feature = "rocks", feature = "history"))]
+    fn test_migrate_legacy_history_mixed_population() {
+        let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let mapping_name = Identifier::from_str("account").unwrap();
+
+        let storage = rocks_store();
+        storage.current_block_height().store(u32::MAX - 1, Ordering::SeqCst);
+
+        // Many keys, a couple of heights each.
+        let mut shallow = Vec::new();
+        for index in 0..200u32 {
+            let key = Plaintext::from_str(&format!("{index}field")).unwrap();
+            let updates = vec![
+                (index + 1, Value::from_str(&format!("{index}u64")).unwrap()),
+                (index + 500, Value::from_str(&format!("{}u64", index + 1)).unwrap()),
+            ];
+            seed_legacy_key(&storage, program_id, mapping_name, &key, &updates);
+            shallow.push((key, updates));
+        }
+
+        // A few keys with histories long enough to span several write batches.
+        let mut deep = Vec::new();
+        for index in 0..3u32 {
+            // Numerically distinct from the shallow keys above; a field literal must be numeric.
+            let key = Plaintext::from_str(&format!("{}field", 1_000_000 + index)).unwrap();
+            let updates = (0..5_000u32)
+                .map(|i| (i * 2 + 1, Value::from_str(&format!("{}u64", i % 97)).unwrap()))
+                .collect::<Vec<_>>();
+            seed_legacy_key(&storage, program_id, mapping_name, &key, &updates);
+            deep.push((key, updates));
+        }
+
+        let stats = migrate(&storage);
+        assert_eq!(stats.keys, 203);
+        assert_eq!(stats.entries, 200 * 2 + 3 * 5_000);
+        assert_eq!(storage.mapping_update_heights_map().iter_confirmed().count(), 0);
+
+        let store = FinalizeStore::from(storage).unwrap();
+        for (key, updates) in shallow.iter().chain(deep.iter()) {
+            assert_matches_oracle(&store, program_id, mapping_name, key, updates);
+        }
     }
 }

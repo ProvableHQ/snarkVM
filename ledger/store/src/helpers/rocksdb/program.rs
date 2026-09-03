@@ -89,8 +89,8 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
         // Returns 0 for a fresh database that has no committee data yet.
         #[cfg(feature = "history")]
         let initial_height = committee_store.current_height().unwrap_or(0);
-        // Return the finalize storage.
-        Ok(Self {
+        // Initialize the finalize storage.
+        let storage = Self {
             committee_store,
             program_id_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::ProgramID))?,
             key_value_map: rocksdb::RocksDB::open_nested_map(N::ID, storage.clone(), MapID::Program(ProgramMap::KeyValueID))?,
@@ -104,7 +104,12 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
             #[cfg(feature = "history-staking-rewards")]
             staking_rewards_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::StakingRewards))?,
             storage_mode: storage,
-        })
+        };
+        // Rewrite any legacy little-endian history entries before the store serves anything.
+        // This is a no-op once a node has been migrated, costing a single seek.
+        #[cfg(feature = "history")]
+        rocksdb::migrate_finalize_history(&storage.mapping_update_heights_map, &storage.mapping_update_map)?;
+        Ok(storage)
     }
 
     /// Returns the committee store.
