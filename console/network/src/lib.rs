@@ -651,14 +651,10 @@ const _: () = {
         // Every instance needs a circuit to live in, so the number of circuits in a batch cannot
         // exceed the limit on the number of instances.
         assert!(N::MAX_BATCH_PROOF_INSTANCES as u64 <= snarkvm_algorithms::snark::varuna::MAX_CIRCUITS_PER_BATCH_PROOF);
-        // The largest single circuit is inclusion, which holds one instance per input record over
-        // every transition but the fee. `Transaction::MAX_TRANSITIONS` is `MAX_FUNCTIONS + 1`
-        // (see `test_transaction_depth_is_correct`), so that is `MAX_FUNCTIONS` transitions.
-        assert!(
-            (N::MAX_FUNCTIONS * N::MAX_INPUTS) as u64 <= snarkvm_algorithms::snark::varuna::MAX_INSTANCES_PER_CIRCUIT
-        );
-        // Across the whole batch: the inclusion circuit's instances, plus one instance per
-        // transition for the function circuits.
+        // Across the whole batch: the inclusion circuit holds one instance per input record over
+        // every transition but the fee -- `Transaction::MAX_TRANSITIONS` is `MAX_FUNCTIONS + 1`
+        // (see `test_transaction_depth_is_correct`), so that is `MAX_FUNCTIONS` transitions --
+        // plus one instance per transition for the function circuits.
         assert!(
             (N::MAX_FUNCTIONS * N::MAX_INPUTS + N::MAX_FUNCTIONS + 1) as u64
                 <= snarkvm_algorithms::snark::varuna::MAX_INSTANCES_PER_BATCH_PROOF

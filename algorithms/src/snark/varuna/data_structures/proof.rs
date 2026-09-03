@@ -50,24 +50,18 @@ use std::mem::size_of;
 /// assertion beside that limit keeps the two from drifting apart.
 pub const MAX_CIRCUITS_PER_BATCH_PROOF: u64 = 128;
 
-/// The maximum number of instances of any single circuit in a batch proof.
+/// The maximum number of instances across all circuits in a batch proof.
 ///
 /// The largest legitimate batch is the inclusion circuit, which holds one
 /// instance per input record. An execution carries at most
 /// `Transaction::MAX_TRANSITIONS - 1` transitions, one slot being held back
 /// for the fee (see `Transaction::check_execution_size`), so at most
-/// 31 * `Network::MAX_INPUTS` (16) = 496 records. Proofs predating the
-/// consensus limit on total instances can reach that, so this is deliberately
-/// looser than the 128 above; tightening it would reject historical blocks. A
-/// compile-time assertion in `snarkvm-console-network` pins it above the 496.
-pub const MAX_INSTANCES_PER_CIRCUIT: u64 = 512;
-
-/// The maximum number of instances across all circuits in a batch proof.
-///
-/// The inclusion circuit contributes the 496 above, and each function circuit
-/// one instance per transition, so a batch holds fewer than 528. As with the
-/// per-circuit bound this keeps room to spare, and a compile-time assertion in
-/// `snarkvm-console-network` pins it above that sum.
+/// 31 * `Network::MAX_INPUTS` (16) = 496 records; each function circuit adds
+/// one instance per transition, so a batch holds fewer than 528. Proofs
+/// predating `Network::MAX_BATCH_PROOF_INSTANCES` can reach that, so this is
+/// deliberately looser than the 128 above; tightening it would reject
+/// historical blocks. A compile-time assertion in `snarkvm-console-network`
+/// pins it above that sum.
 pub const MAX_INSTANCES_PER_BATCH_PROOF: u64 = 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
@@ -398,15 +392,16 @@ impl<E: PairingEngine> CanonicalDeserialize for Proof<E> {
         let mut total_instances = 0u64;
         for _ in 0..num_circuits {
             let batch_size = u64::deserialize_with_mode(&mut reader, compress, validate)?;
-            if batch_size == 0 || batch_size > MAX_INSTANCES_PER_CIRCUIT {
+            if batch_size == 0 {
                 return Err(SerializationError::InvalidData);
             }
-            // Cannot overflow, being at most 128 * 512.
-            total_instances += batch_size;
+            // Saturating, because `batch_size` is not itself bounded yet: the running
+            // total is what bounds it, one circuit at a time.
+            total_instances = total_instances.saturating_add(batch_size);
             if total_instances > MAX_INSTANCES_PER_BATCH_PROOF {
                 return Err(SerializationError::InvalidData);
             }
-            // Cannot fail: `batch_size` is at most 512 by the check above, and `usize` is
+            // Cannot fail: `batch_size` is at most 1024 by the check above, and `usize` is
             // at least 16 bits wide on every target.
             batch_sizes.push(usize::try_from(batch_size)?);
         }
@@ -678,8 +673,9 @@ mod test {
             (vec![], "no circuits"),
             (vec![0u64], "a circuit with no instances"),
             (vec![1u64; MAX_CIRCUITS_PER_BATCH_PROOF as usize + 1], "too many circuits"),
-            (vec![MAX_INSTANCES_PER_CIRCUIT + 1], "too many instances in one circuit"),
-            (vec![MAX_INSTANCES_PER_CIRCUIT; 4], "too many instances in total"),
+            (vec![MAX_INSTANCES_PER_BATCH_PROOF + 1], "one circuit holding more than the whole batch allows"),
+            (vec![1, u64::MAX], "an instance count that would wrap the running total past zero"),
+            (vec![MAX_INSTANCES_PER_BATCH_PROOF / 2 + 1; 2], "too many instances in total"),
         ];
         for (sizes, why) in rejected {
             let bytes = batch_sizes_blob(&sizes);
@@ -692,7 +688,7 @@ mod test {
         // Batch sizes within the bounds get past these checks and fail on the truncated
         // body instead, so the assertions above are rejecting the counts and
         // not the short buffer.
-        let bytes = batch_sizes_blob(&[MAX_INSTANCES_PER_CIRCUIT]);
+        let bytes = batch_sizes_blob(&[MAX_INSTANCES_PER_BATCH_PROOF]);
         assert!(matches!(Proof::<Bls12_377>::deserialize_compressed(&bytes[..]), Err(SerializationError::IoError(_))));
     }
 
