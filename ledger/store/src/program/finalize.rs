@@ -36,6 +36,8 @@ use indexmap::IndexSet;
 use locktick::parking_lot::RwLock;
 #[cfg(all(feature = "slipstream-plugins", not(feature = "locktick")))]
 use parking_lot::RwLock;
+#[cfg(all(feature = "history", not(feature = "serial")))]
+use rayon::prelude::*;
 #[cfg(feature = "slipstream-plugins")]
 use snarkvm_slipstream_plugin_manager::{BroadcastEvent, BroadcastEventKind, SlipstreamPluginManager};
 #[cfg(feature = "slipstream-plugins")]
@@ -54,14 +56,70 @@ struct SerializedMappingEntries {
 
 /// The block height component of a [`FinalizeStorage::MappingUpdateMap`] key, stored as 4 raw bytes.
 ///
-/// New entries encode the height in **big-endian** order so that lexicographic key order matches
+/// Entries encode the height in **big-endian** order so that lexicographic key order matches
 /// numeric height order, enabling O(log n) floor seeks via `get_floor_confirmed`.
-///
-/// Legacy entries (written before this schema change) use **little-endian** order (the `bincode`
-/// default for `u32`).  They are distinguished at read time by the presence of an entry in
-/// `mapping_update_heights_map`; see `get_historical_mapping_value` for details.
 #[cfg(feature = "history")]
 pub(crate) type HeightBytes = [u8; 4];
+
+/// The number of legacy mapping keys migrated in a single atomic batch.
+#[cfg(feature = "history")]
+const MIGRATION_BATCH_SIZE: usize = 2048;
+
+/// Migrates legacy little-endian historical mapping updates to big-endian keys.
+///
+/// Each batch is migrated atomically so an interrupted migration can safely resume at startup.
+/// Reads are parallelized across keys; writes remain serial inside the atomic batch.
+#[cfg(feature = "history")]
+pub(crate) fn migrate_legacy_mapping_updates<N: Network, P: FinalizeStorage<N>>(storage: &P) -> Result<()> {
+    loop {
+        let legacy_entries = storage
+            .mapping_update_heights_map()
+            .iter_confirmed()
+            .take(MIGRATION_BATCH_SIZE)
+            .map(|(key, heights)| (key.into_owned(), heights.into_owned()))
+            .collect::<Vec<_>>();
+
+        if legacy_entries.is_empty() {
+            return Ok(());
+        }
+
+        // Parallelize confirmed reads across keys. Writes stay serial below so they do not contend
+        // on the atomic-batch mutex and so a failed read never races with abort_atomic.
+        let prepared = cfg_iter!(legacy_entries)
+            .map(|((program_id, mapping_name, mapping_key), heights)| {
+                let legacy_keys = heights
+                    .iter()
+                    .map(|height| (*program_id, *mapping_name, mapping_key.clone(), height.to_le_bytes()))
+                    .collect::<Vec<_>>();
+                let values = storage.mapping_update_map().get_many_confirmed(&legacy_keys)?;
+                Ok(((*program_id, *mapping_name, mapping_key.clone()), heights.clone(), legacy_keys, values))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        atomic_batch_scope!(storage, {
+            // Remove every LE source first, then insert every BE destination. Atomic batches keep the
+            // last op per key, so this ordering preserves values when LE and BE encodings collide
+            // (identical bytes, or swapped pairs such as heights 256 and 65_536).
+            for ((program_id, mapping_name, mapping_key), heights, legacy_keys, values) in &prepared {
+                for ((height, legacy_key), value) in heights.iter().zip_eq(legacy_keys).zip_eq(values) {
+                    ensure!(value.is_some(), "Missing legacy mapping update at height {height}");
+                    storage.mapping_update_map().remove(legacy_key)?;
+                }
+                storage.mapping_update_heights_map().remove(&(*program_id, *mapping_name, mapping_key.clone()))?;
+            }
+            for ((program_id, mapping_name, mapping_key), heights, _legacy_keys, values) in prepared {
+                for (height, value) in heights.into_iter().zip_eq(values) {
+                    // Checked above while preparing the removals.
+                    let value = value.ok_or_else(|| anyhow!("Missing legacy mapping update at height {height}"))?;
+                    storage
+                        .mapping_update_map()
+                        .insert((program_id, mapping_name, mapping_key.clone(), height.to_be_bytes()), value)?;
+                }
+            }
+            Ok(())
+        })?;
+    }
+}
 
 /// TODO (howardwu): Remove this.
 /// Returns the mapping ID for the given `program ID` and `mapping name`.
@@ -111,20 +169,14 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     type KeyValueMap: for<'a> NestedMap<'a, (ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
     /// The mapping of `transaction ID` to `rejection reason`.
     type RejectedReasonMap: for<'a> Map<'a, Field<N>, RejectedReason<N>>;
-    /// The mapping of `(program ID, mapping name, key, height)` to `value`.
-    ///
-    /// The height component is a [`HeightBytes`]: big-endian for new entries, little-endian
-    /// for legacy entries (detected via `mapping_update_heights_map`).
-    ///
-    /// Big-endian encoding lets lexicographic key order match numeric height order, enabling
+    /// The mapping of `(program ID, mapping name, key, height)` to `value`, where the height is
+    /// encoded as [`HeightBytes`] in big-endian order. This lets lexicographic key order match
+    /// numeric height order, enabling
     /// O(log n) floor lookups via `get_floor_confirmed`.
     #[cfg(feature = "history")]
     type MappingUpdateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>;
-    /// The mapping of `(program ID, mapping name, key)` to `[height]`.
-    ///
-    /// Present only for keys written before the big-endian schema change. Acts as a
-    /// "legacy sentinel": if an entry exists here the key still uses the old LE encoding,
-    /// and `get_historical_mapping_value` falls back to the O(n) binary-search path.
+    /// The mapping of legacy `(program ID, mapping name, key)` to `[height]`, used only while
+    /// migrating little-endian history entries at startup.
     #[cfg(feature = "history")]
     type MappingUpdateHeightsMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>;
     /// The mapping of `(staker address, height)` to `(validator address, block reward, new stake)`.
@@ -145,7 +197,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Returns the historical mapping value map.
     #[cfg(feature = "history")]
     fn mapping_update_map(&self) -> &Self::MappingUpdateMap;
-    /// Returns the historical mapping update heights map (legacy: present only for pre-schema-change keys).
+    /// Returns the legacy historical mapping update heights map.
     #[cfg(feature = "history")]
     fn mapping_update_heights_map(&self) -> &Self::MappingUpdateHeightsMap;
     /// Returns the historical staking rewards map.
@@ -367,27 +419,11 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
 
         atomic_batch_scope!(self, {
             // Record the updated value at the current height in the historical map.
-            // The update heights are reconstructed on read by scanning this map's height suffix,
-            // so no separate (and ever-growing) per-key heights vector is maintained here.
             #[cfg(feature = "history")]
             {
                 let current_height = self.current_block_height().load(Ordering::SeqCst);
-                let heights_key = (program_id, mapping_name, key.clone());
-
-                // If this key has a legacy heights-map entry it was written before the BE schema
-                // change; continue appending to the heights vec and write with the original LE
-                // encoding so that reads using the heights-map path remain correct.
-                if let Some(heights) = self.mapping_update_heights_map().get_confirmed(&heights_key)? {
-                    let mut heights = heights.into_owned();
-                    self.mapping_update_map()
-                        .insert((program_id, mapping_name, key.clone(), current_height.to_le_bytes()), value.clone())?;
-                    heights.push(current_height);
-                    self.mapping_update_heights_map().insert(heights_key, heights)?;
-                } else {
-                    // New key: use the big-endian encoding so floor seeks work correctly.
-                    self.mapping_update_map()
-                        .insert((program_id, mapping_name, key.clone(), current_height.to_be_bytes()), value.clone())?;
-                }
+                self.mapping_update_map()
+                    .insert((program_id, mapping_name, key.clone(), current_height.to_be_bytes()), value.clone())?;
             }
 
             // Update the key-value map with the new key-value.
@@ -451,29 +487,11 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
             // Insert the new key-value entries.
             for (key, value) in entries {
                 // Record the updated value at the current height in the historical map.
-                // The update heights are reconstructed on read by scanning this map's height suffix,
-                // so no separate (and ever-growing) per-key heights vector is maintained here.
                 #[cfg(feature = "history")]
                 {
                     let current_height = self.current_block_height().load(Ordering::SeqCst);
-                    let heights_key = (program_id, mapping_name, key.clone());
-
-                    // Legacy keys (pre-BE schema) continue using LE encoding + heights vec.
-                    if let Some(heights) = self.mapping_update_heights_map().get_confirmed(&heights_key)? {
-                        let mut heights = heights.into_owned();
-                        self.mapping_update_map().insert(
-                            (program_id, mapping_name, key.clone(), current_height.to_le_bytes()),
-                            value.clone(),
-                        )?;
-                        heights.push(current_height);
-                        self.mapping_update_heights_map().insert(heights_key, heights)?;
-                    } else {
-                        // New key: big-endian encoding.
-                        self.mapping_update_map().insert(
-                            (program_id, mapping_name, key.clone(), current_height.to_be_bytes()),
-                            value.clone(),
-                        )?;
-                    }
+                    self.mapping_update_map()
+                        .insert((program_id, mapping_name, key.clone(), current_height.to_be_bytes()), value.clone())?;
                 }
 
                 // Insert the key-value entry.
@@ -859,13 +877,8 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
 
     /// Returns the historical value of a mapping at or before the given block height.
     ///
-    /// **Fast path** (new keys, no `mapping_update_heights_map` entry): single O(log n)
-    /// floor seek on `mapping_update_map`, which uses big-endian height encoding.
-    ///
-    /// **Legacy path** (keys written before the BE schema change, heights-map entry
-    /// present): O(n) binary search over the heights `Vec`, then a point lookup using
-    /// the original little-endian encoding. Correct but slower; these keys stay on this
-    /// path until the node is resynced or an offline migration is performed.
+    /// A single O(log n) floor seek on `mapping_update_map` finds the value because its height
+    /// keys use big-endian encoding.
     #[cfg(feature = "history")]
     pub fn get_historical_mapping_value(
         &self,
@@ -879,26 +892,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             return Ok(None);
         }
 
-        // Check for a legacy heights-map entry (pre-BE schema change).
-        let heights_key = (program_id, mapping_name, mapping_key.clone());
-        if let Some(heights) = self.storage.mapping_update_heights_map().get_confirmed(&heights_key)? {
-            // Legacy O(n) path: binary search on the heights Vec.
-            let heights = heights.into_owned();
-            let applicable_height = match heights.binary_search(&height) {
-                Ok(_) => height,
-                Err(0) => return Ok(None),
-                Err(idx) => heights[idx - 1],
-            };
-            // Look up with the original little-endian encoding.
-            return self.storage.mapping_update_map().get_confirmed(&(
-                program_id,
-                mapping_name,
-                mapping_key,
-                applicable_height.to_le_bytes(),
-            ));
-        }
-
-        // New fast path: O(log n) floor seek with big-endian encoding.
+        // Find the floor value with big-endian encoded heights.
         let seek_key = (program_id, mapping_name, mapping_key.clone(), height.to_be_bytes());
         match self.storage.mapping_update_map().get_floor_confirmed(&seek_key)? {
             Some((found_key, found_value)) => {
@@ -911,9 +905,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
 
     /// Returns the heights at which past mapping updates occurred, in ascending order.
     ///
-    /// For legacy keys (heights-map entry present) the list is read directly from the
-    /// heights map. For new keys it is reconstructed by scanning `mapping_update_map`.
-    /// Either way this is O(n updates) and is intended for diagnostic / test use only.
+    /// This is O(n updates) and is intended for diagnostic / test use only.
     #[cfg(feature = "history")]
     pub fn get_mapping_update_heights(
         &self,
@@ -921,25 +913,13 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         mapping_name: Identifier<N>,
         mapping_key: Plaintext<N>,
     ) -> Result<Option<Cow<'_, Vec<u32>>>, Error> {
-        // Legacy path: heights are stored explicitly in the heights map.
-        let heights_key = (program_id, mapping_name, mapping_key.clone());
-        if let Some(heights) = self.storage.mapping_update_heights_map().get_confirmed(&heights_key)? {
-            return Ok(Some(heights));
-        }
-
-        // New path: reconstruct from mapping_update_map keys (big-endian encoded heights).
+        // Reconstruct from mapping_update_map keys.
         let mut heights: Vec<u32> = self
             .storage
             .mapping_update_map()
-            .iter_confirmed()
-            .filter_map(|(k, _v)| {
-                let (p, m, key, h_be) = k.into_owned();
-                if p == program_id && m == mapping_name && key == mapping_key {
-                    Some(u32::from_be_bytes(h_be))
-                } else {
-                    None
-                }
-            })
+            .get_keys_confirmed_with_prefix(&(program_id, mapping_name, mapping_key))?
+            .into_iter()
+            .map(|(_, _, _, height)| u32::from_be_bytes(height))
             .collect();
 
         if heights.is_empty() {
@@ -1972,11 +1952,10 @@ mod tests {
         assert_eq!(&*heights, &[10, 20, 50, 100]);
     }
 
-    /// Verifies the legacy (pre-BE schema) read path: keys whose heights are stored in
-    /// `mapping_update_heights_map` continue to be found correctly via binary search.
+    /// Verifies legacy history entries are migrated to big-endian height keys.
     #[test]
     #[cfg(feature = "history")]
-    fn test_get_historical_mapping_value_legacy() {
+    fn test_migrate_legacy_mapping_updates() {
         use std::sync::atomic::Ordering;
 
         let program_id = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
@@ -2007,7 +1986,26 @@ mod tests {
             .mapping_update_heights_map()
             .insert((program_id, mapping_name, key.clone()), vec![5, 10])
             .unwrap();
+        migrate_legacy_mapping_updates(&finalize_store.storage).unwrap();
         finalize_store.storage.current_block_height().store(20, Ordering::SeqCst);
+
+        // The legacy sentinel and little-endian entries are removed.
+        assert!(
+            finalize_store
+                .storage
+                .mapping_update_heights_map()
+                .get_confirmed(&(program_id, mapping_name, key.clone()))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            finalize_store
+                .storage
+                .mapping_update_map()
+                .get_confirmed(&(program_id, mapping_name, key.clone(), 5u32.to_le_bytes()))
+                .unwrap()
+                .is_none()
+        );
 
         // Height before first update → None.
         assert!(
@@ -2032,5 +2030,143 @@ mod tests {
         let heights =
             finalize_store.get_mapping_update_heights(program_id, mapping_name, key.clone()).unwrap().unwrap();
         assert_eq!(&*heights, &[5, 10]);
+    }
+
+    /// Verifies migration preserves values when LE and BE height encodings collide.
+    #[test]
+    #[cfg(feature = "history")]
+    fn test_migrate_legacy_mapping_updates_endian_collisions() {
+        use std::sync::atomic::Ordering;
+
+        let program_id = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
+        let mapping_name = Identifier::from_str("account").unwrap();
+        let key = Plaintext::from_str("1field").unwrap();
+
+        // Height whose LE and BE encodings are identical.
+        let self_collision = 65_792u32;
+        assert_eq!(self_collision.to_le_bytes(), self_collision.to_be_bytes());
+        // Heights whose LE/BE encodings swap with each other.
+        let swap_a = 256u32;
+        let swap_b = 65_536u32;
+        assert_eq!(swap_a.to_le_bytes(), swap_b.to_be_bytes());
+        assert_eq!(swap_b.to_le_bytes(), swap_a.to_be_bytes());
+
+        let program_memory = FinalizeMemory::open(StorageMode::Test(None)).unwrap();
+        let finalize_store = FinalizeStore::from(program_memory).unwrap();
+        finalize_store.initialize_mapping(program_id, mapping_name).unwrap();
+
+        let value_self = Value::from_str("1u64").unwrap();
+        let value_a = Value::from_str("2u64").unwrap();
+        let value_b = Value::from_str("3u64").unwrap();
+        for (height, value) in
+            [(self_collision, value_self.clone()), (swap_a, value_a.clone()), (swap_b, value_b.clone())]
+        {
+            finalize_store
+                .storage
+                .mapping_update_map()
+                .insert((program_id, mapping_name, key.clone(), height.to_le_bytes()), value)
+                .unwrap();
+        }
+        finalize_store
+            .storage
+            .mapping_update_heights_map()
+            .insert((program_id, mapping_name, key.clone()), vec![self_collision, swap_a, swap_b])
+            .unwrap();
+        finalize_store.storage.current_block_height().store(self_collision, Ordering::SeqCst);
+
+        migrate_legacy_mapping_updates(&finalize_store.storage).unwrap();
+
+        assert_eq!(
+            *finalize_store
+                .get_historical_mapping_value(program_id, mapping_name, key.clone(), self_collision)
+                .unwrap()
+                .unwrap(),
+            value_self
+        );
+        assert_eq!(
+            *finalize_store
+                .get_historical_mapping_value(program_id, mapping_name, key.clone(), swap_a)
+                .unwrap()
+                .unwrap(),
+            value_a
+        );
+        assert_eq!(
+            *finalize_store.get_historical_mapping_value(program_id, mapping_name, key, swap_b).unwrap().unwrap(),
+            value_b
+        );
+    }
+
+    /// Measures legacy history migration throughput.
+    #[test]
+    #[ignore]
+    #[cfg(feature = "history")]
+    fn test_migrate_legacy_mapping_updates_timings() {
+        // Default to 100,000 entries if the environment variable is absent or invalid.
+        let num_items = std::env::var("MIGRATION_NUM_ITEMS")
+            .unwrap_or_else(|_| "100000".to_string())
+            .parse()
+            .expect("Failed to parse MIGRATION_NUM_ITEMS as usize");
+        // Default to one historical update per legacy mapping key.
+        let num_heights = std::env::var("MIGRATION_HEIGHTS_PER_KEY")
+            .unwrap_or_else(|_| "1".to_string())
+            .parse()
+            .expect("Failed to parse MIGRATION_HEIGHTS_PER_KEY as u32");
+
+        #[cfg(not(feature = "rocks"))]
+        let storage = FinalizeMemory::open(StorageMode::Test(None)).unwrap();
+
+        #[cfg(feature = "rocks")]
+        let storage = {
+            let temp_dir = std::sync::Arc::new(tempfile::tempdir().expect("Failed to open temporary directory"));
+            crate::helpers::rocksdb::FinalizeDB::open(temp_dir).unwrap()
+        };
+
+        let program_id = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
+        let mapping_name = Identifier::from_str("account").unwrap();
+        let value = Value::from_str("5u64").unwrap();
+        for index in 0..num_items {
+            let key = Plaintext::from_str(&format!("{index}field")).unwrap();
+            let heights = (0u32..num_heights).map(|offset| offset + 5).collect::<Vec<_>>();
+            for height in &heights {
+                storage
+                    .mapping_update_map()
+                    .insert((program_id, mapping_name, key.clone(), height.to_le_bytes()), value.clone())
+                    .unwrap();
+            }
+            storage.mapping_update_heights_map().insert((program_id, mapping_name, key), heights).unwrap();
+        }
+
+        let timer = std::time::Instant::now();
+        migrate_legacy_mapping_updates(&storage).unwrap();
+        let elapsed = timer.elapsed();
+        let num_updates = num_items * usize::try_from(num_heights).expect("u32 always fits in usize");
+        println!(
+            "migrate_legacy_mapping_updates: {num_items} keys / {num_updates} updates in {elapsed:?} ({:.0} updates/s)",
+            num_updates as f64 / elapsed.as_secs_f64()
+        );
+    }
+
+    /// Verifies all legacy entries are migrated when they span multiple batches.
+    #[test]
+    #[cfg(feature = "history")]
+    fn test_migrate_legacy_mapping_updates_in_batches() {
+        let program_id = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
+        let mapping_name = Identifier::from_str("account").unwrap();
+        let storage = FinalizeMemory::open(StorageMode::Test(None)).unwrap();
+        let value = Value::from_str("5u64").unwrap();
+
+        for index in 0..=MIGRATION_BATCH_SIZE {
+            let key = Plaintext::from_str(&format!("{index}field")).unwrap();
+            storage
+                .mapping_update_map()
+                .insert((program_id, mapping_name, key.clone(), 5u32.to_le_bytes()), value.clone())
+                .unwrap();
+            storage.mapping_update_heights_map().insert((program_id, mapping_name, key), vec![5]).unwrap();
+        }
+
+        migrate_legacy_mapping_updates(&storage).unwrap();
+
+        assert_eq!(storage.mapping_update_heights_map().iter_confirmed().count(), 0);
+        assert_eq!(storage.mapping_update_map().iter_confirmed().count(), MIGRATION_BATCH_SIZE + 1);
     }
 }
