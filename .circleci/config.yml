@@ -18,24 +18,12 @@ parameters:
     default: 2xlarge
   # The toolchain `check-fmt` formats with.
   #
-  # `.rustfmt.toml` uses options that only exist on nightly -- imports_layout,
-  # imports_granularity, overflow_delimited_expr, reorder_impl_items and
-  # style_edition -- so the formatter cannot be the 1.88.0 this project builds
-  # with, and `cargo fmt` without a toolchain silently drops all five rather
-  # than refusing. The formatter is therefore a second toolchain, and pinning
-  # it is the same act as pinning the first.
+  # `.rustfmt.toml` uses nightly-only options, so the formatter is a second
+  # toolchain, pinned separately. Bumping it may reformat the tree.
   #
-  # Resolves to rustfmt 1.9.0-nightly (7e46c5f6fb 2026-04-01); rustup's dated
-  # nightlies are built from the previous day's commit. Bumping it may reformat
-  # the tree, so it should be a deliberate change with the reformatting in the
-  # same commit.
-  #
-  # `enum` rather than `string`: this value is interpolated unquoted into the
-  # `rustup toolchain install` and `cargo fmt` commands below, so a `string`
-  # parameter would let anyone able to trigger a pipeline with custom
-  # parameters inject arbitrary shell commands into the job. `enum` rejects
-  # any pipeline-trigger value that isn't in the list below before the config
-  # is compiled, closing that off. Add the new pin to the list when bumping.
+  # `enum` rather than `string`: the value is interpolated unquoted into the
+  # commands below, where a `string` would admit shell injection from a
+  # pipeline trigger.
   fmt_nightly:
     type: enum
     enum: [nightly-2026-04-02]
