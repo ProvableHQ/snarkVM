@@ -46,6 +46,24 @@ There are deployed versions of this software in the wild. Changes that alter con
 
 See @CONTRIBUTING.md for detailed memory and performance guidelines.
 
+## Code comments
+
+Comments must describe the state of the code today -- not a previous state or an
+alternative state.
+
+Exception: Comments may describe an alternative possible state of the code,
+*if* they are documenting a hazard that a future developer may otherwise walk into.
+
+Comments must not describe the rationale for a change.
+
+**Rationale may appear in: the commit message and the pull request.**
+You may self-comment on your own github pull request at select positions in the code to aide reviewers.
+
+Comments must help someone who has never heard of this change you are making.
+
+Comments must not state the obvious. Comments that explain what attributes
+do or how language constructs work are unhelpful.
+
 ## Testing
 
 **Synthesizer tests are slow** — run only the specific test function.
