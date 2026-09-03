@@ -142,7 +142,7 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
             let m = src_domain.size();
             let n = target_domain.size();
             ensure!(
-                m > 0 && m <= n && n % m == 0,
+                m > 0 && m <= n && n.is_multiple_of(m),
                 "[Returning remainder witness] Source domain {m} does not divide target domain {n}"
             );
             ensure!(
