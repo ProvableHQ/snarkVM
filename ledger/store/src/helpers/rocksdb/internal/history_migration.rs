@@ -66,7 +66,10 @@ use super::{DataMap, PREFIX_LEN, RocksDB};
 
 use anyhow::{Result, bail, ensure};
 use serde::{Serialize, de::DeserializeOwned};
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashSet,
+    time::{Duration, Instant},
+};
 
 /// The number of historical entries moved per write batch.
 ///
@@ -161,19 +164,36 @@ pub(crate) fn migrate_legacy_history(
         let (colliding, isolated): (Vec<u32>, Vec<u32>) =
             heights.iter().partition(|height| heights.binary_search(&byte_reverse(**height)).is_ok());
 
-        // Isolated heights collide with nothing in this key, so they can stream in any order.
+        // Isolated heights collide with nothing in this key, so they can stream in any order and
+        // in independent batches: a repeated one is recognised by its destination already existing.
         for chunk in isolated.chunks(CHUNK_SIZE) {
-            migrate_chunk(database, &prefix, chunk, &mut stats)?;
+            migrate_isolated_chunk(database, &prefix, chunk, &mut stats)?;
         }
-        // Colliding heights must be read before any of them is written. There are few of them
-        // (a height only collides if its byte-reversal is also an update height for this key), so
-        // one batch is safe regardless of how deep the history is.
-        migrate_chunk(database, &prefix, &colliding, &mut stats)?;
+
+        // Colliding heights cannot use that recovery, because a migrated entry is byte-identical
+        // to its partner's un-migrated source: re-reading one after a crash would yield the
+        // partner's value and transpose the pair. So each batch instead *shrinks the heights row*
+        // to the heights it has not yet moved, in the same write. A resumed run then never sees a
+        // height that has already been migrated, and the aliasing is unobservable.
+        //
+        // Partners are kept together in a batch so the surviving set always holds whole pairs,
+        // which keeps the isolated/colliding split stable across a resume.
+        let groups = partner_groups(&colliding);
+        let mut remaining = colliding.clone();
+        let mut migrated_row = false;
+        for group_chunk in chunk_groups(&groups, CHUNK_SIZE) {
+            remaining.retain(|height| !group_chunk.contains(height));
+            migrate_colliding_chunk(database, &prefix, &group_chunk, &heights_key, &remaining, &mut stats)?;
+            migrated_row = true;
+        }
         stats.collisions += colliding.len() as u64;
 
-        // Only now is the key fully migrated, so only now may its heights row go. An interruption
-        // before this point simply repeats the key.
-        database.delete(&heights_key)?;
+        // With no colliding heights nothing above touched the row, so retire it here. An
+        // interruption before this point simply repeats the key: its isolated entries are all
+        // recognised as already migrated.
+        if !migrated_row {
+            database.delete(&heights_key)?;
+        }
 
         stats.keys += 1;
         cursor = Some(heights_key);
@@ -238,12 +258,105 @@ fn next_heights_row(
     Ok(Some((key.to_vec(), value.to_vec())))
 }
 
+/// Groups colliding heights with their partners, so a batch never splits a pair.
+///
+/// `byte_reverse` is an involution, so the colliding set decomposes into disjoint pairs
+/// `{h, byte_reverse(h)}` and palindromic singletons where `h == byte_reverse(h)`. A partner is
+/// always present: `h` is only classified as colliding because its partner is an update height too.
+fn partner_groups(colliding: &[u32]) -> Vec<Vec<u32>> {
+    let mut claimed = HashSet::with_capacity(colliding.len());
+    let mut groups = Vec::new();
+    for &height in colliding {
+        if !claimed.insert(height) {
+            continue;
+        }
+        let partner = byte_reverse(height);
+        if partner == height {
+            groups.push(vec![height]);
+        } else {
+            claimed.insert(partner);
+            groups.push(vec![height, partner]);
+        }
+    }
+    groups
+}
+
+/// Packs whole groups into batches of at most `limit` heights, so partners stay together.
+fn chunk_groups(groups: &[Vec<u32>], limit: usize) -> Vec<Vec<u32>> {
+    let mut chunks = Vec::new();
+    let mut current: Vec<u32> = Vec::new();
+    for group in groups {
+        if !current.is_empty() && current.len() + group.len() > limit {
+            chunks.push(std::mem::take(&mut current));
+        }
+        current.extend_from_slice(group);
+    }
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+    chunks
+}
+
+/// Moves a batch of colliding heights, and in the same write records what is left to do.
+///
+/// The heights row is rewritten to `remaining` (or deleted when that is empty) inside this batch,
+/// so the row always lists exactly the heights still held in little-endian form. That is what makes
+/// the operation safe to repeat: a crash either loses the whole batch, leaving the row unchanged,
+/// or commits it, and the heights it moved are no longer listed for a resumed run to re-read.
+fn migrate_colliding_chunk(
+    database: &RocksDB,
+    prefix: &[u8],
+    heights: &[u32],
+    heights_key: &[u8],
+    remaining: &[u32],
+    stats: &mut MigrationStats,
+) -> Result<()> {
+    if heights.is_empty() {
+        return Ok(());
+    }
+
+    let legacy_keys = heights.iter().map(|height| entry_key(prefix, height.to_le_bytes())).collect::<Vec<_>>();
+    let values = database.multi_get(&legacy_keys);
+
+    let mut batch = rocksdb::WriteBatch::default();
+    // Read everything before writing anything, and delete before inserting, so that where a source
+    // and a destination are the same raw key the migrated value is the one that survives.
+    let mut migrated = Vec::with_capacity(heights.len());
+    for (index, value) in values.into_iter().enumerate() {
+        // Unlike the isolated path there is no already-migrated case to tolerate: a migrated height
+        // is dropped from the heights row, so it is never presented here again.
+        let Some(value) = value.map_err(|e| anyhow::anyhow!("{e}"))? else {
+            bail!("Missing legacy mapping update at height {}", heights[index]);
+        };
+        migrated.push((heights[index], value));
+    }
+    for key in &legacy_keys {
+        batch.delete(key);
+    }
+    for (height, value) in migrated {
+        batch.put(entry_key(prefix, height.to_be_bytes()), value);
+        stats.entries += 1;
+    }
+    match remaining.is_empty() {
+        true => batch.delete(heights_key),
+        false => batch.put(heights_key, bincode::serialize(&remaining.to_vec())?),
+    }
+    database.write(batch)?;
+
+    Ok(())
+}
+
 /// Moves `heights` for one mapping key from little-endian to big-endian keys, in a single batch.
 ///
-/// Every source is read before any write is queued, and every deletion is queued before any
-/// insertion, so that where a source and a destination are the same raw key the surviving value is
-/// the migrated one.
-fn migrate_chunk(database: &RocksDB, prefix: &[u8], heights: &[u32], stats: &mut MigrationStats) -> Result<()> {
+/// Only for heights that collide with nothing: their sources and destinations are disjoint from
+/// every other height of this key, so a repeated batch is harmless and is detected by the
+/// destination already existing.
+fn migrate_isolated_chunk(
+    database: &RocksDB,
+    prefix: &[u8],
+    heights: &[u32],
+    stats: &mut MigrationStats,
+) -> Result<()> {
     if heights.is_empty() {
         return Ok(());
     }

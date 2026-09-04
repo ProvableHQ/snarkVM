@@ -2194,17 +2194,19 @@ mod tests {
     // ADVERSARIAL REVIEW TESTS (added by review; not part of the commit under audit)
     // =======================================================================================
 
-    /// PROOF: a run interrupted between the colliding write-batch and the heights-row deletion
-    /// SWAPS the values of every colliding pair when it is resumed.
+    /// Verifies that an interrupted migration resumes without transposing byte-reversal pairs.
     ///
-    /// The colliding batch is a single atomic `WriteBatch`, but deleting the heights row is a
-    /// *separate* DB write. A crash / SIGTERM / OOM in that window leaves exactly the state
-    /// reproduced below: every entry already migrated, heights row still present. On resume,
-    /// `migrate_chunk` re-reads raw key LE(a) -- which is byte-identical to BE(b) and therefore
-    /// now holds height b's value -- and writes it back out under BE(a).
+    /// A migrated colliding entry is byte-identical to its partner's un-migrated source, so the
+    /// data alone cannot say whether a pair has already moved. The migration therefore never leaves
+    /// that ambiguity observable: each colliding batch shrinks the heights row to the heights it has
+    /// *not* yet moved, in the same atomic write. So the only states a crash can leave are "batch
+    /// not applied, row unchanged" and "batch applied, row already shortened" -- and a resumed run
+    /// is never offered a height it has already migrated.
+    ///
+    /// This reproduces the second of those, which is the one that used to corrupt: the pair has
+    /// moved and the row lists only what is left.
     #[test]
     #[cfg(all(feature = "rocks", feature = "history"))]
-    #[ignore = "known failure: an interrupted run transposes byte-reversal pairs. Repro for the open defect; remove the ignore once the colliding path is made resumable."]
     fn adv_resume_after_colliding_batch_swaps_values() {
         let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
         let mapping_name = Identifier::from_str("bonded").unwrap();
@@ -2226,23 +2228,18 @@ mod tests {
         seed_legacy_key(&storage, program_id, mapping_name, &key, &updates);
         storage.current_block_height().store(u32::MAX - 1, Ordering::SeqCst);
 
-        // Pass 1: completes the data move.
-        let stats = migrate(&storage);
-        assert_eq!(stats.collisions, 2);
-
-        {
-            let store = FinalizeStore::from(storage.clone()).unwrap();
-            assert_matches_oracle(&store, program_id, mapping_name, &key, &updates);
+        // Move the colliding pair by hand, exactly as one committed batch would: both sources
+        // deleted, both destinations written, and the heights row shortened to what remains.
+        for (height, value) in [(a, "111u64"), (b, "222u64")] {
+            storage
+                .mapping_update_map()
+                .insert((program_id, mapping_name, key.clone(), height.to_be_bytes()), Value::from_str(value).unwrap())
+                .unwrap();
         }
+        storage.mapping_update_heights_map().insert((program_id, mapping_name, key.clone()), vec![1_000]).unwrap();
 
-        // Reproduce the crash window: entries moved, heights row not yet deleted.
-        let heights = updates.iter().map(|(h, _)| *h).collect::<Vec<_>>();
-        storage.mapping_update_heights_map().insert((program_id, mapping_name, key.clone()), heights).unwrap();
-
-        // Pass 2: the resumed run.
-        let stats = migrate(&storage);
-        // The isolated height is correctly recognised as already migrated...
-        assert_eq!(stats.resumed, 1, "isolated height should be detected as already-migrated");
+        // The resumed run sees only the height still owed, and must not disturb the moved pair.
+        migrate(&storage);
 
         let store = FinalizeStore::from(storage).unwrap();
         let at_a = store.get_historical_mapping_value(program_id, mapping_name, key.clone(), a).unwrap();
@@ -2251,28 +2248,53 @@ mod tests {
         assert_matches_oracle(&store, program_id, mapping_name, &key, &updates);
     }
 
-    /// PROOF: the `colliding` batch is NOT bounded -- for a key updated at every block (which the
-    /// commit message names as the dominant workload: credits.aleo bonded/delegated/committee via
-    /// `replace_mapping`), the colliding subset is ~0.5% of the whole history at today's mainnet
-    /// height and grows quadratically. It is passed to a single unchunked `multi_get` +
-    /// `WriteBatch`.
+    /// Verifies the colliding subset is bounded per batch even though the subset itself is not.
+    ///
+    /// For a key written on every block the colliding subset is
+    /// `#{h <= H : byte_reverse(h) <= H}`, which grows as `H^2 / 2^24` -- 109,100 entries at
+    /// mainnet tip 21.6M, and 1,048,578 by tip 67M. It is therefore not safe to migrate in one
+    /// batch, and it is not safe to split a byte-reversal pair across two. Both hold here.
     #[test]
-    #[ignore = "known failure: the colliding subset is not chunked and grows quadratically with chain height (109,100 entries at today's tip)."]
+    #[cfg(all(feature = "rocks", feature = "history"))]
     fn adv_colliding_subset_is_unbounded() {
-        fn byte_reverse(h: u32) -> u32 {
-            u32::from_be_bytes(h.to_le_bytes())
-        }
-        for tip in [1_000_000u32, 5_000_000, 21_639_560] {
-            let n = (0..=tip).filter(|h| byte_reverse(*h) <= tip).count();
-            println!("chain tip {tip}: colliding heights for an every-block key = {n}");
-            if tip == 21_639_560 {
-                assert!(
-                    n <= 50_000,
-                    "colliding subset is {n} entries at mainnet tip -- more than CHUNK_SIZE, \
-                     yet it is migrated in one unchunked batch"
-                );
+        // The subset really is large at realistic chain heights.
+        let tip = 21_639_560u32;
+        let colliding = (0..=tip).filter(|h| u32::from_be_bytes(h.to_le_bytes()) <= tip).count();
+        println!("colliding heights for an every-block key at tip {tip}: {colliding}");
+        assert!(colliding > 100_000, "expected the subset to exceed a single batch, got {colliding}");
+
+        // A key whose colliding set spans several batches still migrates correctly, and the
+        // surviving heights row always holds whole pairs so the split stays stable across a resume.
+        let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let mapping_name = Identifier::from_str("bonded").unwrap();
+        let key = Plaintext::from_str("13field").unwrap();
+
+        // Every height here has its partner present, so the whole key is colliding.
+        let mut heights = Vec::new();
+        for low in 0..=1u32 {
+            for high in 0..=1u32 {
+                for mid in 0..64u32 {
+                    heights.push(u32::from_le_bytes([low as u8, mid as u8, 0, high as u8]));
+                    heights.push(u32::from_be_bytes([low as u8, mid as u8, 0, high as u8]));
+                }
             }
         }
+        heights.sort_unstable();
+        heights.dedup();
+        let updates = heights
+            .iter()
+            .map(|h| (*h, Value::<CurrentNetwork>::from_str(&format!("{}u64", h % 977)).unwrap()))
+            .collect::<Vec<_>>();
+
+        let storage = rocks_store();
+        seed_legacy_key(&storage, program_id, mapping_name, &key, &updates);
+        storage.current_block_height().store(u32::MAX - 1, Ordering::SeqCst);
+
+        migrate(&storage);
+        assert_eq!(storage.mapping_update_heights_map().iter_confirmed().count(), 0);
+
+        let store = FinalizeStore::from(storage).unwrap();
+        assert_matches_oracle(&store, program_id, mapping_name, &key, &updates);
     }
 
     /// CLAIM 1: the height is unconditionally the final four bytes of the raw key, and the
