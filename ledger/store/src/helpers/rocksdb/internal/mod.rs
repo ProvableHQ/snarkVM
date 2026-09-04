@@ -147,9 +147,14 @@ fn migrate_storage(database: &rocksdb::DB, network_id: u16) -> Result<()> {
             other => bail!("No storage migration is defined for schema v{other}"),
         }
         version += 1;
-        // The cursor belongs to the migration that just finished; the next one starts clean.
-        delete_metadata(database, network_id, MetadataKey::StorageMigrationCursor)?;
-        put_metadata(database, network_id, MetadataKey::StorageVersion, &version.to_le_bytes())?;
+        // The version and the disposal of the finished migration's cursor commit together. Deleting
+        // the cursor first would, if interrupted, leave the version unadvanced with no record that
+        // the migration had completed -- so it would run again from scratch over data it had
+        // already converted.
+        let mut batch = rocksdb::WriteBatch::default();
+        batch.put(metadata_key(network_id, MetadataKey::StorageVersion), version.to_le_bytes());
+        batch.delete(metadata_key(network_id, MetadataKey::StorageMigrationCursor));
+        database.write(batch)?;
     }
 
     Ok(())

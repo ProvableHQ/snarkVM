@@ -61,7 +61,7 @@
 //! interrupted run reads the list back and continues from the index, never re-deriving what it has
 //! already moved.
 
-use super::{MapID, MetadataKey, PREFIX_LEN, ProgramMap, delete_metadata, get_metadata, put_metadata};
+use super::{MapID, MetadataKey, PREFIX_LEN, ProgramMap, get_metadata, metadata_key};
 
 use anyhow::{Result, bail};
 use std::{
@@ -141,6 +141,7 @@ pub(crate) fn migrate(database: &rocksdb::DB, network_id: u16) -> Result<()> {
     let mut announced = false;
     let mut keys = 0u64;
     let mut entries = 0u64;
+    let mut already_big = 0u64;
 
     loop {
         // The key being resumed is processed again from `resume_index`; otherwise advance.
@@ -167,14 +168,29 @@ pub(crate) fn migrate(database: &rocksdb::DB, network_id: u16) -> Result<()> {
             announced = true;
         }
 
-        // The original heights of this key. Recorded before anything moves, because once a key is
-        // partially migrated its entries no longer say what they were.
+        // The little-endian heights of this key, recorded before anything moves: once a key is
+        // partially migrated its entries no longer say what they were, so a resumed run must read
+        // its work back rather than re-derive it.
+        //
+        // The heights and the cursor that points at them are written together. Written separately,
+        // an interruption in between leaves a cursor naming one key beside another key's heights,
+        // and the resumed run migrates the wrong list under the wrong prefix.
         let heights = match resume_index > 0 {
             true => read_recorded_heights(database, network_id)?,
             false => {
-                let scanned = scan_heights(database, &update_context, &body)?;
-                record_heights(database, network_id, &scanned)?;
-                scanned
+                let classified = classify_entries(database, &update_context, &body)?;
+                already_big += classified.big;
+                let mut batch = rocksdb::WriteBatch::default();
+                batch.put(
+                    metadata_key(network_id, MetadataKey::StorageMigrationHeights),
+                    bincode::serialize(&classified.little)?,
+                );
+                batch.put(
+                    metadata_key(network_id, MetadataKey::StorageMigrationCursor),
+                    bincode::serialize(&(&body, 0u64))?,
+                );
+                database.write(batch)?;
+                classified.little
             }
         };
 
@@ -182,7 +198,7 @@ pub(crate) fn migrate(database: &rocksdb::DB, network_id: u16) -> Result<()> {
         prefix.extend_from_slice(&update_context);
         prefix.extend_from_slice(&body);
 
-        entries += migrate_key(database, network_id, &prefix, &body, &heights, resume_index as usize)?;
+        entries += migrate_key(database, network_id, &prefix, &body, &heights, resume_index)?;
         resume_index = 0;
         keys += 1;
         cursor = Some(body);
@@ -200,13 +216,26 @@ pub(crate) fn migrate(database: &rocksdb::DB, network_id: u16) -> Result<()> {
     // The heights map is not consulted by anything after this point, and keeping it would leave the
     // read-modify-write path that made it grow in the first place.
     drop_map(database, &heights_context)?;
-    delete_metadata(database, network_id, MetadataKey::StorageMigrationHeights)?;
-    // Record completion before returning, so that a crash before the runner advances the version
-    // does not start this over on an already-migrated database.
-    advance_cursor(database, network_id, &[], CURSOR_COMPLETE)?;
+    // Completion and the disposal of the working state commit together. Deleting the heights first
+    // would, if interrupted, leave a cursor pointing at a key whose heights are gone -- which the
+    // resumed run can only report as an unrecoverable error, on a migration that had in fact
+    // finished. The sentinel exists because the runner advances the schema version only after this
+    // returns, and a crash in between would otherwise restart a completed migration over
+    // big-endian data.
+    let mut batch = rocksdb::WriteBatch::default();
+    batch.put(
+        metadata_key(network_id, MetadataKey::StorageMigrationCursor),
+        bincode::serialize(&(Vec::<u8>::new(), CURSOR_COMPLETE))?,
+    );
+    batch.delete(metadata_key(network_id, MetadataKey::StorageMigrationHeights));
+    database.write(batch)?;
 
     if announced {
-        tracing::info!("History repair complete: {keys} keys, {entries} entries in {:.1?}", started.elapsed());
+        tracing::info!(
+            "History repair complete: {keys} keys, {entries} entries migrated, {already_big} \
+             already big-endian, in {:.1?}",
+            started.elapsed()
+        );
     }
 
     Ok(())
@@ -249,16 +278,43 @@ fn next_body(database: &rocksdb::DB, update_context: &[u8], after: Option<&[u8]>
     Ok(Some(key[update_context.len()..key.len() - 4].to_vec()))
 }
 
-/// Returns the heights of every entry belonging to one mapping key, in ascending order.
+/// How an entry's four height bytes should be read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Encoding {
+    /// Written by snarkOS <= v4.8.0; needs migrating.
+    Little,
+    /// Written by snarkOS v4.8.1+; already in the target form.
+    Big,
+}
+
+/// The entries of one mapping key, with the encoding each was written in.
+struct KeyEntries {
+    /// Heights still in little-endian form, ascending. These are the work.
+    little: Vec<u32>,
+    /// How many entries were already big-endian, for reporting.
+    big: u64,
+}
+
+/// Reads every entry of one mapping key and decides how each was written.
 ///
-/// Panics if any entry cannot be little-endian, which proves a v4.8.1+ build wrote here and that
-/// the database is a mixture this migration must not guess at.
-fn scan_heights(database: &rocksdb::DB, update_context: &[u8], body: &[u8]) -> Result<Vec<u32>> {
+/// Both encodings can occur under a single key, and this is the *expected* shape rather than an
+/// edge case: a key first written during the v4.7.5/v4.8.0 window has no heights row, so when a
+/// v4.8.1+ build took over it took the big-endian branch for that key while its earlier entries
+/// stayed little-endian.
+///
+/// The two are told apart by which reading is a plausible height. Where only one is, the answer is
+/// certain. Where both are -- roughly one entry in 128, those whose height ends in 0x00 or 0x01 --
+/// the tie is broken by *when* each encoding was in use: within a key every little-endian entry
+/// predates every big-endian one, so the two occupy disjoint height ranges. `byte_reverse` scatters
+/// values across the whole `u32` space, so a genuinely ambiguous entry would have to have both of
+/// its readings land inside those narrow ranges, which is rare enough to report rather than guess.
+fn classify_entries(database: &rocksdb::DB, update_context: &[u8], body: &[u8]) -> Result<KeyEntries> {
     let mut prefix = Vec::with_capacity(update_context.len() + body.len());
     prefix.extend_from_slice(update_context);
     prefix.extend_from_slice(body);
 
-    let mut heights = Vec::new();
+    // Collect the raw suffixes first; the encoding of the ambiguous ones depends on the rest.
+    let mut suffixes = Vec::new();
     let mut iterator = database.raw_iterator();
     iterator.seek(&prefix);
     while iterator.valid() {
@@ -266,26 +322,73 @@ fn scan_heights(database: &rocksdb::DB, update_context: &[u8], body: &[u8]) -> R
         if !key.starts_with(&prefix) || key.len() != prefix.len() + 4 {
             break;
         }
-        let suffix: [u8; 4] = key[prefix.len()..].try_into().expect("checked length");
-        let height = u32::from_le_bytes(suffix);
-        assert!(
-            height < IMPLAUSIBLE_HEIGHT,
-            "This ledger contains historical mapping entries in the big-endian schema, which this \
-             repair cannot safely separate from little-endian ones. The node must resync from \
-             genesis. (Found an entry whose little-endian height reads as {height}, which is not a \
-             plausible block height.)"
-        );
-        heights.push(height);
+        suffixes.push(<[u8; 4]>::try_from(&key[prefix.len()..]).expect("checked length"));
         iterator.next();
     }
     iterator.status()?;
-    heights.sort_unstable();
-    Ok(heights)
-}
 
-/// Records the heights of the key about to be migrated.
-fn record_heights(database: &rocksdb::DB, network_id: u16, heights: &[u32]) -> Result<()> {
-    put_metadata(database, network_id, MetadataKey::StorageMigrationHeights, &bincode::serialize(&heights.to_vec())?)
+    // First pass: everything whose encoding is not in doubt, and the range each encoding covers.
+    let mut little = Vec::new();
+    let mut big = 0u64;
+    let mut ambiguous = Vec::new();
+    let (mut little_max, mut big_min) = (None::<u32>, None::<u32>);
+    for suffix in &suffixes {
+        let as_little = u32::from_le_bytes(*suffix);
+        let as_big = u32::from_be_bytes(*suffix);
+        match (as_little < IMPLAUSIBLE_HEIGHT, as_big < IMPLAUSIBLE_HEIGHT) {
+            (true, false) => {
+                little_max = Some(little_max.map_or(as_little, |m: u32| m.max(as_little)));
+                little.push(as_little);
+            }
+            (false, true) => {
+                big_min = Some(big_min.map_or(as_big, |m: u32| m.min(as_big)));
+                big += 1;
+            }
+            (true, true) => ambiguous.push((*suffix, as_little, as_big)),
+            (false, false) => bail!(
+                "Historical mapping entry with height bytes {suffix:?} is not a plausible height \
+                 under either encoding; the ledger is corrupt and must be resynced from genesis"
+            ),
+        }
+    }
+
+    // Second pass: place the ambiguous ones.
+    //
+    // A key that shows no evidence of one encoding was never written in it, which settles most
+    // ambiguity outright: a key with no big-endian entry was never touched by a v4.8.1+ build, so
+    // everything under it is little-endian however its bytes happen to read. Only a key that
+    // genuinely holds both needs the boundary, and there the two encodings occupy disjoint height
+    // ranges, because every little-endian entry predates every big-endian one.
+    for (suffix, as_little, as_big) in ambiguous {
+        let decided = match (little_max, big_min) {
+            // No big-endian evidence: the key predates v4.8.1 entirely.
+            (_, None) => Encoding::Little,
+            // No little-endian evidence: the key was only ever written big-endian.
+            (None, Some(_)) => Encoding::Big,
+            // Both encodings present, so place it by which side of the boundary it falls on.
+            (Some(max), Some(min)) => {
+                let fits_little = as_little <= max;
+                let fits_big = as_big >= min;
+                match (fits_little, fits_big) {
+                    (true, false) => Encoding::Little,
+                    (false, true) => Encoding::Big,
+                    _ => bail!(
+                        "Cannot determine the encoding of a historical mapping entry with height \
+                         bytes {suffix:?}: it reads as height {as_little} little-endian and \
+                         {as_big} big-endian, and this key holds entries in both encodings either \
+                         side of it. The ledger must be resynced from genesis."
+                    ),
+                }
+            }
+        };
+        match decided {
+            Encoding::Little => little.push(as_little),
+            Encoding::Big => big += 1,
+        }
+    }
+
+    little.sort_unstable();
+    Ok(KeyEntries { little, big })
 }
 
 /// Reads back the heights recorded for an interrupted key.
@@ -334,54 +437,61 @@ fn chunk_groups(groups: &[Vec<u32>], limit: usize) -> Vec<Vec<u32>> {
     chunks
 }
 
-/// Migrates one mapping key, resuming at `start` in its recorded height list.
+/// Returns the batches this key will be migrated in, in the order they will be applied.
 ///
-/// Heights whose byte-reversal is also a height of this key are migrated together, reading every
-/// value before writing any, because their sources and destinations are the same raw keys. Every
-/// other height provably collides with nothing and can move in any order.
+/// Deterministic in `heights` alone, so a resumed run rebuilds exactly the same list and can skip
+/// the batches already committed by counting entries. Byte-reversal partners share a batch, because
+/// their sources and destinations are the same raw keys.
+fn work_order(heights: &[u32]) -> Vec<Vec<u32>> {
+    let lookup = heights.iter().copied().collect::<HashSet<_>>();
+    let (colliding, isolated): (Vec<u32>, Vec<u32>) =
+        heights.iter().partition(|height| lookup.contains(&byte_reverse(**height)));
+    let mut batches: Vec<Vec<u32>> = isolated.chunks(CHUNK_SIZE).map(<[u32]>::to_vec).collect();
+    batches.extend(chunk_groups(&partner_groups(&colliding), CHUNK_SIZE));
+    batches
+}
+
+/// Migrates one mapping key, skipping the batches a previous run already committed.
 fn migrate_key(
     database: &rocksdb::DB,
     network_id: u16,
     prefix: &[u8],
     body: &[u8],
     heights: &[u32],
-    start: usize,
+    start: u64,
 ) -> Result<u64> {
-    let pending = &heights[start.min(heights.len())..];
-    let lookup = heights.iter().copied().collect::<HashSet<_>>();
-    let (colliding, isolated): (Vec<u32>, Vec<u32>) =
-        pending.iter().partition(|height| lookup.contains(&byte_reverse(**height)));
-
-    let mut done = start;
+    let mut processed = 0u64;
     let mut migrated = 0u64;
-
-    // Isolated heights touch no other height's key, so they can move in independent batches.
-    for chunk in isolated.chunks(CHUNK_SIZE) {
-        migrated += write_chunk(database, prefix, chunk)?;
-        done += chunk.len();
-        advance_cursor(database, network_id, body, done as u64)?;
+    for batch in work_order(heights) {
+        let next = processed + batch.len() as u64;
+        // Batches are atomic, so a committed one is skipped whole.
+        if next <= start {
+            processed = next;
+            continue;
+        }
+        migrated += write_chunk(database, network_id, prefix, &batch, body, next)?;
+        processed = next;
     }
-    // Colliding heights move as whole partner groups.
-    for chunk in chunk_groups(&partner_groups(&colliding), CHUNK_SIZE) {
-        migrated += write_chunk(database, prefix, &chunk)?;
-        done += chunk.len();
-        advance_cursor(database, network_id, body, done as u64)?;
-    }
-
     Ok(migrated)
 }
 
-/// Records how far into the current key's heights the migration has committed.
-fn advance_cursor(database: &rocksdb::DB, network_id: u16, body: &[u8], index: u64) -> Result<()> {
-    let value = bincode::serialize(&(body.to_vec(), index))?;
-    put_metadata(database, network_id, MetadataKey::StorageMigrationCursor, &value)
-}
-
-/// Moves a batch of heights from little-endian to big-endian keys, atomically.
+/// Moves a batch of heights to big-endian keys, recording the progress in the same write.
 ///
-/// Every source is read before any write is queued, and deletions precede insertions, so where a
-/// source and a destination are the same raw key the migrated value survives.
-fn write_chunk(database: &rocksdb::DB, prefix: &[u8], heights: &[u32]) -> Result<u64> {
+/// This is the invariant the whole resume design rests on: the cursor and the data it describes
+/// commit together or not at all. Written separately, an interruption between them replays a batch
+/// that already committed -- which for byte-reversal partners silently swaps their values back,
+/// since each one's source is the other's destination.
+///
+/// Within the batch every source is read before any write is queued, and deletions precede
+/// insertions, so where a source and a destination are the same raw key the migrated value wins.
+fn write_chunk(
+    database: &rocksdb::DB,
+    network_id: u16,
+    prefix: &[u8],
+    heights: &[u32],
+    body: &[u8],
+    processed: u64,
+) -> Result<u64> {
     if heights.is_empty() {
         return Ok(0);
     }
@@ -390,8 +500,6 @@ fn write_chunk(database: &rocksdb::DB, prefix: &[u8], heights: &[u32]) -> Result
 
     let mut moved = Vec::with_capacity(heights.len());
     for (index, value) in values.into_iter().enumerate() {
-        // A source is only absent if the recorded height list disagrees with the data, which would
-        // mean losing history rather than merely failing to move it.
         let Some(value) = value.map_err(|e| anyhow::anyhow!("{e}"))? else {
             bail!("Missing historical mapping entry at height {}", heights[index]);
         };
@@ -406,6 +514,7 @@ fn write_chunk(database: &rocksdb::DB, prefix: &[u8], heights: &[u32]) -> Result
     for (height, value) in moved {
         batch.put(entry_key(prefix, height.to_be_bytes()), value);
     }
+    batch.put(metadata_key(network_id, MetadataKey::StorageMigrationCursor), bincode::serialize(&(body, processed))?);
     database.write(batch)?;
 
     Ok(count)
@@ -561,18 +670,96 @@ mod tests {
         assert_eq!(read_migrated(&db, b"delta", 1_000), Some(b"d".to_vec()));
     }
 
-    /// A database containing big-endian entries cannot be separated, and must be refused.
-    #[test]
-    #[should_panic(expected = "must resync from genesis")]
-    fn test_mixed_database_is_refused() {
-        let (db, _dir) = database();
-        seed(&db, b"epsilon", 1_000, b"le");
-        // A big-endian entry at height 1_000_000: its little-endian reading is ~1.08 billion.
+    /// Writes a big-endian entry, as snarkOS v4.8.1+ would have.
+    fn seed_big(db: &rocksdb::DB, body: &[u8], height: u32, value: &[u8]) {
         let mut prefix = update_ctx();
-        prefix.extend_from_slice(b"epsilon");
-        db.put(entry_key(&prefix, 1_000_000u32.to_be_bytes()), b"be").unwrap();
+        prefix.extend_from_slice(body);
+        db.put(entry_key(&prefix, height.to_be_bytes()), value).unwrap();
+    }
+
+    /// A key holding both encodings migrates the little-endian half and leaves the rest alone.
+    ///
+    /// This is the shape a real ledger has, not an edge case. A key first written during the
+    /// v4.7.5/v4.8.0 window has no heights row, so a v4.8.1+ build took the big-endian branch for
+    /// it while its earlier entries stayed little-endian. Refusing the mixture would refuse the
+    /// databases this repair exists to fix.
+    #[test]
+    fn test_mixed_key_migrates_only_the_little_endian_half() {
+        let (db, _dir) = database();
+        // Written under v4.8.0: little-endian, no heights row.
+        seed(&db, b"epsilon", 30_643, b"le-early");
+        seed(&db, b"epsilon", 53_441, b"le-late");
+        // Written under v4.9.1 once the key had no row to send it down the legacy branch.
+        seed_big(&db, b"epsilon", 53_442, b"be-early");
+        seed_big(&db, b"epsilon", 76_514, b"be-late");
 
         migrate(&db, NETWORK).unwrap();
+
+        // Everything is now readable at its big-endian key, at its true height.
+        for (height, value) in
+            [(30_643u32, b"le-early".as_slice()), (53_441, b"le-late"), (53_442, b"be-early"), (76_514, b"be-late")]
+        {
+            assert_eq!(read_migrated(&db, b"epsilon", height), Some(value.to_vec()), "height {height}");
+        }
+        assert_eq!(count(&db, &update_ctx()), 4);
+    }
+
+    /// An entry that fits either encoding, on a key that genuinely holds both, is reported rather
+    /// than guessed at.
+    ///
+    /// This needs all three of: an unambiguous little-endian entry, an unambiguous big-endian one,
+    /// and an ambiguous entry whose two readings straddle the boundary between them. Absent any of
+    /// those the encoding is decidable, which is why the case is rare in practice.
+    #[test]
+    fn test_undecidable_entry_is_reported() {
+        let (db, _dir) = database();
+        // Unambiguously little-endian: its big-endian reading is ~2.18 billion.
+        seed(&db, b"eta", 53_441, b"le");
+        // Unambiguously big-endian: its little-endian reading is ~3.27 billion.
+        seed_big(&db, b"eta", 53_442, b"be");
+        // Suffix [0, 1, 0, 0]: reads as 256 little-endian (at or below the little-endian range) and
+        // 65_536 big-endian (at or above the big-endian range). Both are consistent.
+        seed(&db, b"eta", 256, b"?");
+
+        let error = migrate(&db, NETWORK).unwrap_err().to_string();
+        assert!(error.contains("Cannot determine the encoding"), "unexpected error: {error}");
+    }
+
+    /// A run interrupted at a batch boundary resumes without re-applying committed work.
+    ///
+    /// The cursor is written in the same batch as the data it describes, so it always names a batch
+    /// boundary. Replaying a committed batch would swap byte-reversal partners back, which is
+    /// exactly what this arrangement produces if the skip is wrong: heights 256 and 65_536 are
+    /// partners, so they form their own batch after the isolated one.
+    #[test]
+    fn test_resumes_at_a_batch_boundary() {
+        let (db, _dir) = database();
+        for (height, value) in [(10u32, b"a".as_slice()), (20, b"b"), (256, b"c"), (65_536, b"d")] {
+            seed(&db, b"theta", height, value);
+        }
+        let heights = vec![10u32, 20, 256, 65_536];
+        assert_eq!(work_order(&heights), vec![vec![10, 20], vec![256, 65_536]], "batching assumption");
+
+        // Apply the first batch by hand, exactly as a committed run would have left it.
+        let mut prefix = update_ctx();
+        prefix.extend_from_slice(b"theta");
+        for (height, value) in [(10u32, b"a".as_slice()), (20, b"b")] {
+            db.put(entry_key(&prefix, height.to_be_bytes()), value).unwrap();
+            db.delete(entry_key(&prefix, height.to_le_bytes())).unwrap();
+        }
+        db.put(metadata_key(NETWORK, MetadataKey::StorageMigrationHeights), bincode::serialize(&heights).unwrap())
+            .unwrap();
+        db.put(
+            metadata_key(NETWORK, MetadataKey::StorageMigrationCursor),
+            bincode::serialize(&(b"theta".to_vec(), 2u64)).unwrap(),
+        )
+        .unwrap();
+
+        migrate(&db, NETWORK).unwrap();
+
+        for (height, value) in [(10u32, b"a".as_slice()), (20, b"b"), (256, b"c"), (65_536, b"d")] {
+            assert_eq!(read_migrated(&db, b"theta", height), Some(value.to_vec()), "height {height}");
+        }
     }
 
     /// A completed migration is not started over, even if the version was never recorded.
