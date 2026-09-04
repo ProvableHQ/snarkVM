@@ -661,14 +661,14 @@ version = "2"
 [profile.release]
 opt-level = 3
 lto = "thin"
-incremental = true
+incremental = false
 
 [profile.bench]
 opt-level = 3
 debug = false
 rpath = false
 lto = "thin"
-incremental = true
+incremental = false
 debug-assertions = false
 
 [profile.dev]
