@@ -651,10 +651,16 @@ const _: () = {
         // Every instance needs a circuit to live in, so the number of circuits in a batch cannot
         // exceed the limit on the number of instances.
         assert!(N::MAX_BATCH_PROOF_INSTANCES as u64 <= snarkvm_algorithms::snark::varuna::MAX_CIRCUITS_PER_BATCH_PROOF);
-        // Across the whole batch: the inclusion circuit holds one instance per input record over
-        // every transition but the fee -- `Transaction::MAX_TRANSITIONS` is `MAX_FUNCTIONS + 1`
-        // (see `test_transaction_depth_is_correct`), so that is `MAX_FUNCTIONS` transitions --
-        // plus one instance per transition for the function circuits.
+        // From `ConsensusVersion::V14` this limit caps an execution's batch directly, counting
+        // transition, record-translation and inclusion instances alike.
+        assert!(
+            N::MAX_BATCH_PROOF_INSTANCES as u64 <= snarkvm_algorithms::snark::varuna::MAX_INSTANCES_PER_BATCH_PROOF
+        );
+        // Before V14 that limit did not apply, and record translation did not yet exist, so the
+        // batch holds one inclusion instance per input record over every transition but the fee --
+        // `Transaction::MAX_TRANSITIONS` is `MAX_FUNCTIONS + 1` (see
+        // `test_transaction_depth_is_correct`), so that is `MAX_FUNCTIONS` transitions -- plus one
+        // instance per transition for the function circuits.
         assert!(
             (N::MAX_FUNCTIONS * N::MAX_INPUTS + N::MAX_FUNCTIONS + 1) as u64
                 <= snarkvm_algorithms::snark::varuna::MAX_INSTANCES_PER_BATCH_PROOF

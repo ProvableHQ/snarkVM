@@ -52,16 +52,23 @@ pub const MAX_CIRCUITS_PER_BATCH_PROOF: u64 = 128;
 
 /// The maximum number of instances across all circuits in a batch proof.
 ///
-/// The largest legitimate batch is the inclusion circuit, which holds one
-/// instance per input record. An execution carries at most
-/// `Transaction::MAX_TRANSITIONS - 1` transitions, one slot being held back
-/// for the fee (see `Transaction::check_execution_size`), so at most
-/// 31 * `Network::MAX_INPUTS` (16) = 496 records; each function circuit adds
-/// one instance per transition, so a batch holds fewer than 528. Proofs
-/// predating `Network::MAX_BATCH_PROOF_INSTANCES` can reach that, so this is
-/// deliberately looser than the 128 above; tightening it would reject
-/// historical blocks. A compile-time assertion in `snarkvm-console-network`
-/// pins it above that sum.
+/// As for the circuit count above, the two consensus eras are bounded by
+/// separate arguments:
+///
+/// - From V14, `Network::MAX_BATCH_PROOF_INSTANCES` (128) caps the total
+///   directly, counting transition, record-translation and inclusion instances
+///   alike.
+/// - Before V14 that limit did not apply, but neither did record translation:
+///   the `dynamic` syntax it requires cannot be deployed before V14, so a batch
+///   holds only function and inclusion instances. An execution carries at most
+///   `Transaction::MAX_TRANSITIONS - 1` transitions, one slot being held back
+///   for the fee (see `Transaction::check_execution_size`), giving at most 31 *
+///   `Network::MAX_INPUTS` (16) = 496 inclusion instances, plus one per
+///   transition for the function circuits: fewer than 528.
+///
+/// 1024 covers both eras. It is deliberately looser than the 128, which binds
+/// only from V14; tightening it would reject historical blocks. Compile-time
+/// assertions in `snarkvm-console-network` pin it above both bounds.
 pub const MAX_INSTANCES_PER_BATCH_PROOF: u64 = 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
