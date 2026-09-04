@@ -2251,4 +2251,210 @@ mod tests {
             assert_matches_oracle(&store, program_id, mapping_name, key, updates);
         }
     }
+
+    // =======================================================================================
+    // ADVERSARIAL REVIEW TESTS (added by review; not part of the commit under audit)
+    // =======================================================================================
+
+    /// PROOF: a run interrupted between the colliding write-batch and the heights-row deletion
+    /// SWAPS the values of every colliding pair when it is resumed.
+    ///
+    /// The colliding batch is a single atomic `WriteBatch`, but deleting the heights row is a
+    /// *separate* DB write. A crash / SIGTERM / OOM in that window leaves exactly the state
+    /// reproduced below: every entry already migrated, heights row still present. On resume,
+    /// `migrate_chunk` re-reads raw key LE(a) -- which is byte-identical to BE(b) and therefore
+    /// now holds height b's value -- and writes it back out under BE(a).
+    #[test]
+    #[cfg(all(feature = "rocks", feature = "history"))]
+    #[ignore = "known failure: an interrupted run transposes byte-reversal pairs. Repro for the open defect; remove the ignore once the colliding path is made resumable."]
+    fn adv_resume_after_colliding_batch_swaps_values() {
+        let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let mapping_name = Identifier::from_str("bonded").unwrap();
+        let key = Plaintext::from_str("7field").unwrap();
+
+        // 256 and 65_536 are byte-reversal partners: LE(256) == BE(65_536).
+        let a = 256u32;
+        let b = 65_536u32;
+        assert_eq!(a.to_le_bytes(), b.to_be_bytes());
+
+        let mut updates = vec![
+            (a, Value::from_str("111u64").unwrap()),
+            (b, Value::from_str("222u64").unwrap()),
+            (1_000u32, Value::from_str("333u64").unwrap()),
+        ];
+        updates.sort_by_key(|(h, _)| *h);
+
+        let storage = rocks_store();
+        seed_legacy_key(&storage, program_id, mapping_name, &key, &updates);
+        storage.current_block_height().store(u32::MAX - 1, Ordering::SeqCst);
+
+        // Pass 1: completes the data move.
+        let stats = migrate(&storage);
+        assert_eq!(stats.collisions, 2);
+
+        {
+            let store = FinalizeStore::from(storage.clone()).unwrap();
+            assert_matches_oracle(&store, program_id, mapping_name, &key, &updates);
+        }
+
+        // Reproduce the crash window: entries moved, heights row not yet deleted.
+        let heights = updates.iter().map(|(h, _)| *h).collect::<Vec<_>>();
+        storage.mapping_update_heights_map().insert((program_id, mapping_name, key.clone()), heights).unwrap();
+
+        // Pass 2: the resumed run.
+        let stats = migrate(&storage);
+        // The isolated height is correctly recognised as already migrated...
+        assert_eq!(stats.resumed, 1, "isolated height should be detected as already-migrated");
+
+        let store = FinalizeStore::from(storage).unwrap();
+        let at_a = store.get_historical_mapping_value(program_id, mapping_name, key.clone(), a).unwrap();
+        let at_b = store.get_historical_mapping_value(program_id, mapping_name, key.clone(), b).unwrap();
+        println!("after resumed run: height {a} -> {at_a:?}, height {b} -> {at_b:?}");
+        assert_matches_oracle(&store, program_id, mapping_name, &key, &updates);
+    }
+
+    /// PROOF: the `colliding` batch is NOT bounded -- for a key updated at every block (which the
+    /// commit message names as the dominant workload: credits.aleo bonded/delegated/committee via
+    /// `replace_mapping`), the colliding subset is ~0.5% of the whole history at today's mainnet
+    /// height and grows quadratically. It is passed to a single unchunked `multi_get` +
+    /// `WriteBatch`.
+    #[test]
+    #[ignore = "known failure: the colliding subset is not chunked and grows quadratically with chain height (109,100 entries at today's tip)."]
+    fn adv_colliding_subset_is_unbounded() {
+        fn byte_reverse(h: u32) -> u32 {
+            u32::from_be_bytes(h.to_le_bytes())
+        }
+        for tip in [1_000_000u32, 5_000_000, 21_639_560] {
+            let n = (0..=tip).filter(|h| byte_reverse(*h) <= tip).count();
+            println!("chain tip {tip}: colliding heights for an every-block key = {n}");
+            if tip == 21_639_560 {
+                assert!(
+                    n <= 50_000,
+                    "colliding subset is {n} entries at mainnet tip -- more than CHUNK_SIZE, \
+                     yet it is migrated in one unchunked batch"
+                );
+            }
+        }
+    }
+
+    /// CLAIM 1: the height is unconditionally the final four bytes of the raw key, and the
+    /// heights-map key body is a strict prefix of the update-map key body.
+    #[test]
+    #[cfg(feature = "history")]
+    fn adv_bincode_height_suffix_holds_for_every_plaintext() {
+        let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let mapping_name = Identifier::<CurrentNetwork>::from_str("bonded").unwrap();
+
+        let sources = [
+            "0field",
+            "1field",
+            "123456789field",
+            "0u8",
+            "255u8",
+            "0i8",
+            "-128i8",
+            "0u128",
+            "340282366920938463463374607431768211455u128",
+            "true",
+            "false",
+            "0group",
+            "1group",
+            "0scalar",
+            "aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+            "{ a: 1u64 }",
+            "{ a: 1u64, b: 2u64 }",
+            "{ a: { b: { c: 1field } } }",
+            "[ 0u8, 1u8, 2u8, 3u8 ]",
+            "[ 0u32, 1u32 ]",
+            "{ x: [ 1u8, 2u8, 3u8, 4u8 ], y: 5field }",
+            // A struct whose trailing bytes are themselves four zero bytes, to make sure a
+            // trailing-zero body cannot be confused with the height suffix.
+            "{ z: 0u32 }",
+            "0u32",
+            "4294967295u32",
+        ];
+
+        let mut checked = 0usize;
+        for src in sources {
+            let Ok(pt) = Plaintext::<CurrentNetwork>::from_str(src) else { continue };
+            let body = bincode::serialize(&(program_id, mapping_name, pt.clone())).unwrap();
+            for h in [0u32, 1, 255, 256, 65_535, 65_792, 16_777_216, 21_639_560, u32::MAX] {
+                for bytes in [h.to_le_bytes(), h.to_be_bytes()] {
+                    let full = bincode::serialize(&(program_id, mapping_name, pt.clone(), bytes)).unwrap();
+                    assert_eq!(full.len(), body.len() + 4, "height is not 4 raw bytes for `{src}`");
+                    assert_eq!(&full[..body.len()], &body[..], "heights body is not a prefix for `{src}`");
+                    assert_eq!(&full[body.len()..], &bytes[..], "height is not the final 4 bytes for `{src}`");
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 100, "only {checked} cases exercised");
+        println!("claim 1 verified over {checked} (plaintext, height) encodings");
+    }
+
+    /// Demonstrates that the migration turns a *correct* historical read into a wrong one when a
+    /// legacy key carries entries that its heights row does not list.
+    ///
+    /// Such entries are real and are already on disk in production. snarkOS v4.7.5 and v4.8.0
+    /// (snarkVM `a108e8159`..`58a1359ea`) wrote little-endian history entries while writing **no**
+    /// heights rows at all -- the three `mapping_update_heights_map().insert` sites present in
+    /// v4.7.4's snarkVM are absent in theirs. A node that ran v4.7.4, then v4.8.0, then v4.8.1+
+    /// therefore has a *hole* in its heights row covering the middle era.
+    ///
+    /// Those unlisted entries are invisible to the migration, which trusts the heights row as the
+    /// inventory of a key's history. They survive it, still little-endian, in the same keyspace the
+    /// migrated entries now occupy -- and an unlisted height `h` is indistinguishable from a
+    /// migrated entry at height `byte_reverse(h)`, because those are the same four bytes. Where
+    /// `byte_reverse(h)` is itself a plausible height, a floor seek will find the orphan and return
+    /// its value for a completely unrelated height.
+    #[test]
+    #[cfg(all(feature = "rocks", feature = "history"))]
+    #[ignore = "known failure: entries written by snarkOS v4.7.5/v4.8.0 carry no heights row, so a heights-driven migration cannot see them and leaves them aliasing a big-endian height."]
+    fn test_migration_exposes_unlisted_entries_as_wrong_heights() {
+        let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let mapping_name = Identifier::from_str("bonded").unwrap();
+        let key = Plaintext::from_str("9field").unwrap();
+
+        let v100 = Value::<CurrentNetwork>::from_str("100u64").unwrap();
+        let v1000 = Value::<CurrentNetwork>::from_str("1000u64").unwrap();
+        let orphan_value = Value::<CurrentNetwork>::from_str("256u64").unwrap();
+
+        // The orphan sits at a height whose byte-reversal is itself a plausible block height,
+        // which is what makes it reachable by a floor seek after migration.
+        let orphan_height = 256u32;
+        let masquerades_as = 65_536u32;
+        assert_eq!(orphan_height.to_le_bytes(), masquerades_as.to_be_bytes());
+
+        let storage = rocks_store();
+        storage.current_block_height().store(100_000, Ordering::SeqCst);
+
+        // The v4.7.4-era entries: little-endian, and listed in the heights row.
+        seed_legacy_key(&storage, program_id, mapping_name, &key, &[(100, v100.clone()), (1000, v1000.clone())]);
+
+        // The v4.8.0-era entry: little-endian, written with no heights row of its own, so the
+        // existing row never learns about it.
+        storage
+            .mapping_update_map()
+            .insert((program_id, mapping_name, key.clone(), orphan_height.to_le_bytes()), orphan_value.clone())
+            .unwrap();
+
+        // Before migrating: a query at 65,536 correctly reports the value set at height 1000,
+        // because the only entries the reader can reach are the listed ones and 1000 is the
+        // latest at or before 65,536. The orphan is invisible, which is merely lossy.
+        migrate(&storage);
+
+        let store = FinalizeStore::from(storage).unwrap();
+        let answer = store
+            .get_historical_mapping_value(program_id, mapping_name, key.clone(), masquerades_as)
+            .unwrap()
+            .map(|value| value.into_owned());
+
+        assert_eq!(
+            answer,
+            Some(v1000),
+            "after migration, the query at height {masquerades_as} returned the value written at \
+             height {orphan_height}: an unlisted little-endian entry survived the migration and is \
+             now indistinguishable from a migrated big-endian entry"
+        );
+    }
 }
