@@ -248,11 +248,12 @@ macro_rules! impl_edwards_curve_serializer {
                 let point = if let Compress::Yes = compress {
                     let (x, flags): (P::BaseField, EdwardsFlags) = P::BaseField::deserialize_with_flags(&mut reader)?;
 
-                    if x == P::BaseField::zero() {
-                        Self::zero()
-                    } else {
-                        Affine::<P>::from_x_coordinate(x, flags.is_positive()).ok_or(SerializationError::InvalidData)?
-                    }
+                    // The flag names the sign of y, and it is consulted at every
+                    // x. At x = 0 it is the only thing separating the identity
+                    // (0, 1) from the order-two point (0, -1); reading the
+                    // identity out of x = 0 without looking at the flag would
+                    // give the identity a second encoding.
+                    Affine::<P>::from_x_coordinate(x, flags.is_positive()).ok_or(SerializationError::InvalidData)?
                 } else {
                     let x = P::BaseField::deserialize_uncompressed(&mut reader)?;
                     let y = P::BaseField::deserialize_uncompressed(&mut reader)?;

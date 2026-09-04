@@ -153,11 +153,11 @@ fn assert_point_round_trips<G: AffineCurve>(point: G, label: &str) {
 /// point, for every point the serializer accepts and every mode the caller can
 /// ask for.
 ///
-/// Every point covered here is in the prime-order subgroup, which is what
-/// `Validate::Yes` admits. On-curve points outside it -- the order-2 and
-/// order-4 points, whose coordinates include a zero -- do not all round trip
-/// today, so extending this harness to cover them fails until the compressed
-/// deserializers stop discarding the sign flag for those coordinates.
+/// Every point covered here is in the prime-order subgroup. Each round trip is
+/// asserted under `Validate::Yes` as well as `Validate::No`, and `Validate::Yes`
+/// rejects anything outside the subgroup, so the order-2 and order-4 points
+/// cannot be driven through this harness. Their round trips are asserted
+/// per curve family instead, under `Validate::No`.
 pub fn serialization_round_trip_test<G: AffineCurve>() {
     degenerate_serialization_round_trip_test::<G>();
 
