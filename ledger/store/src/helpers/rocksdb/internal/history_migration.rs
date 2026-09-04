@@ -314,6 +314,13 @@ fn classify_entries(database: &rocksdb::DB, update_context: &[u8], body: &[u8], 
     // entries outright. Only a key holding both leaves anything genuinely open.
     let mut undecidable = Vec::new();
     for (as_little, as_big) in ambiguous {
+        // A palindromic suffix reads as the same height either way, so there is nothing to decide:
+        // whichever build wrote it, the entry is already at the key a big-endian write would give
+        // it. Counted as migrated rather than moved, to avoid a write that changes nothing.
+        if as_little == as_big {
+            big += 1;
+            continue;
+        }
         match (saw_little, saw_big) {
             (_, false) => little.push(as_little),
             (false, true) => big += 1,
@@ -1027,6 +1034,29 @@ mod tests {
         seed(&db2, b"kappa", 5, b"v");
         seed(&db2, b"kappa", 900_000, b"v");
         assert_eq!(observed_tip(&db2, &update_ctx()).unwrap(), 900_000);
+    }
+
+    /// A palindromic suffix is not ambiguous: it reads as the same height either way.
+    ///
+    /// `[0, 1, 1, 0]` is height 65,792 under both encodings, and the big-endian key for 65,792 is
+    /// that same suffix -- so the entry is already where it belongs whichever build wrote it.
+    /// Reporting these as undecidable would condemn a ledger over entries that need no decision:
+    /// on a real three-format ledger they were half of what remained.
+    #[test]
+    fn test_palindromic_heights_need_no_decision() {
+        assert_eq!(65_792u32.to_le_bytes(), 65_792u32.to_be_bytes());
+
+        let (db, _dir) = database();
+        // A key holding both encodings, so ambiguity is otherwise possible.
+        seed(&db, b"lambda", 70_000, b"le");
+        seed_big(&db, b"lambda", 70_001, b"be");
+        seed(&db, b"lambda", 65_792, b"palindrome");
+
+        migrate(&db, NETWORK).unwrap();
+
+        assert_eq!(read_migrated(&db, b"lambda", 65_792), Some(b"palindrome".to_vec()));
+        assert_eq!(read_migrated(&db, b"lambda", 70_000), Some(b"le".to_vec()));
+        assert_eq!(read_migrated(&db, b"lambda", 70_001), Some(b"be".to_vec()));
     }
 
     /// Returns the process's peak resident set size, in KiB.
