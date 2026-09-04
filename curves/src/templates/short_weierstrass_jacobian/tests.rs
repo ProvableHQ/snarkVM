@@ -33,6 +33,76 @@ pub fn sw_tests<P: ShortWeierstrassParameters>(rng: &mut TestRng) {
     sw_from_random_bytes::<P>(rng);
     sw_from_x_coordinate::<P>(rng);
     sw_non_canonical_infinity_is_rejected::<P>();
+    sw_non_canonical_zero_y_is_rejected::<P>();
+}
+
+/// Searches for a point with `y = 0`, returning `None` if this curve has none
+/// within the range tried.
+///
+/// Such a point exists only where `x^3 + ax + b` has a root, which is curve
+/// dependent: BLS12-377 G1 has `(-1, 0)`, because `y^2 = x^3 + 1`. There is no
+/// general constructor to lean on here, since `from_y_coordinate` is
+/// `unimplemented!()` for Short Weierstrass.
+fn find_zero_y_point<P: ShortWeierstrassParameters>() -> Option<Affine<P>> {
+    let mut magnitude = P::BaseField::zero();
+    for _ in 0..1024 {
+        for x in [magnitude, -magnitude] {
+            match Affine::<P>::from_x_coordinate(x, false) {
+                Some(point) if point.y.is_zero() => return Some(point),
+                _ => {}
+            }
+        }
+        magnitude += P::BaseField::one();
+    }
+    None
+}
+
+/// A point with `y = 0` must have exactly one compressed encoding.
+///
+/// `y` is its own negation there, so both sign flags select it and
+/// `from_x_coordinate` cannot tell them apart:
+/// `if (y < negy) ^ greatest { y } else { negy }` returns zero either way. The
+/// serializer writes the negative-y flag for such a point, so the positive-y
+/// spelling is a second encoding of one value.
+///
+/// A point with `y = 0` has order two and so sits outside the prime-order
+/// subgroup, which is why `Validate::Yes` rejects both spellings on its own.
+/// This is about `Validate::No`, where the subgroup check is not doing the work.
+pub fn sw_non_canonical_zero_y_is_rejected<P: ShortWeierstrassParameters>() {
+    let Some(point) = find_zero_y_point::<P>() else {
+        return;
+    };
+    assert!(point.is_on_curve(), "the search must return a point on the curve");
+    assert!(!point.is_in_correct_subgroup_assuming_on_curve(), "a point of order two is outside the subgroup");
+
+    // The canonical encoding is whatever the serializer emits.
+    let mut canonical = Vec::new();
+    point.serialize_with_mode(&mut canonical, Compress::Yes).unwrap();
+
+    // It must keep working, or the rejection below would refuse our own output.
+    let recovered =
+        Affine::<P>::deserialize_with_mode(Cursor::new(&canonical[..]), Compress::Yes, Validate::No).unwrap();
+    assert_eq!(recovered, point, "the canonical y = 0 encoding must still deserialize");
+
+    // The same x with the opposite sign flag. The flag is the high bit of the
+    // last byte, and it names the same point.
+    let mut non_canonical = canonical.clone();
+    let last = non_canonical.len() - 1;
+    non_canonical[last] ^= 1 << 7;
+    assert_ne!(non_canonical, canonical);
+
+    for (validate, mode) in [(Validate::Yes, "Validate::Yes"), (Validate::No, "Validate::No")] {
+        if let Ok(other) = Affine::<P>::deserialize_with_mode(Cursor::new(&non_canonical[..]), Compress::Yes, validate)
+        {
+            assert_ne!(
+                other, point,
+                "a non-canonical y = 0 encoding was accepted ({mode}).\n\
+                 The encodings differ only in the flag byte, {:#04x} against the canonical {:#04x},\n\
+                 so those are two ways to write one value.",
+                non_canonical[last], canonical[last],
+            );
+        }
+    }
 }
 
 /// The point at infinity must have exactly one compressed encoding.
