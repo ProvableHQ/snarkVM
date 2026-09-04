@@ -372,22 +372,8 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
             #[cfg(feature = "history")]
             {
                 let current_height = self.current_block_height().load(Ordering::SeqCst);
-                let heights_key = (program_id, mapping_name, key.clone());
-
-                // If this key has a legacy heights-map entry it was written before the BE schema
-                // change; continue appending to the heights vec and write with the original LE
-                // encoding so that reads using the heights-map path remain correct.
-                if let Some(heights) = self.mapping_update_heights_map().get_confirmed(&heights_key)? {
-                    let mut heights = heights.into_owned();
-                    self.mapping_update_map()
-                        .insert((program_id, mapping_name, key.clone(), current_height.to_le_bytes()), value.clone())?;
-                    heights.push(current_height);
-                    self.mapping_update_heights_map().insert(heights_key, heights)?;
-                } else {
-                    // New key: use the big-endian encoding so floor seeks work correctly.
-                    self.mapping_update_map()
-                        .insert((program_id, mapping_name, key.clone(), current_height.to_be_bytes()), value.clone())?;
-                }
+                self.mapping_update_map()
+                    .insert((program_id, mapping_name, key.clone(), current_height.to_be_bytes()), value.clone())?;
             }
 
             // Update the key-value map with the new key-value.
@@ -456,24 +442,8 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
                 #[cfg(feature = "history")]
                 {
                     let current_height = self.current_block_height().load(Ordering::SeqCst);
-                    let heights_key = (program_id, mapping_name, key.clone());
-
-                    // Legacy keys (pre-BE schema) continue using LE encoding + heights vec.
-                    if let Some(heights) = self.mapping_update_heights_map().get_confirmed(&heights_key)? {
-                        let mut heights = heights.into_owned();
-                        self.mapping_update_map().insert(
-                            (program_id, mapping_name, key.clone(), current_height.to_le_bytes()),
-                            value.clone(),
-                        )?;
-                        heights.push(current_height);
-                        self.mapping_update_heights_map().insert(heights_key, heights)?;
-                    } else {
-                        // New key: big-endian encoding.
-                        self.mapping_update_map().insert(
-                            (program_id, mapping_name, key.clone(), current_height.to_be_bytes()),
-                            value.clone(),
-                        )?;
-                    }
+                    self.mapping_update_map()
+                        .insert((program_id, mapping_name, key.clone(), current_height.to_be_bytes()), value.clone())?;
                 }
 
                 // Insert the key-value entry.
@@ -859,13 +829,10 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
 
     /// Returns the historical value of a mapping at or before the given block height.
     ///
-    /// **Fast path** (new keys, no `mapping_update_heights_map` entry): single O(log n)
-    /// floor seek on `mapping_update_map`, which uses big-endian height encoding.
-    ///
-    /// **Legacy path** (keys written before the BE schema change, heights-map entry
-    /// present): O(n) binary search over the heights `Vec`, then a point lookup using
-    /// the original little-endian encoding. Correct but slower; these keys stay on this
-    /// path until the node is resynced or an offline migration is performed.
+    /// A single O(log n) floor seek on `mapping_update_map`, whose height keys are big-endian so
+    /// that lexicographic key order matches numeric height order. Databases written under the
+    /// earlier little-endian layout are repaired by the v0 -> v1 storage migration before the store
+    /// is opened, so only one encoding is ever present here.
     #[cfg(feature = "history")]
     pub fn get_historical_mapping_value(
         &self,
@@ -879,26 +846,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             return Ok(None);
         }
 
-        // Check for a legacy heights-map entry (pre-BE schema change).
-        let heights_key = (program_id, mapping_name, mapping_key.clone());
-        if let Some(heights) = self.storage.mapping_update_heights_map().get_confirmed(&heights_key)? {
-            // Legacy O(n) path: binary search on the heights Vec.
-            let heights = heights.into_owned();
-            let applicable_height = match heights.binary_search(&height) {
-                Ok(_) => height,
-                Err(0) => return Ok(None),
-                Err(idx) => heights[idx - 1],
-            };
-            // Look up with the original little-endian encoding.
-            return self.storage.mapping_update_map().get_confirmed(&(
-                program_id,
-                mapping_name,
-                mapping_key,
-                applicable_height.to_le_bytes(),
-            ));
-        }
-
-        // New fast path: O(log n) floor seek with big-endian encoding.
+        // Find the most recent update at or before the requested height.
         let seek_key = (program_id, mapping_name, mapping_key.clone(), height.to_be_bytes());
         match self.storage.mapping_update_map().get_floor_confirmed(&seek_key)? {
             Some((found_key, found_value)) => {
@@ -911,9 +859,8 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
 
     /// Returns the heights at which past mapping updates occurred, in ascending order.
     ///
-    /// For legacy keys (heights-map entry present) the list is read directly from the
-    /// heights map. For new keys it is reconstructed by scanning `mapping_update_map`.
-    /// Either way this is O(n updates) and is intended for diagnostic / test use only.
+    /// Reconstructed by scanning `mapping_update_map`. This is O(n updates) and is intended for
+    /// diagnostic / test use only.
     #[cfg(feature = "history")]
     pub fn get_mapping_update_heights(
         &self,
@@ -921,13 +868,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         mapping_name: Identifier<N>,
         mapping_key: Plaintext<N>,
     ) -> Result<Option<Cow<'_, Vec<u32>>>, Error> {
-        // Legacy path: heights are stored explicitly in the heights map.
-        let heights_key = (program_id, mapping_name, mapping_key.clone());
-        if let Some(heights) = self.storage.mapping_update_heights_map().get_confirmed(&heights_key)? {
-            return Ok(Some(heights));
-        }
-
-        // New path: reconstruct from mapping_update_map keys (big-endian encoded heights).
+        // Reconstruct from the mapping_update_map keys, whose heights are big-endian encoded.
         let mut heights: Vec<u32> = self
             .storage
             .mapping_update_map()
@@ -1972,65 +1913,60 @@ mod tests {
         assert_eq!(&*heights, &[10, 20, 50, 100]);
     }
 
-    /// Verifies the legacy (pre-BE schema) read path: keys whose heights are stored in
-    /// `mapping_update_heights_map` continue to be found correctly via binary search.
+    /// Verifies that no encoded mapping-key body is a strict prefix of another.
+    ///
+    /// The storage migration groups a key's historical entries by walking the update map and
+    /// treating a run of equal bodies as one key. That is only sound if bodies are prefix-free: if
+    /// body A were a prefix of body B, then A's entries would sort on either side of B's according
+    /// to their height bytes, A's run would be split, and the migration would partition its
+    /// byte-reversal collisions against an incomplete set of heights.
+    ///
+    /// It holds because a `Plaintext` is length-delimited, so one complete encoding cannot be a
+    /// strict prefix of another. This checks that against the encoder rather than trusting it.
     #[test]
-    #[cfg(feature = "history")]
-    fn test_get_historical_mapping_value_legacy() {
-        use std::sync::atomic::Ordering;
+    fn test_mapping_key_bodies_are_prefix_free() {
+        let program_a = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let program_b = ProgramID::<CurrentNetwork>::from_str("a.aleo").unwrap();
+        let mapping_a = Identifier::<CurrentNetwork>::from_str("bonded").unwrap();
+        let mapping_b = Identifier::<CurrentNetwork>::from_str("b").unwrap();
 
-        let program_id = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
-        let mapping_name = Identifier::from_str("account").unwrap();
-        let key = Plaintext::from_str("1field").unwrap();
+        // Deliberately includes values whose encodings nest or share leading bytes: a short field
+        // against a long one, a struct whose first member equals another key, and nested arrays.
+        let plaintexts = [
+            "1field",
+            "11field",
+            "111field",
+            "0field",
+            "true",
+            "0u8",
+            "0u128",
+            "aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc",
+            "{ a: 1field }",
+            "{ a: 1field, b: 2field }",
+            "{ a: { b: 1field } }",
+            "[ 1field, 2field ]",
+            "[ 1field, 2field, 3field ]",
+        ];
 
-        let program_memory = FinalizeMemory::open(StorageMode::Test(None)).unwrap();
-        let finalize_store = FinalizeStore::from(program_memory).unwrap();
+        let mut bodies = Vec::new();
+        for program_id in [program_a, program_b] {
+            for mapping_name in [mapping_a, mapping_b] {
+                for text in plaintexts {
+                    let key = Plaintext::<CurrentNetwork>::from_str(text).unwrap();
+                    bodies.push((
+                        format!("{program_id}/{mapping_name}/{text}"),
+                        bincode::serialize(&(program_id, mapping_name, key)).unwrap(),
+                    ));
+                }
+            }
+        }
 
-        finalize_store.initialize_mapping(program_id, mapping_name).unwrap();
-
-        // Simulate legacy writes: insert directly into the LE-keyed update map AND into the heights map,
-        // exactly as the old code did.
-        let v5 = Value::from_str("5u64").unwrap();
-        let v10 = Value::from_str("10u64").unwrap();
-        finalize_store
-            .storage
-            .mapping_update_map()
-            .insert((program_id, mapping_name, key.clone(), 5u32.to_le_bytes()), v5.clone())
-            .unwrap();
-        finalize_store
-            .storage
-            .mapping_update_map()
-            .insert((program_id, mapping_name, key.clone(), 10u32.to_le_bytes()), v10.clone())
-            .unwrap();
-        finalize_store
-            .storage
-            .mapping_update_heights_map()
-            .insert((program_id, mapping_name, key.clone()), vec![5, 10])
-            .unwrap();
-        finalize_store.storage.current_block_height().store(20, Ordering::SeqCst);
-
-        // Height before first update → None.
-        assert!(
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 4).unwrap().is_none()
-        );
-        // Height 5 (exact) → v5.
-        let v = finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 5).unwrap().unwrap();
-        assert_eq!(*v, v5);
-        // Height 7 (floor → 5) → v5.
-        let v = finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 7).unwrap().unwrap();
-        assert_eq!(*v, v5);
-        // Height 10 (exact) → v10.
-        let v =
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 10).unwrap().unwrap();
-        assert_eq!(*v, v10);
-        // Height 15 (floor → 10) → v10.
-        let v =
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 15).unwrap().unwrap();
-        assert_eq!(*v, v10);
-
-        // Heights list comes from the heights map.
-        let heights =
-            finalize_store.get_mapping_update_heights(program_id, mapping_name, key.clone()).unwrap().unwrap();
-        assert_eq!(&*heights, &[5, 10]);
+        for (name_a, a) in &bodies {
+            for (name_b, b) in &bodies {
+                if a.len() < b.len() {
+                    assert!(!b.starts_with(a), "body for {name_a} is a strict prefix of the body for {name_b}");
+                }
+            }
+        }
     }
 }
