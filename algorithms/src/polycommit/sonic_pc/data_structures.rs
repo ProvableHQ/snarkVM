@@ -396,9 +396,74 @@ impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
     }
 }
 
+/// The maximum number of evaluation proofs a `BatchProof` will serialize.
+///
+/// `SonicKZG10::batch_open` emits one proof per distinct query point name, so
+/// the count follows from the caller's query set rather than from the scheme.
+/// Both callers in this crate sit at or below three: the Varuna AHP queries at
+/// "alpha", "beta" and "gamma", and the verifying key certificate at
+/// "challenge". `batch_check` already rejects any other count.
+///
+/// This is enforced on serialization as well as deserialization, so that the
+/// round trip stays total -- whatever writes will read back. A caller with a
+/// larger query set would have to raise it.
+pub const MAX_BATCH_PROOF_LEN: u64 = 3;
+
 /// Evaluation proof at a query set.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, CanonicalSerialize, CanonicalDeserialize)]
+///
+/// `CanonicalSerialize`, `CanonicalDeserialize` and `Valid` are written out
+/// rather than derived, so that the length can be bounded by
+/// `MAX_BATCH_PROOF_LEN` on both sides. All three are needed because deriving
+/// `CanonicalDeserialize` is also what derives `Valid`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct BatchProof<E: PairingEngine>(pub(crate) Vec<kzg10::KZGProof<E>>);
+
+impl<E: PairingEngine> CanonicalSerialize for BatchProof<E> {
+    fn serialize_with_mode<W: Write>(&self, mut writer: W, compress: Compress) -> Result<(), SerializationError> {
+        if self.0.len() as u64 > MAX_BATCH_PROOF_LEN {
+            return Err(SerializationError::InvalidData);
+        }
+        CanonicalSerialize::serialize_with_mode(&self.0, &mut writer, compress)
+    }
+
+    fn serialized_size(&self, compress: Compress) -> usize {
+        CanonicalSerialize::serialized_size(&self.0, compress)
+    }
+}
+
+impl<E: PairingEngine> Valid for BatchProof<E> {
+    fn check(&self) -> Result<(), SerializationError> {
+        Valid::check(&self.0)
+    }
+
+    fn batch_check<'a>(batch: impl Iterator<Item = &'a Self> + Send) -> Result<(), SerializationError>
+    where
+        Self: 'a,
+    {
+        Valid::batch_check(batch.map(|v| &v.0))
+    }
+}
+
+impl<E: PairingEngine> CanonicalDeserialize for BatchProof<E> {
+    fn deserialize_with_mode<R: Read>(
+        mut reader: R,
+        compress: Compress,
+        validate: Validate,
+    ) -> Result<Self, SerializationError> {
+        let len = u64::deserialize_with_mode(&mut reader, compress, validate)?;
+        if len > MAX_BATCH_PROOF_LEN {
+            return Err(SerializationError::InvalidData);
+        }
+        let mut proofs = Vec::with_capacity(len as usize);
+        for _ in 0..len {
+            proofs.push(kzg10::KZGProof::deserialize_with_mode(&mut reader, compress, Validate::No)?);
+        }
+        if let Validate::Yes = validate {
+            kzg10::KZGProof::<E>::batch_check(proofs.iter())?;
+        }
+        Ok(BatchProof(proofs))
+    }
+}
 
 impl<E: PairingEngine> BatchProof<E> {
     pub fn is_hiding(&self) -> bool {

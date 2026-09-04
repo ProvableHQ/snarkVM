@@ -193,3 +193,70 @@ pub fn select_third_round_challenges<F: PrimeField>(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        fft::EvaluationDomain,
+        polycommit::sonic_pc::MAX_BATCH_PROOF_LEN,
+        snark::varuna::{
+            VarunaHidingMode,
+            ahp::verifier::{CircuitSpecificState, State},
+        },
+    };
+    use snarkvm_curves::bls12_377::Fr;
+
+    use core::marker::PhantomData;
+    use std::collections::BTreeSet;
+
+    /// Builds a verifier state holding a single circuit, with arbitrary field
+    /// values.
+    ///
+    /// `QuerySet::new` reads only `alpha`, `beta`, `gamma` and the circuit ids,
+    /// and the query point names it assigns do not depend on any of them,
+    /// so nothing here has to come from a real proof.
+    fn dummy_state() -> State<Fr, VarunaHidingMode> {
+        // Any domain will do; `QuerySet::new` never looks at them.
+        let domain = EvaluationDomain::new(4).unwrap();
+        let circuit_specific_state = CircuitSpecificState {
+            input_domain: domain,
+            variable_domain: domain,
+            constraint_domain: domain,
+            non_zero_a_domain: domain,
+            non_zero_b_domain: domain,
+            non_zero_c_domain: domain,
+            batch_size: 1,
+        };
+        State {
+            circuit_specific_states: BTreeMap::from([(CircuitId([0u8; 32]), circuit_specific_state)]),
+            max_constraint_domain: domain,
+            max_variable_domain: domain,
+            max_non_zero_domain: domain,
+            first_round_message: None,
+            second_round_message: Some(SecondMessage { alpha: Fr::from(1u64), eta_b: None, eta_c: None }),
+            prepare_third_round_message: None,
+            third_round_message: Some(ThirdMessage { beta: Fr::from(2u64) }),
+            fourth_round_message: None,
+            gamma: Some(Fr::from(3u64)),
+            mode: PhantomData,
+        }
+    }
+
+    #[test]
+    fn test_query_point_names_fit_in_a_batch_proof() {
+        // `SonicKZG10::batch_open` groups the query set by query point name and emits
+        // one evaluation proof per group, so the number of distinct names here
+        // is exactly what a `BatchProof` has to hold. The seven queries below
+        // collapse onto three names, which is why `MAX_BATCH_PROOF_LEN` is what
+        // it is; adding an eighth query under a new name, or renaming one of
+        // the seven, would need that constant raised to match.
+        let query_set = QuerySet::new(&dummy_state());
+        let names: BTreeSet<String> = query_set.to_set().into_iter().map(|(_label, (name, _point))| name).collect();
+        assert_eq!(
+            names.len() as u64,
+            MAX_BATCH_PROOF_LEN,
+            "the verifier queries at {names:?}, which no longer matches MAX_BATCH_PROOF_LEN"
+        );
+    }
+}

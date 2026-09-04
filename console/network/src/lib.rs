@@ -641,6 +641,36 @@ pub trait Network:
     fn dynamic_record_path_hasher() -> &'static Poseidon2<Self>;
 }
 
+/// The Varuna proof deserializer caps the batch shapes it will read. `snarkvm-algorithms` cannot
+/// depend on this crate, so those caps are hand-written constants there. Pin each one against the
+/// consensus limit it has to stay above, so that raising a limit here without raising the
+/// corresponding cap is a build failure rather than proofs that stop deserializing.
+const _: () = {
+    /// Asserts the deserializer's caps against one network's limits.
+    const fn assert_batch_proof_caps<N: Network>() {
+        // Every instance needs a circuit to live in, so the number of circuits in a batch cannot
+        // exceed the limit on the number of instances.
+        assert!(N::MAX_BATCH_PROOF_INSTANCES as u64 <= snarkvm_algorithms::snark::varuna::MAX_CIRCUITS_PER_BATCH_PROOF);
+        // From `ConsensusVersion::V14` this limit caps an execution's batch directly, counting
+        // transition, record-translation and inclusion instances alike.
+        assert!(
+            N::MAX_BATCH_PROOF_INSTANCES as u64 <= snarkvm_algorithms::snark::varuna::MAX_INSTANCES_PER_BATCH_PROOF
+        );
+        // Before V14 that limit did not apply, and record translation did not yet exist, so the
+        // batch holds one inclusion instance per input record over every transition but the fee --
+        // `Transaction::MAX_TRANSITIONS` is `MAX_FUNCTIONS + 1` (see
+        // `test_transaction_depth_is_correct`), so that is `MAX_FUNCTIONS` transitions -- plus one
+        // instance per transition for the function circuits.
+        assert!(
+            (N::MAX_FUNCTIONS * N::MAX_INPUTS + N::MAX_FUNCTIONS + 1) as u64
+                <= snarkvm_algorithms::snark::varuna::MAX_INSTANCES_PER_BATCH_PROOF
+        );
+    }
+    assert_batch_proof_caps::<MainnetV0>();
+    assert_batch_proof_caps::<TestnetV0>();
+    assert_batch_proof_caps::<CanaryV0>();
+};
+
 /// Returns the consensus version heights, initializing them if necessary.
 ///
 /// If a `heights` string is provided, it must be a comma-separated list of ascending block heights
