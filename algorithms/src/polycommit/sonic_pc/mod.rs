@@ -41,6 +41,27 @@ pub use data_structures::*;
 mod polynomial;
 pub use polynomial::*;
 
+/// A linear combination whose polynomial has not been formed.
+///
+/// `open_combinations` resolves each combination to the polynomials it names
+/// and the scalar in front of each, and leaves the coefficient arithmetic to
+/// `open_lazy_combinations`, which folds in the Fiat-Shamir challenge and
+/// accumulates once. Holding the polynomial by reference is the
+/// point: `LabeledPolynomial` owns a `Cow<'static, _>`, so putting one into a
+/// combination is a clone of every coefficient.
+struct LazyCombination<'a, E: PairingEngine> {
+    label: String,
+    /// `(coefficient, polynomial)` per term, with the `LCTerm::One` constants
+    /// already filtered out -- the verifier uses those directly and nothing
+    /// is committed to them.
+    terms: Vec<(E::Fr, &'a LabeledPolynomial<E::Fr>)>,
+    /// `Some` only for a single-term combination whose coefficient is one,
+    /// which is what `open_combinations` enforces; `open_lazy_combinations`
+    /// relies on it.
+    degree_bound: Option<usize>,
+    randomness: Randomness<E>,
+}
+
 /// Polynomial commitment based on [\[KZG10\]][kzg], with degree enforcement and
 /// batching taken from [[MBKM19, “Sonic”]][sonic] (more precisely, their
 /// counterparts in [[Gabizon19, “AuroraLight”]][al] that avoid negative G1
@@ -287,6 +308,117 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
     /// On input a list of labeled polynomials and a query set, `open` outputs a
     /// proof of evaluation of the polynomials at the points in the query
     /// set.
+    /// `batch_open` over combinations whose polynomials have not been formed.
+    ///
+    /// Both levels of the opening are linear in the coefficients. A combination
+    /// is `Σ c_i · P_i`, and `combine_for_open` then scales that by a
+    /// Fiat-Shamir challenge `d_j` and sums the results. So
+    ///
+    /// ```text
+    ///     Σ_j d_j · ( Σ_i c_ji · P_i )  =  Σ_i ( Σ_j d_j · c_ji ) · P_i
+    /// ```
+    ///
+    /// and composing the two coefficients accumulates the same polynomial in
+    /// **one** pass over each term instead of two. What made the second
+    /// pass easy to miss is that most of Varuna's combinations have a
+    /// single term, so their first pass is a whole scaled copy of a polynomial
+    /// that the second pass then walks again.
+    ///
+    /// This is safe to compose only because the sponge is **squeezed and never
+    /// absorbed** between here and the KZG open, so every challenge is
+    /// determined before any polynomial arithmetic happens. Squeeze order
+    /// is preserved exactly: groups in query-set order, combinations in
+    /// label order within a group, and the trailing squeeze per group.
+    fn open_lazy_combinations(
+        universal_prover: &UniversalProver<E>,
+        ck: &CommitterUnionKey<E>,
+        combinations: &[LazyCombination<'_, E>],
+        query_set: &QuerySet<E::Fr>,
+        fs_rng: &mut S,
+    ) -> Result<BatchProof<E>> {
+        let open_time = start_timer!(|| format!(
+            "Opening {} combinations at query set of size {}",
+            combinations.len(),
+            query_set.len(),
+        ));
+
+        let by_label: BTreeMap<&str, &LazyCombination<'_, E>> =
+            combinations.iter().map(|c| (c.label.as_str(), c)).collect();
+
+        let mut query_to_labels_map = BTreeMap::new();
+        for (label, (point_name, point)) in query_set.iter() {
+            let labels = query_to_labels_map.entry(point_name).or_insert((point, BTreeSet::new()));
+            labels.1.insert(label);
+        }
+
+        let mut proofs = Vec::new();
+        for (_point_name, (&query, labels)) in query_to_labels_map.into_iter() {
+            let mut group = Vec::with_capacity(labels.len());
+            for label in labels {
+                let c = by_label.get(label as &str).ok_or(PCError::MissingPolynomial { label: label.to_string() })?;
+                group.push(*c);
+            }
+
+            let mut challenges = Vec::with_capacity(group.len());
+            for c in &group {
+                // `check_degrees_and_bounds` returns immediately unless the polynomial carries
+                // a degree bound, and a combination only carries one when it
+                // has a single term with coefficient one -- in which case the
+                // combination's polynomial *is* that term's. So checking the
+                // term is the same check on the same coefficients.
+                if let Some(bound) = c.degree_bound {
+                    // Enforced rather than asserted. The invariant is real -- `open_combinations`
+                    // bails unless `lc.len() == 1` before it can set `degree_bound` -- but it is
+                    // established in another function, and `debug_assert!` is compiled out of the
+                    // builds that ship. If it ever broke, nothing would panic: the bound would be
+                    // checked against the first term while the opening covered the whole sum, the
+                    // proof would still verify, and what would quietly be gone is a soundness
+                    // property of the commitment scheme.
+                    ensure!(
+                        c.terms.len() == 1,
+                        "combination {} carries degree bound {bound} with {} terms; \
+                         a degree-bounded combination must have exactly one",
+                        c.label,
+                        c.terms.len(),
+                    );
+                    let enforced_degree_bounds: Option<&[usize]> = ck.enforced_degree_bounds.as_deref();
+                    kzg10::KZG10::<E>::check_degrees_and_bounds(
+                        universal_prover.max_degree,
+                        enforced_degree_bounds,
+                        c.terms[0].1,
+                    )?;
+                }
+                challenges.push(fs_rng.squeeze_short_nonnative_field_element::<E::Fr>());
+            }
+
+            let combine_time = start_timer!(|| format!("Combining {} combinations for the opening", group.len()));
+            let mut polynomial = DensePolynomial::zero();
+            let mut rand = Randomness::empty();
+            for (c, challenge) in group.iter().zip_eq(challenges.iter()) {
+                rand += (*challenge, &c.randomness);
+                for (coeff, p) in &c.terms {
+                    let scale = *challenge * coeff;
+                    if scale.is_one() {
+                        polynomial += p.polynomial();
+                    } else {
+                        polynomial += (scale, p.polynomial());
+                    }
+                }
+            }
+            end_timer!(combine_time);
+
+            let proof_time = start_timer!(|| "Creating proof");
+            let proof = kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand)?;
+            end_timer!(proof_time);
+            proofs.push(proof);
+
+            let _ = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
+        }
+        end_timer!(open_time);
+
+        Ok(BatchProof(proofs))
+    }
+
     pub fn batch_open<'a>(
         universal_prover: &UniversalProver<E>,
         ck: &CommitterUnionKey<E>,
@@ -435,16 +567,21 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         let label_map =
             polynomials.into_iter().zip_eq(rands).map(|(p, r)| (p.to_label(), (p, r))).collect::<BTreeMap<_, _>>();
 
-        let mut lc_polynomials = Vec::new();
-        let mut lc_randomness = Vec::new();
-        let mut lc_info = Vec::new();
-
+        // Resolve each combination to its terms without forming its polynomial.
+        //
+        // The arithmetic below is over scalars: `lc` is symbolic, its terms naming
+        // polynomials rather than holding them. Forming the polynomial here is
+        // exactly what `open_lazy_combinations` avoids.
+        let resolve_time = start_timer!(|| "Resolving combination terms");
+        let mut combinations = Vec::new();
         for lc in linear_combinations {
             let lc_label = lc.label().to_string();
-            let mut poly = DensePolynomial::zero();
+            // `lc.len()` counts terms *before* the `is_one()` filter below, so this
+            // over-reserves by the number of constant terms. Left as is because
+            // that pre-filter reading is what the degree-bound guard relies on.
+            let mut terms = Vec::with_capacity(lc.len());
             let mut randomness = Randomness::empty();
             let mut degree_bound = None;
-            let mut hiding_bound = None;
 
             let num_polys = lc.len();
             // We filter out l.is_one() entries because those constants are not committed to
@@ -464,20 +601,19 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                         degree_bound = cur_poly.degree_bound();
                     }
                 }
-                // Some(_) > None, always.
-                hiding_bound = core::cmp::max(hiding_bound, cur_poly.hiding_bound());
-                poly += (*coeff, cur_poly.polynomial());
+                terms.push((*coeff, cur_poly));
                 randomness += (*coeff, *cur_rand);
             }
 
-            let lc_poly = LabeledPolynomial::new(lc_label.clone(), poly, degree_bound, hiding_bound);
-            lc_polynomials.push(lc_poly);
-            lc_randomness.push(randomness);
-            lc_info.push((lc_label, degree_bound));
+            // The hiding bound is not carried. It was only ever handed to the
+            // `LabeledPolynomial` built here, and nothing downstream of the
+            // opening reads it: the hiding bound is enforced when the
+            // polynomial is committed, not when it is opened.
+            combinations.push(LazyCombination { label: lc_label, terms, degree_bound, randomness });
         }
+        end_timer!(resolve_time);
 
-        let proof =
-            Self::batch_open(universal_prover, ck, lc_polynomials.iter(), query_set, lc_randomness.iter(), fs_rng)?;
+        let proof = Self::open_lazy_combinations(universal_prover, ck, &combinations, query_set, fs_rng)?;
 
         Ok(BatchLCProof { proof })
     }

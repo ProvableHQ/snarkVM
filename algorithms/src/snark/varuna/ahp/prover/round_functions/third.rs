@@ -211,15 +211,15 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     let combiner = circuit_combiner * instance_combiner * matrix_combiner;
                     job_pool.add_job(move || match varuna_version {
                         VarunaVersion::V1 => {
+                            let l_at_alpha = constraint_domain.evaluate_all_lagrange_coefficients(*alpha);
                             let z_m_at_alpha = Self::calculate_lineval_sumcheck_instance_witness(
                                 label,
-                                constraint_domain,
+                                &l_at_alpha,
                                 variable_domain,
                                 fft_precomputation,
                                 ifft_precomputation,
                                 assignment,
                                 matrix_transpose,
-                                *alpha,
                             )?;
                             Self::calculate_lineval_sumcheck_instance_witness_polys(
                                 label,
@@ -343,13 +343,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::snark::varuna) fn calculate_lineval_sumcheck_instance_witness(
         _matrix_label: &str,
-        constraint_domain: &EvaluationDomain<F>,
+        l_at_alpha: &[F],
         variable_domain: &EvaluationDomain<F>,
         fft_precomputation: &FFTPrecomputation<F>,
         ifft_precomputation: &IFFTPrecomputation<F>,
         assignment: &DensePolynomial<F>,
         matrix_transpose: &Matrix<F>,
-        alpha: F,
     ) -> Result<DensePolynomial<F>> {
         // Let C = variable_domain
         // Let R = constraint_domain
@@ -361,7 +360,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         // Instead of calculating L^C_col(κ)(c), we add val(k)*L^R_row(α) where we know
         // L^C_col(k)(X) will be 1
         let m_at_alpha_evals_time = start_timer!(|| format!("Compute m_at_alpha_evals parallel for {_matrix_label}"));
-        let l_at_alpha = constraint_domain.evaluate_all_lagrange_coefficients(alpha);
         let m_at_alpha_evals: Vec<_> = matrix_transpose
             .iter()
             .map(|col| col.iter().map(|(val, row_index)| *val * l_at_alpha[*row_index]).sum::<F>())
