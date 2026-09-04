@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod history_migration;
+
 mod id;
 pub use id::*;
 
@@ -26,7 +28,7 @@ pub use nested_map::*;
 mod tests;
 
 use aleo_std_storage::StorageMode;
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, anyhow, bail, ensure};
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::Mutex;
 #[cfg(not(feature = "locktick"))]
@@ -47,6 +49,111 @@ use std::{
 };
 
 pub const PREFIX_LEN: usize = 4; // N::ID (u16) + DataID (u16)
+
+/// The storage schema version this build writes and understands.
+///
+/// Bump this whenever the on-disk layout changes in a way that a build expecting the previous
+/// version would read incorrectly. A database records the version it was last written under, so a
+/// build can refuse a database from the future instead of silently misreading it.
+///
+/// Note this only protects forward from the release that introduced it: builds older than that do
+/// not consult the record at all. Three incompatible historical-mapping layouts shipped within
+/// three weeks with nothing on disk to distinguish them, which is the situation this exists to
+/// prevent recurring.
+pub const STORAGE_VERSION: u32 = 1;
+
+/// The well-known keys of the storage metadata map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub(crate) enum MetadataKey {
+    /// The storage schema version the database was last written under.
+    StorageVersion = 0,
+    /// The resume point of an interrupted storage migration.
+    ///
+    /// Meaningful only to the migration for the version currently being applied, which is
+    /// unambiguous because migrations run one at a time in order.
+    StorageMigrationCursor = 1,
+    /// Working state belonging to the migration currently being applied.
+    ///
+    /// Separate from the cursor because it is written once per unit of work while the cursor
+    /// advances within it; folding the two together would rewrite a large value on every batch.
+    StorageMigrationHeights = 2,
+}
+
+/// Returns the raw database key for a metadata entry.
+pub(crate) fn metadata_key(network_id: u16, key: MetadataKey) -> Vec<u8> {
+    let mut raw = Vec::with_capacity(PREFIX_LEN + 1);
+    raw.extend_from_slice(&network_id.to_le_bytes());
+    raw.extend_from_slice(&u16::from(MapID::Metadata(MetadataMap::Metadata)).to_le_bytes());
+    raw.push(key as u8);
+    raw
+}
+
+/// Reads a metadata entry, or `None` if the database has never recorded it.
+pub(crate) fn get_metadata(database: &rocksdb::DB, network_id: u16, key: MetadataKey) -> Result<Option<Vec<u8>>> {
+    Ok(database.get(metadata_key(network_id, key))?)
+}
+
+/// Writes a metadata entry.
+pub(crate) fn put_metadata(database: &rocksdb::DB, network_id: u16, key: MetadataKey, value: &[u8]) -> Result<()> {
+    Ok(database.put(metadata_key(network_id, key), value)?)
+}
+
+/// Reads a `u32` metadata entry, treating an absent record as zero.
+///
+/// Zero is the right default: every database written before this record existed is, by definition,
+/// at the version that preceded it.
+pub(crate) fn get_metadata_u32(database: &rocksdb::DB, network_id: u16, key: MetadataKey) -> Result<u32> {
+    match get_metadata(database, network_id, key)? {
+        Some(bytes) => {
+            let bytes: [u8; 4] = bytes.as_slice().try_into().map_err(|_| anyhow!("Malformed metadata for {key:?}"))?;
+            Ok(u32::from_le_bytes(bytes))
+        }
+        None => Ok(0),
+    }
+}
+
+/// Deletes a metadata entry.
+pub(crate) fn delete_metadata(database: &rocksdb::DB, network_id: u16, key: MetadataKey) -> Result<()> {
+    Ok(database.delete(metadata_key(network_id, key))?)
+}
+
+/// Brings the database up to [`STORAGE_VERSION`], refusing one written by a newer build.
+///
+/// Migrations are applied one at a time and in order, and the version is only advanced once a
+/// migration has finished. An interrupted run therefore repeats the migration it was in the middle
+/// of, which is why each must be safe to repeat -- they resume from
+/// [`MetadataKey::StorageMigrationCursor`], whose meaning belongs to whichever migration is
+/// currently being applied.
+///
+/// This runs regardless of which cargo features are enabled: a migration operates on raw keys under
+/// a map's prefix, so a build that never opens the typed map can still repair it. Where a map is
+/// absent the prefix is simply empty and its migration finishes immediately.
+fn migrate_storage(database: &rocksdb::DB, network_id: u16) -> Result<()> {
+    let mut version = get_metadata_u32(database, network_id, MetadataKey::StorageVersion)?;
+
+    // A database from the future cannot be read safely, and the failure would otherwise be silent
+    // and data-dependent rather than immediate.
+    assert!(
+        version <= STORAGE_VERSION,
+        "This ledger was written by a newer version of snarkVM (storage schema v{version}; this \
+         build understands v{STORAGE_VERSION}). Upgrade snarkVM, or resync from genesis."
+    );
+
+    while version < STORAGE_VERSION {
+        match version {
+            // Rewrite historical mapping updates to big-endian height keys.
+            0 => history_migration::migrate(database, network_id)?,
+            other => bail!("No storage migration is defined for schema v{other}"),
+        }
+        version += 1;
+        // The cursor belongs to the migration that just finished; the next one starts clean.
+        delete_metadata(database, network_id, MetadataKey::StorageMigrationCursor)?;
+        put_metadata(database, network_id, MetadataKey::StorageVersion, &version.to_le_bytes())?;
+    }
+
+    Ok(())
+}
 
 // A static map of database paths to their objects; it's needed in order to facilitate concurrent
 // tests involving persistent storage, but it only ever has a single member outside of them.
@@ -181,6 +288,9 @@ impl Database for RocksDB {
         } else {
             ensure!(databases.len() == 1, "There can only be one active rocksDB database when not in test mode.");
         }
+
+        // Bring the schema up to date, and refuse one from the future, before anything reads it.
+        migrate_storage(&database.rocksdb, network_id)?;
 
         // Ensure the database network ID and storage mode match.
         match database.network_id == network_id && database.storage_mode == storage {
