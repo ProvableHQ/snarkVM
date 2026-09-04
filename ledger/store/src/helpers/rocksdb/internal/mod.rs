@@ -73,6 +73,23 @@ pub(crate) enum MetadataKey {
     /// Meaningful only to the migration for the version currently being applied, which is
     /// unambiguous because migrations run one at a time in order.
     StorageMigrationCursor = 1,
+    /// What a migration could not settle from storage alone.
+    ///
+    /// Currently write-only: a migration that finds such entries records them here and then fails,
+    /// naming them, so an operator learns precisely what is wrong rather than being told to resync
+    /// on faith. Nothing reads it back yet.
+    ///
+    /// It exists because the natural next step, if these entries turn out to occur in practice, is
+    /// a second phase that resolves them using evidence the storage layer does not have. Whether a
+    /// particular block actually updated a particular mapping key is recorded in that block's
+    /// finalize operations, which the ledger can answer and this crate cannot. Persisting the list
+    /// rather than holding it in memory is what would let such a phase run after the ledger is
+    /// loaded, and survive an interruption in between.
+    ///
+    /// That phase is deliberately not built: it would be complexity in service of a case we have
+    /// not yet observed in a real database. The count reported by a failing migration is the
+    /// evidence that would justify it.
+    StorageMigrationHandoff = 3,
     /// Working state belonging to the migration currently being applied.
     ///
     /// Separate from the cursor because it is written once per unit of work while the cursor
@@ -151,13 +168,13 @@ fn migrate_storage(database: &rocksdb::DB, network_id: u16) -> Result<()> {
             other => bail!("No storage migration is defined for schema v{other}"),
         }
         version += 1;
-        // The version and the disposal of the finished migration's cursor commit together. Deleting
-        // the cursor first would, if interrupted, leave the version unadvanced with no record that
-        // the migration had completed -- so it would run again from scratch over data it had
-        // already converted.
+        // The version and the disposal of the finished migration's state commit together. Deleting
+        // the state first would, if interrupted, leave the version unadvanced with no record that
+        // the migration had completed, so it would run again from scratch over converted data.
         let mut batch = rocksdb::WriteBatch::default();
         batch.put(metadata_key(network_id, MetadataKey::StorageVersion), version.to_le_bytes());
         batch.delete(metadata_key(network_id, MetadataKey::StorageMigrationCursor));
+        batch.delete(metadata_key(network_id, MetadataKey::StorageMigrationHandoff));
         database.write(batch)?;
     }
 

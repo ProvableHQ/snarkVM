@@ -62,6 +62,7 @@
 //! already moved.
 
 use super::{MapID, MetadataKey, PREFIX_LEN, ProgramMap, get_metadata, metadata_key};
+use serde::{Deserialize, Serialize};
 
 use anyhow::{Result, bail};
 use std::{
@@ -173,6 +174,7 @@ pub(crate) fn migrate(database: &rocksdb::DB, network_id: u16) -> Result<()> {
 
     let mut progress = Progress::new();
     let mut announced = false;
+    let mut deferred: Vec<Undecidable> = Vec::new();
 
     loop {
         // The key being resumed is processed again from `resume_index`; otherwise advance.
@@ -211,6 +213,7 @@ pub(crate) fn migrate(database: &rocksdb::DB, network_id: u16) -> Result<()> {
             false => {
                 let classified = classify_entries(database, &update_context, &body)?;
                 progress.already_big += classified.big;
+                deferred.extend(classified.undecidable);
                 let mut batch = rocksdb::WriteBatch::default();
                 batch.put(
                     metadata_key(network_id, MetadataKey::StorageMigrationHeights),
@@ -251,7 +254,25 @@ pub(crate) fn migrate(database: &rocksdb::DB, network_id: u16) -> Result<()> {
         bincode::serialize(&(Vec::<u8>::new(), CURSOR_COMPLETE))?,
     );
     batch.delete(metadata_key(network_id, MetadataKey::StorageMigrationHeights));
+    // Handed to the validate phase, which has the chain and can settle these. Written in the same
+    // batch as the completion sentinel so the two can never disagree about what is left to do.
+    batch.put(metadata_key(network_id, MetadataKey::StorageMigrationHandoff), bincode::serialize(&deferred)?);
     database.write(batch)?;
+
+    // Recorded above before failing, so the evidence survives the error: an operator (or a future
+    // phase that can consult the chain) can see exactly which entries were undecidable.
+    if let Some(first) = deferred.first() {
+        bail!(
+            "{} historical mapping entries cannot be attributed to a height from storage alone. \
+             The first reads as height {} little-endian and {} big-endian, and its key holds \
+             entries in both encodings either side of it. Deciding between them needs the block \
+             that wrote it, which this repair cannot consult. The ledger must be resynced from \
+             genesis.",
+            deferred.len(),
+            first.little,
+            first.big
+        );
+    }
 
     if announced {
         tracing::info!(
@@ -318,6 +339,24 @@ struct KeyEntries {
     little: Vec<u32>,
     /// How many entries were already big-endian, for reporting.
     big: u64,
+    /// Entries whose encoding cannot be settled from the storage layer alone.
+    undecidable: Vec<Undecidable>,
+}
+
+/// An entry that reads as a plausible height under either encoding, on a key that holds both.
+///
+/// Deferred to the validate phase, which can ask the chain which of the two blocks actually
+/// touched this mapping key -- evidence the storage layer does not have.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct Undecidable {
+    /// The raw key body: `bincode((ProgramID, Identifier, Plaintext))`.
+    body: Vec<u8>,
+    /// The four height bytes as they sit on disk.
+    suffix: [u8; 4],
+    /// The height this reads as if it was written little-endian.
+    little: u32,
+    /// The height this reads as if it was written big-endian.
+    big: u32,
 }
 
 /// Reads every entry of one mapping key and decides how each was written.
@@ -334,6 +373,7 @@ struct KeyEntries {
 /// values across the whole `u32` space, so a genuinely ambiguous entry would have to have both of
 /// its readings land inside those narrow ranges, which is rare enough to report rather than guess.
 fn classify_entries(database: &rocksdb::DB, update_context: &[u8], body: &[u8]) -> Result<KeyEntries> {
+    let mut undecidable = Vec::new();
     let mut prefix = Vec::with_capacity(update_context.len() + body.len());
     prefix.extend_from_slice(update_context);
     prefix.extend_from_slice(body);
@@ -397,12 +437,12 @@ fn classify_entries(database: &rocksdb::DB, update_context: &[u8], body: &[u8]) 
                 match (fits_little, fits_big) {
                     (true, false) => Encoding::Little,
                     (false, true) => Encoding::Big,
-                    _ => bail!(
-                        "Cannot determine the encoding of a historical mapping entry with height \
-                         bytes {suffix:?}: it reads as height {as_little} little-endian and \
-                         {as_big} big-endian, and this key holds entries in both encodings either \
-                         side of it. The ledger must be resynced from genesis."
-                    ),
+                    // Neither reading can be excluded from storage alone. The chain can settle
+                    // it: only one of those two blocks actually touched this mapping key.
+                    _ => {
+                        undecidable.push(Undecidable { body: body.to_vec(), suffix, little: as_little, big: as_big });
+                        continue;
+                    }
                 }
             }
         };
@@ -413,7 +453,7 @@ fn classify_entries(database: &rocksdb::DB, update_context: &[u8], body: &[u8]) 
     }
 
     little.sort_unstable();
-    Ok(KeyEntries { little, big })
+    Ok(KeyEntries { little, big, undecidable })
 }
 
 /// Reads back the heights recorded for an interrupted key.
@@ -758,7 +798,17 @@ mod tests {
         seed(&db, b"eta", 256, b"?");
 
         let error = migrate(&db, NETWORK).unwrap_err().to_string();
-        assert!(error.contains("Cannot determine the encoding"), "unexpected error: {error}");
+        // The failure must name what it found, so an operator learns which entries are at issue
+        // rather than being told to resync a multi-terabyte archive on faith.
+        assert!(error.contains("1 historical mapping entries"), "count not reported: {error}");
+        assert!(error.contains("256") && error.contains("65536"), "candidate heights not named: {error}");
+
+        // And the evidence is recorded, not merely printed: this is what a later phase that can
+        // consult the chain would read back.
+        let handoff = get_metadata(&db, NETWORK, MetadataKey::StorageMigrationHandoff).unwrap().unwrap();
+        let deferred: Vec<Undecidable> = bincode::deserialize(&handoff).unwrap();
+        assert_eq!(deferred.len(), 1);
+        assert_eq!((deferred[0].little, deferred[0].big), (256, 65_536));
     }
 
     /// A run interrupted at a batch boundary resumes without re-applying committed work.
