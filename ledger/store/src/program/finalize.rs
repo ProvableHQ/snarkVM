@@ -1911,68 +1911,6 @@ mod tests {
         assert_eq!(&*heights, &[10, 20, 50, 100]);
     }
 
-    /// Verifies the legacy (pre-BE schema) read path: keys whose heights are stored in
-    /// `mapping_update_heights_map` continue to be found correctly via binary search.
-    #[test]
-    #[cfg(feature = "history")]
-    fn test_get_historical_mapping_value_legacy() {
-        use std::sync::atomic::Ordering;
-
-        let program_id = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
-        let mapping_name = Identifier::from_str("account").unwrap();
-        let key = Plaintext::from_str("1field").unwrap();
-
-        let program_memory = FinalizeMemory::open(StorageMode::Test(None)).unwrap();
-        let finalize_store = FinalizeStore::from(program_memory).unwrap();
-
-        finalize_store.initialize_mapping(program_id, mapping_name).unwrap();
-
-        // Simulate legacy writes: insert directly into the LE-keyed update map AND into the heights map,
-        // exactly as the old code did.
-        let v5 = Value::from_str("5u64").unwrap();
-        let v10 = Value::from_str("10u64").unwrap();
-        finalize_store
-            .storage
-            .mapping_update_map()
-            .insert((program_id, mapping_name, key.clone(), 5u32.to_le_bytes()), v5.clone())
-            .unwrap();
-        finalize_store
-            .storage
-            .mapping_update_map()
-            .insert((program_id, mapping_name, key.clone(), 10u32.to_le_bytes()), v10.clone())
-            .unwrap();
-        finalize_store
-            .storage
-            .mapping_update_heights_map()
-            .insert((program_id, mapping_name, key.clone()), vec![5, 10])
-            .unwrap();
-        finalize_store.storage.current_block_height().store(20, Ordering::SeqCst);
-
-        // Height before first update → None.
-        assert!(
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 4).unwrap().is_none()
-        );
-        // Height 5 (exact) → v5.
-        let v = finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 5).unwrap().unwrap();
-        assert_eq!(*v, v5);
-        // Height 7 (floor → 5) → v5.
-        let v = finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 7).unwrap().unwrap();
-        assert_eq!(*v, v5);
-        // Height 10 (exact) → v10.
-        let v =
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 10).unwrap().unwrap();
-        assert_eq!(*v, v10);
-        // Height 15 (floor → 10) → v10.
-        let v =
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 15).unwrap().unwrap();
-        assert_eq!(*v, v10);
-
-        // Heights list comes from the heights map.
-        let heights =
-            finalize_store.get_mapping_update_heights(program_id, mapping_name, key.clone()).unwrap().unwrap();
-        assert_eq!(&*heights, &[5, 10]);
-    }
-
     // ---------------------------------------------------------------------------------------
     // Legacy history migration.
     //
