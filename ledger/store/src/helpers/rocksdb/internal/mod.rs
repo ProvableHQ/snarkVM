@@ -14,7 +14,7 @@
 // limitations under the License.
 
 mod history_migration;
-pub use history_migration::{HistoryReport, inspect};
+pub use history_migration::{RepairPlan, Undecidable, migrate, plan};
 
 mod id;
 pub use id::*;
@@ -136,50 +136,43 @@ pub(crate) fn delete_metadata(database: &rocksdb::DB, network_id: u16, key: Meta
     Ok(database.delete(metadata_key(network_id, key))?)
 }
 
-/// Brings the database up to [`STORAGE_VERSION`], refusing one written by a newer build.
+/// Verifies the ledger's storage schema is one this build understands.
 ///
-/// Migrations are applied one at a time and in order, and the version is only advanced once a
-/// migration has finished. An interrupted run therefore repeats the migration it was in the middle
-/// of, which is why each must be safe to repeat -- they resume from
-/// [`MetadataKey::StorageMigrationCursor`], whose meaning belongs to whichever migration is
-/// currently being applied.
+/// Deliberately does **not** migrate. Bringing a schema forward can rewrite billions of entries and
+/// take hours, which is not something a node should do as a side effect of starting: an operator
+/// wants to run it when they choose, against a copy first, watching it, able to stop it. So this is
+/// a single point lookup that refuses to proceed and says what to run, in the manner of every other
+/// system that separates schema migration from application startup.
 ///
-/// This runs regardless of which cargo features are enabled: a migration operates on raw keys under
-/// a map's prefix, so a build that never opens the typed map can still repair it. Where a map is
-/// absent the prefix is simply empty and its migration finishes immediately.
-fn migrate_storage(database: &rocksdb::DB, network_id: u16) -> Result<()> {
-    let mut version = get_metadata_u32(database, network_id, MetadataKey::StorageVersion)?;
+/// A database with no history to migrate is stamped in passing, so a fresh node -- or one that never
+/// enabled the `history` feature -- never sees a migration prompt for work that does not exist.
+fn check_storage_version(database: &rocksdb::DB, network_id: u16) -> Result<()> {
+    let found = get_metadata_u32(database, network_id, MetadataKey::StorageVersion)?;
 
     // A database from the future cannot be read safely, and the failure would otherwise be silent
     // and data-dependent rather than immediate.
-    //
-    // Returned rather than panicked: `spawn_blocking!` in snarkOS turns a panic into
-    // `anyhow!("[tokio::spawn_blocking] {error}")`, so the operator would see "task N panicked"
-    // where the error chain should carry the remedy.
     ensure!(
-        version <= STORAGE_VERSION,
-        "This ledger was written by a newer version of snarkVM (storage schema v{version}; this \
+        found <= STORAGE_VERSION,
+        "This ledger was written by a newer version of snarkVM (storage schema v{found}; this \
          build understands v{STORAGE_VERSION}). Upgrade snarkVM, or resync from genesis."
     );
-
-    while version < STORAGE_VERSION {
-        match version {
-            // Rewrite historical mapping updates to big-endian height keys.
-            0 => history_migration::migrate(database, network_id)?,
-            other => bail!("No storage migration is defined for schema v{other}"),
-        }
-        version += 1;
-        // The version and the disposal of the finished migration's state commit together. Deleting
-        // the state first would, if interrupted, leave the version unadvanced with no record that
-        // the migration had completed, so it would run again from scratch over converted data.
-        let mut batch = rocksdb::WriteBatch::default();
-        batch.put(metadata_key(network_id, MetadataKey::StorageVersion), version.to_le_bytes());
-        batch.delete(metadata_key(network_id, MetadataKey::StorageMigrationCursor));
-        batch.delete(metadata_key(network_id, MetadataKey::StorageMigrationHandoff));
-        database.write(batch)?;
+    if found == STORAGE_VERSION {
+        return Ok(());
     }
 
-    Ok(())
+    // Nothing recorded, and nothing to record: stamp it and carry on.
+    if !history_migration::has_history(database, network_id)? {
+        put_metadata(database, network_id, MetadataKey::StorageVersion, &STORAGE_VERSION.to_le_bytes())?;
+        return Ok(());
+    }
+
+    bail!(
+        "This ledger is at storage schema v{found}, and this build requires v{STORAGE_VERSION}. \
+         Stop the node and migrate it:\n\n    snarkvm-history-check <ledger-dir>   # reports what \
+         the migration will do, read-only\n    snarkvm-migrate-db <ledger-dir>      # performs \
+         it\n\nThe migration rewrites historical mapping entries and can take hours on an archive \
+         node."
+    );
 }
 
 // A static map of database paths to their objects; it's needed in order to facilitate concurrent
@@ -316,8 +309,8 @@ impl Database for RocksDB {
             ensure!(databases.len() == 1, "There can only be one active rocksDB database when not in test mode.");
         }
 
-        // Bring the schema up to date, and refuse one from the future, before anything reads it.
-        migrate_storage(&database.rocksdb, network_id)?;
+        // Refuse a schema this build does not understand, before anything reads it.
+        check_storage_version(&database.rocksdb, network_id)?;
 
         // Ensure the database network ID and storage mode match.
         match database.network_id == network_id && database.storage_mode == storage {
