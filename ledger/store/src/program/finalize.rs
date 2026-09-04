@@ -57,9 +57,8 @@ struct SerializedMappingEntries {
 /// New entries encode the height in **big-endian** order so that lexicographic key order matches
 /// numeric height order, enabling O(log n) floor seeks via `get_floor_confirmed`.
 ///
-/// Legacy entries (written before this schema change) use **little-endian** order (the `bincode`
-/// default for `u32`).  They are distinguished at read time by the presence of an entry in
-/// `mapping_update_heights_map`; see `get_historical_mapping_value` for details.
+/// Databases written under the earlier little-endian layout are converted by the v0 -> v1 storage
+/// migration before the store is opened, so only this encoding is ever present here.
 #[cfg(feature = "history")]
 pub(crate) type HeightBytes = [u8; 4];
 
@@ -113,20 +112,11 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     type RejectedReasonMap: for<'a> Map<'a, Field<N>, RejectedReason<N>>;
     /// The mapping of `(program ID, mapping name, key, height)` to `value`.
     ///
-    /// The height component is a [`HeightBytes`]: big-endian for new entries, little-endian
-    /// for legacy entries (detected via `mapping_update_heights_map`).
-    ///
-    /// Big-endian encoding lets lexicographic key order match numeric height order, enabling
+    /// The height component is a [`HeightBytes`], always big-endian, which lets lexicographic key
+    /// order match numeric height order, enabling
     /// O(log n) floor lookups via `get_floor_confirmed`.
     #[cfg(feature = "history")]
     type MappingUpdateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>;
-    /// The mapping of `(program ID, mapping name, key)` to `[height]`.
-    ///
-    /// Present only for keys written before the big-endian schema change. Acts as a
-    /// "legacy sentinel": if an entry exists here the key still uses the old LE encoding,
-    /// and `get_historical_mapping_value` falls back to the O(n) binary-search path.
-    #[cfg(feature = "history")]
-    type MappingUpdateHeightsMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>;
     /// The mapping of `(staker address, height)` to `(validator address, block reward, new stake)`.
     #[cfg(feature = "history-staking-rewards")]
     type StakingRewardsMap: for<'a> Map<'a, (Address<N>, u32), (Address<N>, u64, u64)>;
@@ -145,9 +135,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Returns the historical mapping value map.
     #[cfg(feature = "history")]
     fn mapping_update_map(&self) -> &Self::MappingUpdateMap;
-    /// Returns the historical mapping update heights map (legacy: present only for pre-schema-change keys).
-    #[cfg(feature = "history")]
-    fn mapping_update_heights_map(&self) -> &Self::MappingUpdateHeightsMap;
     /// Returns the historical staking rewards map.
     #[cfg(feature = "history-staking-rewards")]
     fn staking_rewards_map(&self) -> &Self::StakingRewardsMap;
@@ -164,7 +151,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().start_atomic();
-            self.mapping_update_heights_map().start_atomic();
         }
         #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().start_atomic();
@@ -177,9 +163,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
             || self.key_value_map().is_atomic_in_progress()
             || self.rejected_reason_map().is_atomic_in_progress();
         #[cfg(feature = "history")]
-        let ret = ret
-            || self.mapping_update_map().is_atomic_in_progress()
-            || self.mapping_update_heights_map().is_atomic_in_progress();
+        let ret = ret || self.mapping_update_map().is_atomic_in_progress();
         #[cfg(feature = "history-staking-rewards")]
         let ret = ret || self.staking_rewards_map().is_atomic_in_progress();
 
@@ -195,7 +179,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().atomic_checkpoint();
-            self.mapping_update_heights_map().atomic_checkpoint();
         }
         #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().atomic_checkpoint();
@@ -210,7 +193,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().clear_latest_checkpoint();
-            self.mapping_update_heights_map().clear_latest_checkpoint();
         }
         #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().clear_latest_checkpoint();
@@ -225,7 +207,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().atomic_rewind();
-            self.mapping_update_heights_map().atomic_rewind();
         }
         #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().atomic_rewind();
@@ -240,7 +221,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().abort_atomic();
-            self.mapping_update_heights_map().abort_atomic();
         }
         #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().abort_atomic();
@@ -255,7 +235,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().finish_atomic()?;
-            self.mapping_update_heights_map().finish_atomic()?;
         }
         #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().finish_atomic()?;

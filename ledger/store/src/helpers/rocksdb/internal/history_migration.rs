@@ -85,6 +85,41 @@ const IMPLAUSIBLE_HEIGHT: u32 = 1 << 27;
 /// where silence is indistinguishable from a hang.
 const REPORT_INTERVAL: Duration = Duration::from_secs(30);
 
+/// Running totals, reported on a timer.
+///
+/// Carried through the per-key work rather than checked only between keys: on the shape this exists
+/// for -- a few hundred keys with millions of entries each -- one key is hundreds of batches, and
+/// reporting per key would go silent for exactly as long as the interval is meant to prevent.
+struct Progress {
+    started: Instant,
+    last_report: Instant,
+    keys: u64,
+    entries: u64,
+    already_big: u64,
+}
+
+impl Progress {
+    fn new() -> Self {
+        let now = Instant::now();
+        Self { started: now, last_report: now, keys: 0, entries: 0, already_big: 0 }
+    }
+
+    /// Logs a line if the interval has elapsed since the last one.
+    fn report(&mut self) {
+        if self.last_report.elapsed() < REPORT_INTERVAL {
+            return;
+        }
+        let elapsed = self.started.elapsed().as_secs_f64();
+        tracing::info!(
+            "History repair: {} keys, {} entries ({:.0} entries/s)",
+            self.keys,
+            self.entries,
+            self.entries as f64 / elapsed
+        );
+        self.last_report = Instant::now();
+    }
+}
+
 /// The cursor index recorded once every key has been migrated.
 ///
 /// The version is advanced by the migration runner *after* this returns, so a crash in between
@@ -136,12 +171,8 @@ pub(crate) fn migrate(database: &rocksdb::DB, network_id: u16) -> Result<()> {
         return Ok(());
     }
 
-    let started = Instant::now();
-    let mut last_report = started;
+    let mut progress = Progress::new();
     let mut announced = false;
-    let mut keys = 0u64;
-    let mut entries = 0u64;
-    let mut already_big = 0u64;
 
     loop {
         // The key being resumed is processed again from `resume_index`; otherwise advance.
@@ -179,7 +210,7 @@ pub(crate) fn migrate(database: &rocksdb::DB, network_id: u16) -> Result<()> {
             true => read_recorded_heights(database, network_id)?,
             false => {
                 let classified = classify_entries(database, &update_context, &body)?;
-                already_big += classified.big;
+                progress.already_big += classified.big;
                 let mut batch = rocksdb::WriteBatch::default();
                 batch.put(
                     metadata_key(network_id, MetadataKey::StorageMigrationHeights),
@@ -198,19 +229,11 @@ pub(crate) fn migrate(database: &rocksdb::DB, network_id: u16) -> Result<()> {
         prefix.extend_from_slice(&update_context);
         prefix.extend_from_slice(&body);
 
-        entries += migrate_key(database, network_id, &prefix, &body, &heights, resume_index)?;
+        migrate_key(database, network_id, &prefix, &body, &heights, resume_index, &mut progress)?;
         resume_index = 0;
-        keys += 1;
+        progress.keys += 1;
+        progress.report();
         cursor = Some(body);
-
-        if last_report.elapsed() >= REPORT_INTERVAL {
-            let elapsed = started.elapsed().as_secs_f64();
-            tracing::info!(
-                "History repair: {keys} keys, {entries} entries ({:.0} entries/s)",
-                entries as f64 / elapsed
-            );
-            last_report = Instant::now();
-        }
     }
 
     // The heights map is not consulted by anything after this point, and keeping it would leave the
@@ -232,9 +255,11 @@ pub(crate) fn migrate(database: &rocksdb::DB, network_id: u16) -> Result<()> {
 
     if announced {
         tracing::info!(
-            "History repair complete: {keys} keys, {entries} entries migrated, {already_big} \
-             already big-endian, in {:.1?}",
-            started.elapsed()
+            "History repair complete: {} keys, {} entries migrated, {} already big-endian, in {:.1?}",
+            progress.keys,
+            progress.entries,
+            progress.already_big,
+            progress.started.elapsed()
         );
     }
 
@@ -459,9 +484,9 @@ fn migrate_key(
     body: &[u8],
     heights: &[u32],
     start: u64,
-) -> Result<u64> {
+    progress: &mut Progress,
+) -> Result<()> {
     let mut processed = 0u64;
-    let mut migrated = 0u64;
     for batch in work_order(heights) {
         let next = processed + batch.len() as u64;
         // Batches are atomic, so a committed one is skipped whole.
@@ -469,10 +494,11 @@ fn migrate_key(
             processed = next;
             continue;
         }
-        migrated += write_chunk(database, network_id, prefix, &batch, body, next)?;
+        progress.entries += write_chunk(database, network_id, prefix, &batch, body, next)?;
         processed = next;
+        progress.report();
     }
-    Ok(migrated)
+    Ok(())
 }
 
 /// Moves a batch of heights to big-endian keys, recording the progress in the same write.
@@ -544,10 +570,20 @@ mod tests {
 
     const NETWORK: u16 = 0;
 
-    /// Opens an empty database over a fresh temporary directory.
+    /// Opens an empty database configured exactly as `RocksDB::open` configures production.
+    ///
+    /// The prefix extractor matters: with one installed, `raw_iterator` runs in prefix-seek mode,
+    /// where iterating beyond the seeked key's extracted prefix is not guaranteed. The migration
+    /// seeks to keys longer than the prefix and walks off the end of a map by design, and
+    /// `drop_map` issues a range delete whose endpoints straddle a prefix boundary. Opening these
+    /// tests with default options would exercise none of that.
     fn database() -> (rocksdb::DB, tempfile::TempDir) {
         let dir = tempfile::tempdir().expect("temp dir");
-        let db = rocksdb::DB::open_default(dir.path()).expect("open");
+        let mut options = rocksdb::Options::default();
+        options.create_if_missing(true);
+        options.set_compression_type(rocksdb::DBCompressionType::Lz4);
+        options.set_prefix_extractor(rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN));
+        let db = rocksdb::DB::open(&options, dir.path()).expect("open");
         (db, dir)
     }
 
@@ -864,9 +900,14 @@ mod tests {
     /// Measures the repair against the production data shape: few keys, very long histories.
     ///
     /// This is what the `credits.aleo` staking mappings look like, since `replace_mapping` records
-    /// an entry for every one of their keys on every block. The claim being checked is that peak
-    /// memory is flat in history depth -- nothing scales with a key's total entry count except its
-    /// recorded height list.
+    /// an entry for every one of their keys on every block.
+    ///
+    /// **Vary `BENCH_HEIGHTS`, not `BENCH_KEYS`.** Peak memory is O(entries in the largest single
+    /// key), not O(total entries): the classified height list, its serialized copy, the partner
+    /// lookup set and the work order all hold one element per entry *of the key being migrated*.
+    /// Sweeping key count at fixed depth -- as an earlier round of measurements did -- holds the
+    /// only dimension that drives memory constant, and reports a flatness that is an artifact of
+    /// the sweep rather than a property of the code.
     ///
     ///   BENCH_KEYS / BENCH_HEIGHTS override the defaults (447 keys, the live `bonded` size).
     #[test]

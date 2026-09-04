@@ -134,7 +134,11 @@ fn migrate_storage(database: &rocksdb::DB, network_id: u16) -> Result<()> {
 
     // A database from the future cannot be read safely, and the failure would otherwise be silent
     // and data-dependent rather than immediate.
-    assert!(
+    //
+    // Returned rather than panicked: `spawn_blocking!` in snarkOS turns a panic into
+    // `anyhow!("[tokio::spawn_blocking] {error}")`, so the operator would see "task N panicked"
+    // where the error chain should carry the remedy.
+    ensure!(
         version <= STORAGE_VERSION,
         "This ledger was written by a newer version of snarkVM (storage schema v{version}; this \
          build understands v{STORAGE_VERSION}). Upgrade snarkVM, or resync from genesis."
