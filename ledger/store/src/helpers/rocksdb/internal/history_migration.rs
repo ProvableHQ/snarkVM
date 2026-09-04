@@ -152,6 +152,50 @@ fn entry_key(prefix: &[u8], height_bytes: [u8; 4]) -> Vec<u8> {
     key
 }
 
+/// A read-only summary of the historical mapping schema on disk.
+#[derive(Debug, Default, Clone)]
+pub struct HistoryReport {
+    /// The storage schema version recorded in the database.
+    pub schema_version: u32,
+    /// The number of mapping keys holding history.
+    pub keys: u64,
+    /// Entries still in the little-endian layout, which the repair would rewrite.
+    pub little_endian: u64,
+    /// Entries already in the big-endian layout, which the repair would leave alone.
+    pub big_endian: u64,
+    /// Entries whose height cannot be determined from storage alone, as candidate height pairs.
+    ///
+    /// A non-empty list is the case the repair cannot handle: the ledger would have to be resynced.
+    pub undecidable: Vec<(u32, u32)>,
+}
+
+/// Reports what a repair would do, without modifying anything.
+///
+/// Shares its classification with [`migrate`] so the two cannot drift: an operator asking "is my
+/// ledger repairable?" gets the answer the repair itself would reach.
+///
+/// Intended to be run against a database opened read-only. It is safe to point at a copy of a live
+/// ledger, though a copy taken while a node is writing may of course be internally inconsistent for
+/// reasons that have nothing to do with this.
+pub fn inspect(database: &rocksdb::DB, network_id: u16) -> Result<HistoryReport> {
+    let update_context = context(network_id, MapID::Program(ProgramMap::MappingUpdate));
+    let mut report = HistoryReport {
+        schema_version: super::get_metadata_u32(database, network_id, MetadataKey::StorageVersion)?,
+        ..Default::default()
+    };
+
+    let mut cursor: Option<Vec<u8>> = None;
+    while let Some(body) = next_body(database, &update_context, cursor.as_deref())? {
+        let classified = classify_entries(database, &update_context, &body)?;
+        report.keys += 1;
+        report.little_endian += classified.little.len() as u64;
+        report.big_endian += classified.big;
+        report.undecidable.extend(classified.undecidable.iter().map(|entry| (entry.little, entry.big)));
+        cursor = Some(body);
+    }
+    Ok(report)
+}
+
 /// Rewrites every historical mapping update to a big-endian height key.
 pub(crate) fn migrate(database: &rocksdb::DB, network_id: u16) -> Result<()> {
     let update_context = context(network_id, MapID::Program(ProgramMap::MappingUpdate));

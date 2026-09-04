@@ -14,6 +14,7 @@
 // limitations under the License.
 
 mod history_migration;
+pub use history_migration::{HistoryReport, inspect};
 
 mod id;
 pub use id::*;

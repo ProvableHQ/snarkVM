@@ -16,6 +16,11 @@ categories = [ "cryptography", "web-programming" ]
 license = "Apache-2.0"
 edition = "2024"
 
+[[bin]]
+name = "snarkvm-history-check"
+path = "src/bin/history_check.rs"
+required-features = [ "rocks" ]
+
 [features]
 default = [ "indexmap/rayon" ]
 history = [ ]
