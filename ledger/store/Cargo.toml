@@ -16,6 +16,11 @@ categories = [ "cryptography", "web-programming" ]
 license = "Apache-2.0"
 edition = "2024"
 
+[[bin]]
+name = "snarkvm-migrate-db"
+path = "src/bin/migrate_db.rs"
+required-features = [ "rocks" ]
+
 [features]
 default = [ "indexmap/rayon" ]
 history = [ ]
@@ -23,7 +28,7 @@ history-staking-rewards = [ ]
 slipstream-plugins = [ "dep:snarkvm-slipstream-plugin-manager" ]
 locktick = [ "dep:locktick", "snarkvm-ledger-puzzle/locktick" ]
 metrics = [ "dep:snarkvm-metrics" ]
-rocks = [ "rocksdb", "smallvec" ]
+rocks = [ "rocksdb", "smallvec", "dep:tracing-subscriber" ]
 serial = [
   "snarkvm-console/serial",
   "snarkvm-ledger-block/serial",
@@ -123,6 +128,11 @@ optional = true
 
 [dependencies.tracing]
 workspace = true
+
+[dependencies.tracing-subscriber]
+version = "0.3"
+features = [ "env-filter" ]
+optional = true
 
 [dev-dependencies.aleo-std]
 workspace = true

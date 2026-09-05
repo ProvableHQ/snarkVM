@@ -13,6 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod history_migration;
+pub use history_migration::{RepairPlan, Undecidable, migrate, plan};
+
 mod id;
 pub use id::*;
 
@@ -26,7 +29,7 @@ pub use nested_map::*;
 mod tests;
 
 use aleo_std_storage::StorageMode;
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, anyhow, bail, ensure};
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::Mutex;
 #[cfg(not(feature = "locktick"))]
@@ -47,6 +50,130 @@ use std::{
 };
 
 pub const PREFIX_LEN: usize = 4; // N::ID (u16) + DataID (u16)
+
+/// The storage schema version this build writes and understands.
+///
+/// Bump this whenever the on-disk layout changes in a way that a build expecting the previous
+/// version would read incorrectly. A database records the version it was last written under, so a
+/// build can refuse a database from the future instead of silently misreading it.
+///
+/// Note this only protects forward from the release that introduced it: builds older than that do
+/// not consult the record at all. Three incompatible historical-mapping layouts shipped within
+/// three weeks with nothing on disk to distinguish them, which is the situation this exists to
+/// prevent recurring.
+pub const STORAGE_VERSION: u32 = 1;
+
+/// The well-known keys of the storage metadata map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub(crate) enum MetadataKey {
+    /// The storage schema version the database was last written under.
+    StorageVersion = 0,
+    /// The resume point of an interrupted storage migration.
+    ///
+    /// Meaningful only to the migration for the version currently being applied, which is
+    /// unambiguous because migrations run one at a time in order.
+    StorageMigrationCursor = 1,
+    /// What a migration could not settle from storage alone.
+    ///
+    /// Currently write-only: a migration that finds such entries records them here and then fails,
+    /// naming them, so an operator learns precisely what is wrong rather than being told to resync
+    /// on faith. Nothing reads it back yet.
+    ///
+    /// It exists because the natural next step, if these entries turn out to occur in practice, is
+    /// a second phase that resolves them using evidence the storage layer does not have. Whether a
+    /// particular block actually updated a particular mapping key is recorded in that block's
+    /// finalize operations, which the ledger can answer and this crate cannot. Persisting the list
+    /// rather than holding it in memory is what would let such a phase run after the ledger is
+    /// loaded, and survive an interruption in between.
+    ///
+    /// That phase is deliberately not built: it would be complexity in service of a case we have
+    /// not yet observed in a real database. The count reported by a failing migration is the
+    /// evidence that would justify it.
+    StorageMigrationHandoff = 3,
+    /// Working state belonging to the migration currently being applied.
+    ///
+    /// Separate from the cursor because it is written once per unit of work while the cursor
+    /// advances within it; folding the two together would rewrite a large value on every batch.
+    StorageMigrationHeights = 2,
+}
+
+/// Returns the raw database key for a metadata entry.
+pub(crate) fn metadata_key(network_id: u16, key: MetadataKey) -> Vec<u8> {
+    let mut raw = Vec::with_capacity(PREFIX_LEN + 1);
+    raw.extend_from_slice(&network_id.to_le_bytes());
+    raw.extend_from_slice(&u16::from(MapID::Metadata(MetadataMap::Metadata)).to_le_bytes());
+    raw.push(key as u8);
+    raw
+}
+
+/// Reads a metadata entry, or `None` if the database has never recorded it.
+pub(crate) fn get_metadata(database: &rocksdb::DB, network_id: u16, key: MetadataKey) -> Result<Option<Vec<u8>>> {
+    Ok(database.get(metadata_key(network_id, key))?)
+}
+
+/// Writes a metadata entry.
+pub(crate) fn put_metadata(database: &rocksdb::DB, network_id: u16, key: MetadataKey, value: &[u8]) -> Result<()> {
+    Ok(database.put(metadata_key(network_id, key), value)?)
+}
+
+/// Reads a `u32` metadata entry, treating an absent record as zero.
+///
+/// Zero is the right default: every database written before this record existed is, by definition,
+/// at the version that preceded it.
+pub(crate) fn get_metadata_u32(database: &rocksdb::DB, network_id: u16, key: MetadataKey) -> Result<u32> {
+    match get_metadata(database, network_id, key)? {
+        Some(bytes) => {
+            let bytes: [u8; 4] = bytes.as_slice().try_into().map_err(|_| anyhow!("Malformed metadata for {key:?}"))?;
+            Ok(u32::from_le_bytes(bytes))
+        }
+        None => Ok(0),
+    }
+}
+
+/// Deletes a metadata entry.
+pub(crate) fn delete_metadata(database: &rocksdb::DB, network_id: u16, key: MetadataKey) -> Result<()> {
+    Ok(database.delete(metadata_key(network_id, key))?)
+}
+
+/// Verifies the ledger's storage schema is one this build understands.
+///
+/// Deliberately does **not** migrate. Bringing a schema forward can rewrite billions of entries and
+/// take hours, which is not something a node should do as a side effect of starting: an operator
+/// wants to run it when they choose, against a copy first, watching it, able to stop it. So this is
+/// a single point lookup that refuses to proceed and says what to run, in the manner of every other
+/// system that separates schema migration from application startup.
+///
+/// A database with no history to migrate is stamped in passing, so a fresh node -- or one that never
+/// enabled the `history` feature -- never sees a migration prompt for work that does not exist.
+fn check_storage_version(database: &rocksdb::DB, network_id: u16) -> Result<()> {
+    let found = get_metadata_u32(database, network_id, MetadataKey::StorageVersion)?;
+
+    // A database from the future cannot be read safely, and the failure would otherwise be silent
+    // and data-dependent rather than immediate.
+    ensure!(
+        found <= STORAGE_VERSION,
+        "This ledger was written by a newer version of snarkVM (storage schema v{found}; this \
+         build understands v{STORAGE_VERSION}). Upgrade snarkVM, or resync from genesis."
+    );
+    if found == STORAGE_VERSION {
+        return Ok(());
+    }
+
+    // Nothing recorded, and nothing to record: stamp it and carry on.
+    if !history_migration::has_history(database, network_id)? {
+        put_metadata(database, network_id, MetadataKey::StorageVersion, &STORAGE_VERSION.to_le_bytes())?;
+        return Ok(());
+    }
+
+    bail!(
+        "This ledger is at storage schema v{found}, and this build requires v{STORAGE_VERSION}. \
+         Stop the node and migrate it:\n\n    snarkvm-migrate-db --check <ledger-dir>   # what \
+         this would do, read-only\n    snarkvm-migrate-db <ledger-dir>           # do \
+         it\n\nThe migration rewrites historical mapping entries and can take hours on an archive \
+         node."
+    );
+}
 
 // A static map of database paths to their objects; it's needed in order to facilitate concurrent
 // tests involving persistent storage, but it only ever has a single member outside of them.
@@ -181,6 +308,9 @@ impl Database for RocksDB {
         } else {
             ensure!(databases.len() == 1, "There can only be one active rocksDB database when not in test mode.");
         }
+
+        // Refuse a schema this build does not understand, before anything reads it.
+        check_storage_version(&database.rocksdb, network_id)?;
 
         // Ensure the database network ID and storage mode match.
         match database.network_id == network_id && database.storage_mode == storage {

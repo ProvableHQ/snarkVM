@@ -52,9 +52,6 @@ pub struct FinalizeMemory<N: Network> {
     /// The historical mapping value map (keyed by big-endian block height).
     #[cfg(feature = "history")]
     mapping_update_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>,
-    /// The legacy heights index; present only for keys written before the BE schema change.
-    #[cfg(feature = "history")]
-    mapping_update_heights_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>,
     /// The current block height.
     #[cfg(feature = "history")]
     block_height: Arc<AtomicU32>,
@@ -73,8 +70,6 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     type RejectedReasonMap = MemoryMap<Field<N>, RejectedReason<N>>;
     #[cfg(feature = "history")]
     type MappingUpdateMap = MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>;
-    #[cfg(feature = "history")]
-    type MappingUpdateHeightsMap = MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>;
     #[cfg(feature = "history-staking-rewards")]
     type StakingRewardsMap = MemoryMap<(Address<N>, u32), (Address<N>, u64, u64)>;
 
@@ -95,8 +90,6 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
             rejected_reason_map: MemoryMap::default(),
             #[cfg(feature = "history")]
             mapping_update_map: MemoryMap::default(),
-            #[cfg(feature = "history")]
-            mapping_update_heights_map: MemoryMap::default(),
             #[cfg(feature = "history")]
             block_height: Arc::new(AtomicU32::new(initial_height)),
             #[cfg(feature = "history-staking-rewards")]
@@ -129,11 +122,6 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     #[cfg(feature = "history")]
     fn mapping_update_map(&self) -> &Self::MappingUpdateMap {
         &self.mapping_update_map
-    }
-
-    #[cfg(feature = "history")]
-    fn mapping_update_heights_map(&self) -> &Self::MappingUpdateHeightsMap {
-        &self.mapping_update_heights_map
     }
 
     /// Returns the historical staking rewards map.
