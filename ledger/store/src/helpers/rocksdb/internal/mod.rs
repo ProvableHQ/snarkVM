@@ -168,8 +168,8 @@ fn check_storage_version(database: &rocksdb::DB, network_id: u16) -> Result<()> 
 
     bail!(
         "This ledger is at storage schema v{found}, and this build requires v{STORAGE_VERSION}. \
-         Stop the node and migrate it:\n\n    snarkvm-history-check <ledger-dir>   # reports what \
-         the migration will do, read-only\n    snarkvm-migrate-db <ledger-dir>      # performs \
+         Stop the node and migrate it:\n\n    snarkvm-migrate-db --check <ledger-dir>   # what \
+         this would do, read-only\n    snarkvm-migrate-db <ledger-dir>           # do \
          it\n\nThe migration rewrites historical mapping entries and can take hours on an archive \
          node."
     );

@@ -17,11 +17,6 @@ license = "Apache-2.0"
 edition = "2024"
 
 [[bin]]
-name = "snarkvm-history-check"
-path = "src/bin/history_check.rs"
-required-features = [ "rocks" ]
-
-[[bin]]
 name = "snarkvm-migrate-db"
 path = "src/bin/migrate_db.rs"
 required-features = [ "rocks" ]
