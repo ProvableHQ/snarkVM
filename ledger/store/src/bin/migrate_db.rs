@@ -83,7 +83,19 @@ fn parse() -> Result<Args> {
     Ok(Args { path, network_id, check })
 }
 
-/// The options a node opens the ledger with.
+/// How many SST files RocksDB may hold open at once.
+///
+/// Deliberately far below the node's own limit. Left at RocksDB's default of unlimited, a tool
+/// scanning a multi-terabyte ledger opens every SST and keeps each one's index and filter blocks
+/// resident: on a 1.7 TiB ledger that exhausted the default 1024 file-descriptor limit outright,
+/// and reached 4.6 GB of resident memory where the work itself needs a few hundred megabytes.
+///
+/// A node wants a high limit because it serves random reads. This tool makes one sequential pass,
+/// so it gains almost nothing from keeping files open, and a small bound keeps it inside the
+/// default `ulimit -n` that an operator's shell will have.
+const MAX_OPEN_FILES: i32 = 256;
+
+/// The options a node opens the ledger with, save for the open-file bound.
 ///
 /// The prefix extractor matters: it puts iteration into prefix-seek mode, so inspecting or
 /// migrating under different options would not be operating on the database as the node sees it.
@@ -91,6 +103,7 @@ fn options() -> rocksdb::Options {
     let mut options = rocksdb::Options::default();
     options.set_compression_type(rocksdb::DBCompressionType::Lz4);
     options.set_prefix_extractor(rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN));
+    options.set_max_open_files(MAX_OPEN_FILES);
     options
 }
 
