@@ -280,7 +280,7 @@ fn classify_entries(database: &rocksdb::DB, update_context: &[u8], body: &[u8], 
     let mut big_range: Option<(u32, u32)> = None;
     let mut ambiguous = Vec::new();
     let (mut saw_little, mut saw_big) = (false, false);
-    let mut note_big = |height: u32, range: &mut Option<(u32, u32)>| {
+    let note_big = |height: u32, range: &mut Option<(u32, u32)>| {
         *range = Some(match *range {
             Some((lo, hi)) => (lo.min(height), hi.max(height)),
             None => (height, height),
