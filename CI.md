@@ -11,9 +11,11 @@ are targeting a 15 minute max runtime.
 - `ledger-workflow`
 - `synthesizer-workflow`
 
-When a PR is merged, `merge-workflow` runs additional expensive or slow tests,
-e.g. those marked as `ignore` or which download paramters. Moreover, benchmarks
-are run from github actions.s
+When a PR is merged into `staging`, `canary`, `testnet`, or `mainnet`,
+`merge-workflow` runs additional expensive or slow tests, e.g. those marked as
+`ignore` or which download parameters.
+
+GitHub Actions benchmarks run on merges to `canary`, `testnet`, and `mainnet`.
 
 When a PR is opened from a release branch (`canary`,`testnet`,`mainnet`), the
 `release-workflow` is ran which tests windows.
