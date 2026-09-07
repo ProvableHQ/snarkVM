@@ -142,6 +142,13 @@ fn check_storage_version(database: &rocksdb::DB, network_id: u16) -> Result<()> 
     }
 
     // Nothing recorded, and nothing to record: stamp it and carry on.
+    //
+    // The gate is on the *data*, not on which features this build was compiled with, and that is a
+    // correctness requirement rather than a convenience. A build that does not read history could
+    // stamp the version without migrating, since it would never notice the difference -- but the
+    // stamp is what a later history-enabled build consults, and it would then skip the migration
+    // and read little-endian entries as big-endian. Blocking a non-history node that carries
+    // unmigrated history is the price of the version meaning what it says.
     if !history_migration::has_history(database, network_id)? {
         put_metadata(database, network_id, MetadataKey::StorageVersion, &STORAGE_VERSION.to_le_bytes())?;
         return Ok(());
