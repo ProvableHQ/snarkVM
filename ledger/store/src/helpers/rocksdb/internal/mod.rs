@@ -84,11 +84,20 @@ pub(crate) enum MetadataKey {
     StorageMigrationHeights = 2,
 }
 
+/// Returns the 4-byte `[network_id, map_id]` prefix a map's keys sit behind.
+///
+/// The layout is a persisted on-disk invariant, so it is built in one place rather than repeated
+/// wherever a raw key is needed.
+pub(crate) fn map_context(network_id: u16, map_id: MapID) -> Vec<u8> {
+    let mut raw = Vec::with_capacity(PREFIX_LEN);
+    raw.extend_from_slice(&network_id.to_le_bytes());
+    raw.extend_from_slice(&u16::from(map_id).to_le_bytes());
+    raw
+}
+
 /// Returns the raw database key for a metadata entry.
 pub(crate) fn metadata_key(network_id: u16, key: MetadataKey) -> Vec<u8> {
-    let mut raw = Vec::with_capacity(PREFIX_LEN + 1);
-    raw.extend_from_slice(&network_id.to_le_bytes());
-    raw.extend_from_slice(&u16::from(MapID::Metadata(MetadataMap::Metadata)).to_le_bytes());
+    let mut raw = map_context(network_id, MapID::Metadata(MetadataMap::Metadata));
     raw.push(key as u8);
     raw
 }
@@ -114,6 +123,17 @@ pub(crate) fn get_metadata_u32(database: &rocksdb::DB, network_id: u16, key: Met
             Ok(u32::from_le_bytes(bytes))
         }
         None => Ok(0),
+    }
+}
+
+/// Returns whether the migration from `version` to `version + 1` has anything to do here.
+///
+/// Lets the version be stamped in passing when every outstanding migration is a no-op, without that
+/// shortcut being tied to what any one of them happens to be about.
+fn has_work(database: &rocksdb::DB, network_id: u16, version: u32) -> Result<bool> {
+    match version {
+        0 => history_migration::has_history(database, network_id),
+        other => bail!("No storage migration is defined for schema v{other}"),
     }
 }
 
@@ -149,7 +169,16 @@ fn check_storage_version(database: &rocksdb::DB, network_id: u16) -> Result<()> 
     // stamp is what a later history-enabled build consults, and it would then skip the migration
     // and read little-endian entries as big-endian. Blocking a non-history node that carries
     // unmigrated history is the price of the version meaning what it says.
-    if !history_migration::has_history(database, network_id)? {
+    //
+    // Asked per outstanding migration rather than as one hardcoded probe: a future v1 -> v2
+    // migration concerning some other map would otherwise be skipped on any ledger without
+    // history, stamping a database as being in a layout it is not in.
+    if !(found..STORAGE_VERSION)
+        .map(|v| has_work(database, network_id, v))
+        .collect::<Result<Vec<_>>>()?
+        .iter()
+        .any(|has| *has)
+    {
         put_metadata(database, network_id, MetadataKey::StorageVersion, &STORAGE_VERSION.to_le_bytes())?;
         return Ok(());
     }

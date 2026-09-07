@@ -129,6 +129,10 @@ optional = true
 [dependencies.tracing]
 workspace = true
 
+# Used only by the migration binary, for its progress output. Reviewers have asked for this
+# to be kept out of the library's dependency graph; deferred because the build command in
+# `snarkvm-migrate-db`'s documentation is already in a partner's hands, and a bin-scoped
+# feature would change it.
 [dependencies.tracing-subscriber]
 version = "0.3"
 features = [ "env-filter" ]

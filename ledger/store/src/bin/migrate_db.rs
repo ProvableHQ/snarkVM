@@ -30,7 +30,7 @@
 //! migration will refuse to open a ledger a node still holds.
 
 use anyhow::{Result, bail};
-use snarkvm_ledger_store::helpers::rocksdb::{PREFIX_LEN, is_resuming, migrate, plan, schema_version};
+use snarkvm_ledger_store::helpers::rocksdb::{PREFIX_LEN, STORAGE_VERSION, is_resuming, migrate, plan, schema_version};
 
 /// Entries per second, measured on the migration itself. Only used to turn a count into a figure an
 /// operator can plan around, so it is deliberately conservative.
@@ -131,11 +131,23 @@ fn main() -> Result<()> {
 
     // Two point lookups before any scan: an already-migrated ledger should not be walked end to
     // end just to print a status line, and neither should one being resumed.
-    if schema_version(&database, args.network_id)? > 0 {
-        println!("{} is already migrated. Nothing to do.", args.path);
+    // Compared against the version this build needs, not against zero: a tool that treats "any
+    // version at all" as done would refuse to run every future migration, telling an operator
+    // there is nothing to do about the very thing their node is refusing to start over.
+    if schema_version(&database, args.network_id)? >= STORAGE_VERSION {
+        println!("{} is already at storage schema v{STORAGE_VERSION}. Nothing to do.", args.path);
         return Ok(());
     }
-    if !args.check && is_resuming(&database, args.network_id)? {
+    if is_resuming(&database, args.network_id)? {
+        // A half-migrated map holds both encodings on the keys it had begun, so classifying it
+        // would report a ledger as unrepairable that would in fact finish perfectly well.
+        if args.check {
+            println!("A migration of {} was interrupted and has not finished.\n", args.path);
+            println!("Its state cannot be assessed while partly migrated -- the keys it had begun");
+            println!("hold both encodings. Re-run without --check to finish it:\n");
+            println!("    snarkvm-migrate-db {}", args.path);
+            return Ok(());
+        }
         println!("Resuming an interrupted migration of {}\n", args.path);
         tracing_subscriber::fmt().with_env_filter("info").with_target(false).init();
         migrate(&database, args.network_id, None)?;
@@ -187,6 +199,8 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    // The migration reports progress through `tracing`; without a subscriber a multi-hour
+    // run would print nothing at all.
     tracing_subscriber::fmt().with_env_filter("info").with_target(false).init();
     println!("Migrating. Estimated {minutes:.1} minutes; safe to interrupt and resume.\n");
     migrate(&database, args.network_id, Some(&report))?;
