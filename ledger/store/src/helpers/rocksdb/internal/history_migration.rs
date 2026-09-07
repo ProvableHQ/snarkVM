@@ -61,14 +61,15 @@
 //! interrupted run reads the list back and continues from the index, never re-deriving what it has
 //! already moved.
 
-use super::{CommitteeMap, MapID, MetadataKey, PREFIX_LEN, ProgramMap, get_metadata, metadata_key};
-use serde::{Deserialize, Serialize};
-
-use anyhow::{Result, bail, ensure};
 use std::{
     collections::HashSet,
     time::{Duration, Instant},
 };
+
+use anyhow::{Result, bail, ensure};
+use serde::{Deserialize, Serialize};
+
+use super::{CommitteeMap, MapID, MetadataKey, PREFIX_LEN, ProgramMap, get_metadata, metadata_key};
 
 /// The number of historical entries rewritten per write batch.
 ///
