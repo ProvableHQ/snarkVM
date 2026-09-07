@@ -61,7 +61,7 @@
 //! interrupted run reads the list back and continues from the index, never re-deriving what it has
 //! already moved.
 
-use super::{MapID, MetadataKey, PREFIX_LEN, ProgramMap, get_metadata, metadata_key};
+use super::{CommitteeMap, MapID, MetadataKey, PREFIX_LEN, ProgramMap, get_metadata, metadata_key};
 use serde::{Deserialize, Serialize};
 
 use anyhow::{Result, bail, ensure};
@@ -75,19 +75,8 @@ use std::{
 /// A single key's history can run to millions of entries, so it is never held whole.
 const CHUNK_SIZE: usize = 50_000;
 
-/// A ceiling on any block height, used only to bootstrap the search for the real one.
-///
-/// Deliberately generous. The plausibility bound that decides an entry's encoding is derived from
-/// the data itself (see [`observed_tip`]); this constant only has to exclude values that could
-/// never be a height under any circumstances, so that the derivation has something certain to work
-/// from.
-const CEILING_HEIGHT: u32 = 1 << 27;
-
 /// How often to report progress.
 const REPORT_INTERVAL: Duration = Duration::from_secs(30);
-
-/// The cursor index recorded once every key has been migrated.
-const CURSOR_COMPLETE: u64 = u64::MAX;
 
 /// Running totals, reported on a timer.
 ///
@@ -119,15 +108,6 @@ impl Progress {
         );
         self.last_report = Instant::now();
     }
-}
-
-/// How an entry's four height bytes should be read.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Encoding {
-    /// Written by snarkOS <= v4.8.0; needs migrating.
-    Little,
-    /// Written by snarkOS v4.8.1+; already in the target form.
-    Big,
 }
 
 /// The entries of one mapping key, sorted by the encoding each was written in.
@@ -202,45 +182,43 @@ pub(crate) fn has_history(database: &rocksdb::DB, network_id: u16) -> Result<boo
     Ok(iterator.key().is_some_and(|key| key.starts_with(&update_context)))
 }
 
-/// Returns a lower bound on the chain tip, derived from the entries themselves.
+/// Returns the ledger's chain tip, read from the committee store.
 ///
-/// The plausibility of a reading is what separates the two encodings, and a height is bounded by
-/// the chain tip -- which the storage layer does not know. It can be derived, though: exactly one
-/// of an entry's two readings is its real height, so the true tip is at least the *smaller* of
-/// them. Taking the largest such value over every entry therefore yields a bound that no real
-/// height exceeds, which is the property that matters: judged against it, every entry keeps at
-/// least one plausible reading, so a correct ledger can never be condemned as corrupt.
+/// The plausibility of a reading is what separates the two encodings, and a height cannot exceed
+/// the tip -- so the bound has to be *correct*, not merely conservative.
 ///
-/// Deriving it matters more than it looks. Judged against [`CEILING_HEIGHT`] alone, an entry is
-/// ambiguous whenever its height's low byte is small -- one entry in thirty-two. Judged against the
-/// real tip, only entries whose *both* readings are real heights are ambiguous, which on a
-/// 76,514-block ledger is a handful of byte patterns rather than 1,672.
-fn observed_tip(database: &rocksdb::DB, update_context: &[u8]) -> Result<u32> {
-    let mut tip = 0u32;
-    let mut iterator = database.raw_iterator();
-    iterator.seek(update_context);
-    while iterator.valid() {
-        let Some(key) = iterator.key() else { break };
-        if !key.starts_with(update_context) {
-            break;
-        }
-        ensure!(
-            key.len() >= update_context.len() + 4,
-            "Malformed historical mapping key of {} bytes; the ledger is corrupt and must be \
-             resynced from genesis",
-            key.len()
+/// An earlier version inferred it from the historical entries themselves, taking the largest of
+/// each entry's smaller reading. That is a lower bound on the tip, not an upper bound on real
+/// heights, and the difference is not academic: an entry above it has its true reading rejected and
+/// its byte-reversed reading accepted, so it is classified as already migrated and left where it
+/// is. Because the staking keys are written every block, the entries at the tip would all be
+/// misplaced together.
+///
+/// The tip is simply on hand. The committee store shares this database -- `CurrentRound` gives the
+/// round, `RoundToHeight` maps it to a height -- and both are reachable by the same raw prefix
+/// access the migration already uses.
+fn ledger_tip(database: &rocksdb::DB, network_id: u16) -> Result<u32> {
+    // `CurrentRoundMap: Map<u8, u64>`, holding one entry under a fixed key.
+    const ROUND_KEY: u8 = 0;
+
+    let mut round_key = context(network_id, MapID::Committee(CommitteeMap::CurrentRound));
+    round_key.extend_from_slice(&bincode::serialize(&ROUND_KEY)?);
+    let Some(round) = database.get(&round_key)? else {
+        bail!(
+            "This ledger records no current round, so the chain tip cannot be established and the \
+             historical entries cannot be safely interpreted. If this is a ledger with no blocks, \
+             there is nothing to migrate."
         );
-        let suffix = <[u8; 4]>::try_from(&key[key.len() - 4..]).expect("checked length");
-        tip = tip.max(u32::from_le_bytes(suffix).min(u32::from_be_bytes(suffix)));
-        iterator.next();
-    }
-    iterator.status()?;
-    ensure!(
-        tip < CEILING_HEIGHT,
-        "Historical mapping entries imply a chain tip of {tip}, which is not a plausible block \
-         height; the ledger is corrupt and must be resynced from genesis"
-    );
-    Ok(tip)
+    };
+    let round: u64 = bincode::deserialize(&round)?;
+
+    // `RoundToHeightMap: Map<u64, u32>`.
+    let mut height_key = context(network_id, MapID::Committee(CommitteeMap::RoundToHeight));
+    height_key.extend_from_slice(&bincode::serialize(&round)?);
+    let Some(height) = database.get(&height_key)? else {
+        bail!("This ledger records round {round} as current, but no height for it; the ledger is inconsistent");
+    };
+    Ok(bincode::deserialize(&height)?)
 }
 
 /// Reads every entry of one mapping key and decides how each was written.
@@ -332,6 +310,19 @@ fn classify_entries(database: &rocksdb::DB, update_context: &[u8], body: &[u8], 
     Ok(KeyEntries { little, big, undecidable })
 }
 
+/// Returns the storage schema version recorded in the ledger. One point lookup.
+pub fn schema_version(database: &rocksdb::DB, network_id: u16) -> Result<u32> {
+    super::get_metadata_u32(database, network_id, MetadataKey::StorageVersion)
+}
+
+/// Returns whether an interrupted migration has progress recorded. One point lookup.
+///
+/// Lets a caller resume without first scanning the map to decide what to do -- the scan being the
+/// expensive part, and its answer already settled by the run that was interrupted.
+pub fn is_resuming(database: &rocksdb::DB, network_id: u16) -> Result<bool> {
+    Ok(get_metadata(database, network_id, MetadataKey::StorageMigrationCursor)?.is_some())
+}
+
 /// Determines what a migration would do, without writing anything.
 ///
 /// Shares its classification with [`migrate`], so the two cannot drift: an operator asking whether
@@ -340,7 +331,7 @@ pub fn plan(database: &rocksdb::DB, network_id: u16) -> Result<RepairPlan> {
     let update_context = context(network_id, MapID::Program(ProgramMap::MappingUpdate));
     let mut report = RepairPlan {
         schema_version: super::get_metadata_u32(database, network_id, MetadataKey::StorageVersion)?,
-        tip: observed_tip(database, &update_context)?,
+        tip: ledger_tip(database, network_id)?,
         ..Default::default()
     };
 
@@ -362,26 +353,39 @@ pub fn plan(database: &rocksdb::DB, network_id: u16) -> Result<RepairPlan> {
 /// cannot be attributed to a height the migration stops having written nothing at all -- so a
 /// ledger reported as unrepairable stays exactly as it was, and no restart can turn that verdict
 /// into a silent success.
-pub fn migrate(database: &rocksdb::DB, network_id: u16) -> Result<()> {
+pub fn migrate(database: &rocksdb::DB, network_id: u16, prepared: Option<&RepairPlan>) -> Result<()> {
     let update_context = context(network_id, MapID::Program(ProgramMap::MappingUpdate));
     let heights_context = context(network_id, MapID::Program(ProgramMap::MappingUpdateHeights));
 
     // Resume state from an interrupted run, which also carries the tip that run decided on: a
     // partially migrated map would derive a different one.
+    // A migrated ledger records the schema version it reached. Checking that -- rather than a
+    // sentinel left in the cursor -- is what makes running this twice a no-op, and is the same
+    // record the node checks before it will start.
+    if super::get_metadata_u32(database, network_id, MetadataKey::StorageVersion)? >= super::STORAGE_VERSION {
+        return Ok(());
+    }
     let resume = match get_metadata(database, network_id, MetadataKey::StorageMigrationCursor)? {
         Some(bytes) => Some(bincode::deserialize::<(Vec<u8>, u64, u32)>(&bytes)?),
         None => None,
     };
-    if matches!(&resume, Some((_, index, _)) if *index == CURSOR_COMPLETE) {
-        return Ok(());
-    }
 
     let tip = match &resume {
         Some((_, _, tip)) => *tip,
         None => {
             // Nothing has been written yet, so this is the moment to refuse. Everything is
             // classified up front; only once that succeeds does anything move.
-            let plan = plan(database, network_id)?;
+            //
+            // A caller that has already planned passes it in: the scan is the expensive part, and
+            // on an archive node repeating it costs hours for an answer that cannot have changed.
+            let owned;
+            let plan = match prepared {
+                Some(plan) => plan,
+                None => {
+                    owned = plan(database, network_id)?;
+                    &owned
+                }
+            };
             if !plan.undecidable.is_empty() {
                 let first = &plan.undecidable[0];
                 bail!(
@@ -444,11 +448,14 @@ pub fn migrate(database: &rocksdb::DB, network_id: u16) -> Result<()> {
     // The heights map is not consulted by anything after this point, and keeping it would leave the
     // read-modify-write path that made it grow in the first place.
     drop_map(database, &heights_context)?;
+    // The schema version and the disposal of this migration's working state commit together.
+    // Without the version the node refuses to start forever, and a second run of the tool finds
+    // nothing to do and reports success -- the migration having done its work and recorded nothing.
+    // The cursor is cleared rather than left holding a sentinel, so a later migration reading it
+    // cannot mistake this one's leavings for its own progress.
     let mut batch = rocksdb::WriteBatch::default();
-    batch.put(
-        metadata_key(network_id, MetadataKey::StorageMigrationCursor),
-        bincode::serialize(&(Vec::<u8>::new(), CURSOR_COMPLETE, tip))?,
-    );
+    batch.put(metadata_key(network_id, MetadataKey::StorageVersion), super::STORAGE_VERSION.to_le_bytes());
+    batch.delete(metadata_key(network_id, MetadataKey::StorageMigrationCursor));
     batch.delete(metadata_key(network_id, MetadataKey::StorageMigrationHeights));
     database.write(batch)?;
 
@@ -698,7 +705,21 @@ mod tests {
         options.set_compression_type(rocksdb::DBCompressionType::Lz4);
         options.set_prefix_extractor(rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN));
         let db = rocksdb::DB::open(&options, dir.path()).expect("open");
+        // A realistic mainnet-scale tip, so ambiguity behaves as it does in production. Tests that
+        // care about a particular tip call `seed_tip` again.
+        seed_tip(&db, 21_000_000);
         (db, dir)
+    }
+
+    /// Records a chain tip, as the committee store would, so the migration can read one.
+    fn seed_tip(db: &rocksdb::DB, height: u32) {
+        let round = 1u64;
+        let mut round_key = context(NETWORK, MapID::Committee(CommitteeMap::CurrentRound));
+        round_key.extend_from_slice(&bincode::serialize(&0u8).unwrap());
+        db.put(round_key, bincode::serialize(&round).unwrap()).unwrap();
+        let mut height_key = context(NETWORK, MapID::Committee(CommitteeMap::RoundToHeight));
+        height_key.extend_from_slice(&bincode::serialize(&round).unwrap());
+        db.put(height_key, bincode::serialize(&height).unwrap()).unwrap();
     }
 
     fn update_ctx() -> Vec<u8> {
@@ -745,7 +766,7 @@ mod tests {
         for height in [1u32, 7, 1_000, 30_000] {
             seed(&db, b"alpha", height, format!("v{height}").as_bytes());
         }
-        migrate(&db, NETWORK).unwrap();
+        migrate(&db, NETWORK, None).unwrap();
         for height in [1u32, 7, 1_000, 30_000] {
             assert_eq!(read_migrated(&db, b"alpha", height), Some(format!("v{height}").into_bytes()));
         }
@@ -774,7 +795,7 @@ mod tests {
         orphan_row.extend_from_slice(b"nonexistent");
         db.put(&orphan_row, bincode::serialize(&vec![1u32]).unwrap()).unwrap();
 
-        migrate(&db, NETWORK).unwrap();
+        migrate(&db, NETWORK, None).unwrap();
 
         // Every real entry migrated, including the one the row omitted.
         for height in [5u32, 50, 500] {
@@ -797,7 +818,7 @@ mod tests {
         // The row knows only about 100 -- exactly the v4.8.0 hole.
         db.put(&heights_key, bincode::serialize(&vec![100u32]).unwrap()).unwrap();
 
-        migrate(&db, NETWORK).unwrap();
+        migrate(&db, NETWORK, None).unwrap();
 
         assert_eq!(read_migrated(&db, b"gamma", 100), Some(b"listed".to_vec()));
         assert_eq!(read_migrated(&db, b"gamma", 200), Some(b"orphan".to_vec()));
@@ -813,7 +834,7 @@ mod tests {
         for (height, value) in [(256u32, b"a".as_slice()), (65_536, b"b"), (65_792, b"c"), (1_000, b"d")] {
             seed(&db, b"delta", height, value);
         }
-        migrate(&db, NETWORK).unwrap();
+        migrate(&db, NETWORK, None).unwrap();
         assert_eq!(read_migrated(&db, b"delta", 256), Some(b"a".to_vec()));
         assert_eq!(read_migrated(&db, b"delta", 65_536), Some(b"b".to_vec()));
         assert_eq!(read_migrated(&db, b"delta", 65_792), Some(b"c".to_vec()));
@@ -843,7 +864,7 @@ mod tests {
         seed_big(&db, b"epsilon", 53_442, b"be-early");
         seed_big(&db, b"epsilon", 76_514, b"be-late");
 
-        migrate(&db, NETWORK).unwrap();
+        migrate(&db, NETWORK, None).unwrap();
 
         // Everything is now readable at its big-endian key, at its true height.
         for (height, value) in
@@ -871,7 +892,7 @@ mod tests {
         // Suffix [0, 1, 0, 0]: 256 little-endian, 65,536 big-endian, both at or below the tip.
         seed(&db, b"eta", 256, b"?");
 
-        let error = migrate(&db, NETWORK).unwrap_err().to_string();
+        let error = migrate(&db, NETWORK, None).unwrap_err().to_string();
         assert!(error.contains("1 historical mapping entries"), "count not reported: {error}");
         assert!(error.contains("256") && error.contains("65536"), "candidate heights not named: {error}");
         // Nothing may have been written: the verdict is reached before any entry moves, so a
@@ -917,7 +938,7 @@ mod tests {
         )
         .unwrap();
 
-        migrate(&db, NETWORK).unwrap();
+        migrate(&db, NETWORK, None).unwrap();
 
         for (height, value) in seeded {
             assert_eq!(read_migrated(&db, b"theta", height), Some(value.to_vec()), "height {height}");
@@ -934,7 +955,7 @@ mod tests {
                 seed(&db, body.as_bytes(), height, format!("{index}:{height}").as_bytes());
             }
         }
-        migrate(&db, NETWORK).unwrap();
+        migrate(&db, NETWORK, None).unwrap();
         for index in 0..200u32 {
             let body = format!("key{index:04}");
             for height in [index + 1, index + 1_000] {
@@ -985,81 +1006,80 @@ mod tests {
         }
     }
 
-    /// A completed migration is not started over, even if the version was never recorded.
+    /// A completed migration records the schema version, and is not started over.
     ///
-    /// The runner advances the schema version only after this returns, so a crash in between would
-    /// otherwise re-run it against big-endian data. That is not a no-op: a big-endian entry at a low
-    /// height reads back as a plausible little-endian height and would be moved a second time.
+    /// Without the stamp the node refuses to start forever, and running the tool again finds
+    /// nothing to do and reports success -- the migration having done its work and recorded
+    /// nothing. This asserts the record, not merely that a second run is harmless.
     #[test]
-    fn test_completed_migration_is_not_repeated() {
+    fn test_completed_migration_records_the_version() {
         let (db, _dir) = database();
         for height in [3u32, 30, 300] {
             seed(&db, b"zeta", height, format!("v{height}").as_bytes());
         }
-        migrate(&db, NETWORK).unwrap();
+        migrate(&db, NETWORK, None).unwrap();
 
-        // Exactly the crash window: the migration finished, the version was never written.
-        migrate(&db, NETWORK).unwrap();
+        assert_eq!(
+            super::super::get_metadata_u32(&db, NETWORK, MetadataKey::StorageVersion).unwrap(),
+            super::super::STORAGE_VERSION,
+            "the migration completed without recording it"
+        );
+        // The working state is gone, so a later migration cannot mistake it for its own progress.
+        assert!(get_metadata(&db, NETWORK, MetadataKey::StorageMigrationCursor).unwrap().is_none());
+        assert!(get_metadata(&db, NETWORK, MetadataKey::StorageMigrationHeights).unwrap().is_none());
 
+        // And a second run is a no-op rather than a second pass over big-endian data.
+        migrate(&db, NETWORK, None).unwrap();
         for height in [3u32, 30, 300] {
             assert_eq!(read_migrated(&db, b"zeta", height), Some(format!("v{height}").into_bytes()));
         }
         assert_eq!(count(&db, &update_ctx()), 3);
     }
 
-    /// The derived tip is a bound no real entry exceeds, so a correct ledger is never condemned.
+    /// The tip is read from the ledger, not inferred from the entries.
     ///
-    /// This is the property the whole classification rests on. An earlier version derived the tip
-    /// only from entries whose encoding was already certain, which on a key whose highest entries
-    /// were ambiguous produced a tip below them -- and then rejected those entries as implausible
-    /// under either reading, condemning a repairable ledger.
+    /// Inferring it as the largest of each entry's smaller reading gives a *lower* bound on the
+    /// tip, not an upper bound on real heights. An entry above that bound then has its true reading
+    /// rejected and its byte-reversed reading accepted, so it is classified as already migrated and
+    /// left in place -- silently readable at a height it never had. This reproduces exactly that
+    /// case: height 131,328 byte-reverses to 66,048, which is below it.
     #[test]
-    fn test_derived_tip_keeps_every_entry_plausible() {
+    fn test_tip_is_read_from_the_ledger_not_inferred() {
         let (db, _dir) = database();
-        // Heights whose encodings collide, so every one of them is ambiguous under any bound: the
-        // derivation cannot lean on unambiguous entries here.
-        for height in [256u32, 65_536, 65_792] {
-            seed(&db, b"iota", height, b"v");
+        seed_tip(&db, 131_328);
+        for height in [100u32, 131_327, 131_328] {
+            seed(&db, b"lambda", height, format!("v{height}").as_bytes());
         }
-        let tip = observed_tip(&db, &update_ctx()).unwrap();
-        assert_eq!(tip, 65_792, "the tip is the largest of each entry's smaller reading");
+        assert_eq!(ledger_tip(&db, NETWORK).unwrap(), 131_328);
 
-        // And with that tip, no entry is implausible both ways -- which is what lets the migration
-        // proceed rather than reporting corruption.
-        let entries = classify_entries(&db, &update_ctx(), b"iota", tip).unwrap();
-        assert_eq!(entries.little.len() + entries.big as usize + entries.undecidable.len(), 3);
+        migrate(&db, NETWORK, None).unwrap();
 
-        // A lone high entry lifts the tip for everything else.
-        let (db2, _dir2) = database();
-        seed(&db2, b"kappa", 5, b"v");
-        seed(&db2, b"kappa", 900_000, b"v");
-        assert_eq!(observed_tip(&db2, &update_ctx()).unwrap(), 900_000);
+        for height in [100u32, 131_327, 131_328] {
+            assert_eq!(
+                read_migrated(&db, b"lambda", height),
+                Some(format!("v{height}").into_bytes()),
+                "height {height}"
+            );
+        }
+        // The height its byte-reversal would have put it at must hold nothing.
+        assert_eq!(read_migrated(&db, b"lambda", 66_048), None, "an entry was relocated to a fabricated height");
     }
 
-    /// A palindromic suffix is not ambiguous: it reads as the same height either way.
-    ///
-    /// `[0, 1, 1, 0]` is height 65,792 under both encodings, and the big-endian key for 65,792 is
-    /// that same suffix -- so the entry is already where it belongs whichever build wrote it.
-    /// Reporting these as undecidable would condemn a ledger over entries that need no decision:
-    /// on a real three-format ledger they were half of what remained.
+    /// A ledger with no recorded round cannot be interpreted, and says so.
     #[test]
-    fn test_palindromic_heights_need_no_decision() {
-        assert_eq!(65_792u32.to_le_bytes(), 65_792u32.to_be_bytes());
+    fn test_missing_tip_is_reported() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let mut options = rocksdb::Options::default();
+        options.create_if_missing(true);
+        options.set_prefix_extractor(rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN));
+        let db = rocksdb::DB::open(&options, dir.path()).expect("open");
+        seed(&db, b"nu", 1, b"v");
 
-        let (db, _dir) = database();
-        // A key holding both encodings, so ambiguity is otherwise possible.
-        seed(&db, b"lambda", 70_000, b"le");
-        seed_big(&db, b"lambda", 70_001, b"be");
-        seed(&db, b"lambda", 65_792, b"palindrome");
-
-        migrate(&db, NETWORK).unwrap();
-
-        assert_eq!(read_migrated(&db, b"lambda", 65_792), Some(b"palindrome".to_vec()));
-        assert_eq!(read_migrated(&db, b"lambda", 70_000), Some(b"le".to_vec()));
-        assert_eq!(read_migrated(&db, b"lambda", 70_001), Some(b"be".to_vec()));
+        let error = migrate(&db, NETWORK, None).unwrap_err().to_string();
+        assert!(error.contains("records no current round"), "unexpected error: {error}");
     }
 
-    /// Returns the process's peak resident set size, in KiB.
+    /// Returns the process's peak resident set size, in KiB.    /// Returns the process's peak resident set size, in KiB.
     fn peak_rss_kb() -> u64 {
         std::fs::read_to_string("/proc/self/status")
             .expect("read /proc/self/status")
@@ -1112,7 +1132,7 @@ mod tests {
         let baseline = peak_rss_kb();
 
         let timer = std::time::Instant::now();
-        migrate(&db, NETWORK).unwrap();
+        migrate(&db, NETWORK, None).unwrap();
         let elapsed = timer.elapsed();
         let growth = peak_rss_kb().saturating_sub(baseline);
 

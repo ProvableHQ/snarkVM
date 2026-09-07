@@ -14,7 +14,7 @@
 // limitations under the License.
 
 mod history_migration;
-pub use history_migration::{RepairPlan, Undecidable, migrate, plan};
+pub use history_migration::{RepairPlan, Undecidable, is_resuming, migrate, plan, schema_version};
 
 mod id;
 pub use id::*;
@@ -66,6 +66,9 @@ pub const STORAGE_VERSION: u32 = 1;
 /// The well-known keys of the storage metadata map.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
+// The shared prefix is the point: these name storage-schema metadata, and the discriminants are
+// written to disk, so they are not free to be renamed.
+#[allow(clippy::enum_variant_names)]
 pub(crate) enum MetadataKey {
     /// The storage schema version the database was last written under.
     StorageVersion = 0,
@@ -74,23 +77,6 @@ pub(crate) enum MetadataKey {
     /// Meaningful only to the migration for the version currently being applied, which is
     /// unambiguous because migrations run one at a time in order.
     StorageMigrationCursor = 1,
-    /// What a migration could not settle from storage alone.
-    ///
-    /// Currently write-only: a migration that finds such entries records them here and then fails,
-    /// naming them, so an operator learns precisely what is wrong rather than being told to resync
-    /// on faith. Nothing reads it back yet.
-    ///
-    /// It exists because the natural next step, if these entries turn out to occur in practice, is
-    /// a second phase that resolves them using evidence the storage layer does not have. Whether a
-    /// particular block actually updated a particular mapping key is recorded in that block's
-    /// finalize operations, which the ledger can answer and this crate cannot. Persisting the list
-    /// rather than holding it in memory is what would let such a phase run after the ledger is
-    /// loaded, and survive an interruption in between.
-    ///
-    /// That phase is deliberately not built: it would be complexity in service of a case we have
-    /// not yet observed in a real database. The count reported by a failing migration is the
-    /// evidence that would justify it.
-    StorageMigrationHandoff = 3,
     /// Working state belonging to the migration currently being applied.
     ///
     /// Separate from the cursor because it is written once per unit of work while the cursor
@@ -129,11 +115,6 @@ pub(crate) fn get_metadata_u32(database: &rocksdb::DB, network_id: u16, key: Met
         }
         None => Ok(0),
     }
-}
-
-/// Deletes a metadata entry.
-pub(crate) fn delete_metadata(database: &rocksdb::DB, network_id: u16, key: MetadataKey) -> Result<()> {
-    Ok(database.delete(metadata_key(network_id, key))?)
 }
 
 /// Verifies the ledger's storage schema is one this build understands.

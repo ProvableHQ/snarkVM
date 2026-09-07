@@ -30,7 +30,7 @@
 //! migration will refuse to open a ledger a node still holds.
 
 use anyhow::{Result, bail};
-use snarkvm_ledger_store::helpers::rocksdb::{PREFIX_LEN, migrate, plan};
+use snarkvm_ledger_store::helpers::rocksdb::{PREFIX_LEN, is_resuming, migrate, plan, schema_version};
 
 /// Entries per second, measured on the migration itself. Only used to turn a count into a figure an
 /// operator can plan around, so it is deliberately conservative.
@@ -53,6 +53,20 @@ usage: snarkvm-migrate-db [--check] <ledger-dir> [network-id]
 The network is inferred from a directory name ending in `-<id>` (0 = mainnet, 1 = testnet,
 2 = canary), or given as the final argument.";
 
+/// Returns the network id encoded in a ledger directory name, if it has one.
+///
+/// Production ledgers are `ledger-{network}`; development ones are `.ledger-{network}-{id}`, so a
+/// naive split from the right yields the dev id instead. Getting this wrong is quiet rather than
+/// loud -- the tool finds no history under the wrong prefix, reports nothing to do, and leaves the
+/// real history untouched -- so an id outside the known range is refused rather than assumed.
+fn network_from_name(path: &str) -> Option<u16> {
+    let name = std::path::Path::new(path).file_name()?.to_str()?;
+    let rest = name.strip_prefix('.').unwrap_or(name).strip_prefix("ledger-")?;
+    let network = rest.split('-').next()?.parse().ok()?;
+    // 0 = mainnet, 1 = testnet, 2 = canary. Anything else is a misread name.
+    (network <= 2).then_some(network)
+}
+
 fn parse() -> Result<Args> {
     let mut check = false;
     let mut positional = Vec::new();
@@ -72,13 +86,10 @@ fn parse() -> Result<Args> {
     let Some(path) = positional.first().cloned() else { bail!("{USAGE}") };
     let network_id = match positional.get(1) {
         Some(explicit) => explicit.parse()?,
-        None => {
-            let name = std::path::Path::new(&path).file_name().and_then(|name| name.to_str());
-            match name.and_then(|name| name.rsplit_once('-')).and_then(|(_, id)| id.parse().ok()) {
-                Some(id) => id,
-                None => bail!("Could not infer the network from {path:?}.\n\n{USAGE}"),
-            }
-        }
+        None => match network_from_name(&path) {
+            Some(id) => id,
+            None => bail!("Could not infer the network from {path:?}.\n\n{USAGE}"),
+        },
     };
     Ok(Args { path, network_id, check })
 }
@@ -118,11 +129,21 @@ fn main() -> Result<()> {
         false => rocksdb::DB::open(&options(), &args.path)?,
     };
 
-    let report = plan(&database, args.network_id)?;
-    if report.schema_version > 0 {
-        println!("{} is at storage schema v{}. Nothing to do.", args.path, report.schema_version);
+    // Two point lookups before any scan: an already-migrated ledger should not be walked end to
+    // end just to print a status line, and neither should one being resumed.
+    if schema_version(&database, args.network_id)? > 0 {
+        println!("{} is already migrated. Nothing to do.", args.path);
         return Ok(());
     }
+    if !args.check && is_resuming(&database, args.network_id)? {
+        println!("Resuming an interrupted migration of {}\n", args.path);
+        tracing_subscriber::fmt().with_env_filter("info").with_target(false).init();
+        migrate(&database, args.network_id, None)?;
+        println!("\nMigration complete. The node can now be started.");
+        return Ok(());
+    }
+
+    let report = plan(&database, args.network_id)?;
 
     let total = report.little_endian + report.big_endian;
     println!("{} (network {})\n", args.path, args.network_id);
@@ -157,7 +178,7 @@ fn main() -> Result<()> {
 
     tracing_subscriber::fmt().with_env_filter("info").with_target(false).init();
     println!("Migrating. Estimated {minutes:.1} minutes; safe to interrupt and resume.\n");
-    migrate(&database, args.network_id)?;
+    migrate(&database, args.network_id, Some(&report))?;
     println!("\nMigration complete. The node can now be started.");
     Ok(())
 }
