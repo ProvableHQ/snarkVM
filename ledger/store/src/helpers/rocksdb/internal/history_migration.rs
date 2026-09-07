@@ -117,6 +117,8 @@ struct KeyEntries {
     little: Vec<u32>,
     /// How many entries were already big-endian.
     big: u64,
+    /// The lowest and highest big-endian heights, if any.
+    big_range: Option<(u32, u32)>,
     /// Entries whose encoding cannot be settled from the database alone.
     undecidable: Vec<Undecidable>,
 }
@@ -141,8 +143,19 @@ pub struct RepairPlan {
     pub keys: u64,
     /// Entries to be rewritten.
     pub little_endian: u64,
+    /// The span of heights written little-endian, which is how long the older build ran.
+    pub little_endian_range: Option<(u32, u32)>,
     /// Entries already in the target form.
     pub big_endian: u64,
+    /// The span of heights written big-endian, which is how long the newer build ran.
+    ///
+    /// On a ledger that was upgraded and then reverted, this is the window during which the
+    /// mixture was created -- readable from the data rather than from anyone's recollection.
+    pub big_endian_range: Option<(u32, u32)>,
+    /// Keys holding entries in both encodings. These are the only keys that can be undecidable.
+    pub mixed_keys: u64,
+    /// Keys carrying at least one undecidable entry.
+    pub undecidable_keys: u64,
     /// Entries whose height cannot be determined. A non-empty list means the ledger is unrepairable.
     pub undecidable: Vec<Undecidable>,
 }
@@ -264,8 +277,15 @@ fn classify_entries(database: &rocksdb::DB, update_context: &[u8], body: &[u8], 
 
     let mut little = Vec::new();
     let mut big = 0u64;
+    let mut big_range: Option<(u32, u32)> = None;
     let mut ambiguous = Vec::new();
     let (mut saw_little, mut saw_big) = (false, false);
+    let mut note_big = |height: u32, range: &mut Option<(u32, u32)>| {
+        *range = Some(match *range {
+            Some((lo, hi)) => (lo.min(height), hi.max(height)),
+            None => (height, height),
+        });
+    };
     for suffix in &suffixes {
         let as_little = u32::from_le_bytes(*suffix);
         let as_big = u32::from_be_bytes(*suffix);
@@ -277,6 +297,7 @@ fn classify_entries(database: &rocksdb::DB, update_context: &[u8], body: &[u8], 
             (false, true) => {
                 saw_big = true;
                 big += 1;
+                note_big(as_big, &mut big_range);
             }
             (true, true) => ambiguous.push((as_little, as_big)),
             // Unreachable: the tip is derived as the largest of every entry's smaller reading, so
@@ -298,17 +319,21 @@ fn classify_entries(database: &rocksdb::DB, update_context: &[u8], body: &[u8], 
         // it. Counted as migrated rather than moved, to avoid a write that changes nothing.
         if as_little == as_big {
             big += 1;
+            note_big(as_big, &mut big_range);
             continue;
         }
         match (saw_little, saw_big) {
             (_, false) => little.push(as_little),
-            (false, true) => big += 1,
+            (false, true) => {
+                big += 1;
+                note_big(as_big, &mut big_range);
+            }
             (true, true) => undecidable.push(Undecidable { little: as_little, big: as_big }),
         }
     }
 
     little.sort_unstable();
-    Ok(KeyEntries { little, big, undecidable })
+    Ok(KeyEntries { little, big, big_range, undecidable })
 }
 
 /// Returns the storage schema version recorded in the ledger. One point lookup.
@@ -342,6 +367,26 @@ pub fn plan(database: &rocksdb::DB, network_id: u16) -> Result<RepairPlan> {
         report.keys += 1;
         report.little_endian += classified.little.len() as u64;
         report.big_endian += classified.big;
+        if let (Some(&low), Some(&high)) = (classified.little.first(), classified.little.last()) {
+            report.little_endian_range = Some(match report.little_endian_range {
+                Some((lo, hi)) => (lo.min(low), hi.max(high)),
+                None => (low, high),
+            });
+        }
+        if let Some((low, high)) = classified.big_range {
+            report.big_endian_range = Some(match report.big_endian_range {
+                Some((lo, hi)) => (lo.min(low), hi.max(high)),
+                None => (low, high),
+            });
+        }
+        // Only a key holding both encodings can produce an undecidable entry, so this is the
+        // population at risk -- and a far more useful figure than the total key count.
+        if !classified.little.is_empty() && classified.big > 0 {
+            report.mixed_keys += 1;
+        }
+        if !classified.undecidable.is_empty() {
+            report.undecidable_keys += 1;
+        }
         report.undecidable.extend(classified.undecidable);
         cursor = Some(body);
     }

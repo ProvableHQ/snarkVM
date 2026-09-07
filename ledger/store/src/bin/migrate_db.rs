@@ -147,13 +147,24 @@ fn main() -> Result<()> {
 
     let total = report.little_endian + report.big_endian;
     println!("{} (network {})\n", args.path, args.network_id);
-    println!("  chain tip        {} (derived from the entries themselves)", report.tip);
+    let span = |range: Option<(u32, u32)>| match range {
+        Some((low, high)) => format!("{low}..{high}"),
+        None => "none".to_string(),
+    };
+    println!("  chain tip        {}", report.tip);
     println!("  mapping keys     {}", report.keys);
-    println!(
-        "  entries          {total} ({} to migrate, {} already migrated)",
-        report.little_endian, report.big_endian
-    );
-    println!("  undecidable      {}\n", report.undecidable.len());
+    println!("  entries          {total}");
+    println!("    to migrate     {} over heights {}", report.little_endian, span(report.little_endian_range));
+    println!("    already done   {} over heights {}", report.big_endian, span(report.big_endian_range));
+    println!("  mixed keys       {} (hold both encodings; only these can be undecidable)", report.mixed_keys);
+    println!("  undecidable      {} across {} keys\n", report.undecidable.len(), report.undecidable_keys);
+
+    // The big-endian span is the window in which a newer build ran, readable from the data rather
+    // than from anyone's recollection of what ran when.
+    if let Some((low, high)) = report.big_endian_range {
+        println!("Entries already in the new format span heights {low}..{high}, so a build writing");
+        println!("that format ran for roughly {} blocks.\n", high.saturating_sub(low) + 1);
+    }
 
     if !report.undecidable.is_empty() {
         println!("This ledger CANNOT be migrated and must be resynced from genesis.\n");
