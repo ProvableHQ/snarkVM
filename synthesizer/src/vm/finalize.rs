@@ -133,6 +133,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         candidate_transactions: impl ExactSizeIterator<Item = &'a Transaction<N>>,
         rng: &mut R,
     ) -> Result<(Ratifications<N>, Transactions<N>, Vec<N::TransactionID>, Vec<FinalizeOperation<N>>)> {
+        #[cfg(feature = "metrics")]
+        let _speculate_metrics = snarkvm_metrics::vm::TimedInFlight::enter(
+            snarkvm_metrics::vm::SPECULATE_IN_FLIGHT,
+            snarkvm_metrics::vm::SPECULATE_DURATION_SECONDS,
+        );
         let timer = timer!("VM::speculate");
 
         // Collect the candidate transactions into a vector.
@@ -524,6 +529,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     )> {
         self.ensure_sequential_processing();
 
+        #[cfg(feature = "metrics")]
+        let _atomic_speculate_metrics = snarkvm_metrics::vm::TimedInFlight::enter(
+            snarkvm_metrics::vm::ATOMIC_SPECULATE_IN_FLIGHT,
+            snarkvm_metrics::vm::ATOMIC_SPECULATE_DURATION_SECONDS,
+        );
         let timer = timer!("VM::atomic_speculate");
 
         // Retrieve the number of solutions.
@@ -1432,6 +1442,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         state: FinalizeGlobalState,
         rng: &mut R,
     ) -> Result<(Vec<&'a Transaction<N>>, Vec<(&'a Transaction<N>, String)>)> {
+        #[cfg(feature = "metrics")]
+        let _prepare_metrics = snarkvm_metrics::vm::TimedInFlight::enter(
+            snarkvm_metrics::vm::PREPARE_FOR_SPECULATE_IN_FLIGHT,
+            snarkvm_metrics::vm::PREPARE_FOR_SPECULATE_DURATION_SECONDS,
+        );
         // Construct the list of transactions that need to verified.
         let mut transactions_to_verify = Vec::with_capacity(transactions.len());
         // Construct the list of valid and invalid transactions.

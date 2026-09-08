@@ -102,6 +102,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         rejected_id: Option<Field<N>>,
         rng: &mut R,
     ) -> Result<()> {
+        #[cfg(feature = "metrics")]
+        let check_transaction_metrics = snarkvm_metrics::vm::TimedCheckTransaction::enter();
         let timer = timer!("VM::check_transaction");
 
         // Get the current block height for consensus version checks.
@@ -210,6 +212,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Check if the transaction exists in the partially-verified cache.
         let is_partially_verified = self.partially_verified_transactions.read().peek(&cache_key) == Some(&checksum)
             || is_pre_accepted_testnet_transaction::<N>(transaction.id());
+        #[cfg(feature = "metrics")]
+        check_transaction_metrics.set_cache_hit(is_partially_verified);
 
         // Verify the fee.
         self.check_fee(transaction, rejected_id, is_partially_verified)?;
@@ -1045,6 +1049,8 @@ mod tests {
         vm.check_transaction(&deployment_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
         assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
+        // A second check should hit the partial-verification cache.
+        vm.check_transaction(&deployment_transaction, None, rng).unwrap();
 
         // Fetch an execution transaction.
         let execution_transaction = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);

@@ -33,10 +33,108 @@ const GAUGE_NAMES: &[&str] = &[
     rocksdb::NUM_FILES_AT_LEVEL[4],
     rocksdb::NUM_FILES_AT_LEVEL[5],
     rocksdb::NUM_FILES_AT_LEVEL[6],
+    vm::CHECK_TRANSACTION_IN_FLIGHT,
+    vm::PREPARE_FOR_SPECULATE_IN_FLIGHT,
+    vm::ATOMIC_SPECULATE_IN_FLIGHT,
+    vm::SPECULATE_IN_FLIGHT,
 ];
 
 pub mod committee {
     pub const TOTAL_STAKE: &str = "snarkvm_ledger_committee_total_stake";
+}
+
+/// VM verification and speculation metrics.
+///
+/// Overlay `CHECK_TRANSACTION_DURATION_SECONDS{cache="hit"}` with host CPU and
+/// `PREPARE_FOR_SPECULATE_IN_FLIGHT` to test whether broadcast verification
+/// stalls during block construction. Compare `cache="hit"` vs `cache="miss"`
+/// to separate duplicate proof work from contention on the cheap path.
+pub mod vm {
+    use std::{cell::Cell, time::Instant};
+
+    /// Concurrent `VM::check_transaction` calls.
+    pub const CHECK_TRANSACTION_IN_FLIGHT: &str = "snarkvm_vm_check_transaction_in_flight";
+    /// Wall time of `VM::check_transaction` in seconds, labeled by `cache`.
+    ///
+    /// Label values: `hit` (proof skipped), `miss` (proof verified), `pre_cache` (failed before the cache lookup).
+    pub const CHECK_TRANSACTION_DURATION_SECONDS: &str = "snarkvm_vm_check_transaction_duration_seconds";
+    /// `check_transaction` calls that skipped proof verification via the partial-verification cache.
+    pub const CHECK_TRANSACTION_CACHE_HIT_TOTAL: &str = "snarkvm_vm_check_transaction_cache_hit_total";
+    /// `check_transaction` calls that ran proof verification.
+    pub const CHECK_TRANSACTION_CACHE_MISS_TOTAL: &str = "snarkvm_vm_check_transaction_cache_miss_total";
+    /// Concurrent `VM::prepare_for_speculate` calls (block-template verification).
+    pub const PREPARE_FOR_SPECULATE_IN_FLIGHT: &str = "snarkvm_vm_prepare_for_speculate_in_flight";
+    /// Wall time of `VM::prepare_for_speculate` in seconds.
+    pub const PREPARE_FOR_SPECULATE_DURATION_SECONDS: &str = "snarkvm_vm_prepare_for_speculate_duration_seconds";
+    /// Concurrent `VM::atomic_speculate_inner` calls (finalize dry-run).
+    pub const ATOMIC_SPECULATE_IN_FLIGHT: &str = "snarkvm_vm_atomic_speculate_in_flight";
+    /// Wall time of `VM::atomic_speculate_inner` in seconds.
+    pub const ATOMIC_SPECULATE_DURATION_SECONDS: &str = "snarkvm_vm_atomic_speculate_duration_seconds";
+    /// Concurrent `VM::speculate` calls (prepare_for_speculate + atomic_speculate).
+    pub const SPECULATE_IN_FLIGHT: &str = "snarkvm_vm_speculate_in_flight";
+    /// Wall time of `VM::speculate` in seconds.
+    pub const SPECULATE_DURATION_SECONDS: &str = "snarkvm_vm_speculate_duration_seconds";
+
+    /// Increments an in-flight gauge until dropped, then records elapsed seconds.
+    pub struct TimedInFlight {
+        gauge_name: &'static str,
+        histogram_name: &'static str,
+        start: Instant,
+    }
+
+    impl TimedInFlight {
+        /// Starts an in-flight measurement for the given gauge and histogram.
+        #[must_use]
+        pub fn enter(gauge_name: &'static str, histogram_name: &'static str) -> Self {
+            super::increment_gauge(gauge_name, 1.0);
+            Self { gauge_name, histogram_name, start: Instant::now() }
+        }
+    }
+
+    impl Drop for TimedInFlight {
+        fn drop(&mut self) {
+            super::decrement_gauge(self.gauge_name, 1.0);
+            super::histogram(self.histogram_name, self.start.elapsed().as_secs_f64());
+        }
+    }
+
+    /// Tracks `check_transaction` in-flight count, duration, and cache hit/miss.
+    pub struct TimedCheckTransaction {
+        start: Instant,
+        cache: Cell<&'static str>,
+    }
+
+    impl TimedCheckTransaction {
+        /// Starts a `check_transaction` measurement.
+        #[must_use]
+        pub fn enter() -> Self {
+            super::increment_gauge(CHECK_TRANSACTION_IN_FLIGHT, 1.0);
+            Self { start: Instant::now(), cache: Cell::new("pre_cache") }
+        }
+
+        /// Records whether this call skipped proof verification.
+        pub fn set_cache_hit(&self, hit: bool) {
+            self.cache.set(if hit { "hit" } else { "miss" });
+        }
+    }
+
+    impl Drop for TimedCheckTransaction {
+        fn drop(&mut self) {
+            super::decrement_gauge(CHECK_TRANSACTION_IN_FLIGHT, 1.0);
+            let label = self.cache.get();
+            super::histogram_label(
+                CHECK_TRANSACTION_DURATION_SECONDS,
+                "cache",
+                label.to_string(),
+                self.start.elapsed().as_secs_f64(),
+            );
+            match label {
+                "hit" => super::increment_counter(CHECK_TRANSACTION_CACHE_HIT_TOTAL),
+                "miss" => super::increment_counter(CHECK_TRANSACTION_CACHE_MISS_TOTAL),
+                _ => {}
+            }
+        }
+    }
 }
 
 /// RocksDB internal database metrics.
@@ -156,4 +254,29 @@ pub fn histogram<V: Into<f64>>(name: &'static str, value: V) {
 
 pub fn histogram_label<V: Into<f64>>(name: &'static str, label_key: &'static str, label_value: String, value: V) {
     ::metrics::histogram!(name, label_key => label_value).record(value.into());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timed_in_flight_drop_does_not_panic() {
+        register_metrics();
+        let _guard = vm::TimedInFlight::enter(vm::SPECULATE_IN_FLIGHT, vm::SPECULATE_DURATION_SECONDS);
+    }
+
+    #[test]
+    fn timed_check_transaction_records_hit_and_miss() {
+        register_metrics();
+        {
+            let miss = vm::TimedCheckTransaction::enter();
+            miss.set_cache_hit(false);
+        }
+        {
+            let hit = vm::TimedCheckTransaction::enter();
+            hit.set_cache_hit(true);
+        }
+        let _pre_cache = vm::TimedCheckTransaction::enter();
+    }
 }
