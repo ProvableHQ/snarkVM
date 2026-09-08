@@ -149,6 +149,25 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Initializes the VM from storage.
     #[inline]
     pub fn from(store: ConsensusStore<N, C>) -> Result<Self> {
+        Self::from_inner(store, true)
+    }
+
+    /// Initializes the VM from storage, without loading the deployments already in it.
+    ///
+    /// For replaying a chain from genesis, where the process must hold each program as it stood at
+    /// the block being replayed. Loading them up front instead gives every replayed deployment the
+    /// program's *latest* edition and amendments to check itself against, which fails for any
+    /// program later revised.
+    ///
+    /// The process starts with `credits.aleo` alone and the replay adds the rest as it reaches
+    /// their deployments, which is how a node builds it when syncing.
+    #[inline]
+    pub fn from_without_deployments(store: ConsensusStore<N, C>) -> Result<Self> {
+        Self::from_inner(store, false)
+    }
+
+    #[inline]
+    fn from_inner(store: ConsensusStore<N, C>, preload_deployments: bool) -> Result<Self> {
         // Initialize the store for 'credits.aleo'.
         store.finalize_store().initialize_credits_mappings(&Program::<N>::credits()?)?;
 
@@ -175,7 +194,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let process = Process::load()?;
 
         // Retrieve the list of deployment transaction IDs and their associated block heights.
-        let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
+        let deployment_ids = match preload_deployments {
+            true => transaction_store.deployment_transaction_ids().collect::<Vec<_>>(),
+            false => Vec::new(),
+        };
         let mut deployment_ids = cfg_into_iter!(deployment_ids)
             .map(|transaction_id| {
                 // Retrieve the block hash for the deployment transaction ID.

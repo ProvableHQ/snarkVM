@@ -167,6 +167,93 @@ fn initialize_credits_mappings(ledger: &CurrentLedger) {
     ledger.vm().finalize_store().initialize_credits_mappings(&credits).unwrap();
 }
 
+/// A rebuild must replay a program's own deployment and the mapping updates its execution made.
+///
+/// The beacon-only chains above hold no programs, so they never exercise the process being built as
+/// the replay proceeds -- the whole reason the rebuild constructs its VM without preloaded
+/// deployments. Here the program's stack exists only because its deployment was replayed first.
+#[test]
+fn test_rebuild_replays_a_deployed_program() {
+    let _guard = serial();
+    let rng = &mut TestRng::default();
+    let storage_mode = StorageMode::new_test(None);
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let store = CurrentConsensusStore::open(storage_mode.clone()).unwrap();
+    let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, rng).unwrap();
+    let ledger = CurrentLedger::load(genesis, storage_mode.clone()).unwrap();
+
+    let program = snarkvm_synthesizer::program::Program::<CurrentNetwork>::from_str(
+        r"
+program rebuild_probe.aleo;
+
+mapping counter:
+    key as field.public;
+    value as u64.public;
+
+function bump:
+    input r0 as field.public;
+    async bump r0 into r1;
+    output r1 as rebuild_probe.aleo/bump.future;
+
+finalize bump:
+    input r0 as field.public;
+    get.or_use counter[r0] 0u64 into r1;
+    add r1 1u64 into r2;
+    set r2 into counter[r0];
+",
+    )
+    .unwrap();
+
+    let deployment = ledger.vm().deploy(&private_key, &program, None, 0, None, rng).unwrap();
+    let block =
+        ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![deployment], rng).unwrap();
+    ledger.advance_to_next_block(&block).unwrap();
+
+    // Two executions, so the mapping has a history rather than a single entry.
+    for _ in 0..2 {
+        let inputs = vec![snarkvm_console::program::Value::from_str("1field").unwrap()];
+        let execution = ledger
+            .vm()
+            .execute(&private_key, ("rebuild_probe.aleo", "bump"), inputs.iter(), None, 0, None, rng)
+            .unwrap();
+        let block =
+            ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![execution], rng).unwrap();
+        ledger.advance_to_next_block(&block).unwrap();
+    }
+
+    let program_id = ProgramID::<CurrentNetwork>::from_str("rebuild_probe.aleo").unwrap();
+    let mapping_name = Identifier::<CurrentNetwork>::from_str("counter").unwrap();
+    let key = Plaintext::<CurrentNetwork>::from_str("1field").unwrap();
+    let expected = ledger
+        .vm()
+        .finalize_store()
+        .get_mapping_update_heights(program_id, mapping_name, key.clone())
+        .unwrap()
+        .map(|heights| heights.into_owned());
+    assert!(expected.as_ref().is_some_and(|heights| heights.len() == 2), "the chain should have written two updates");
+
+    // Release the ledger's VM, which preloaded the program, and rebuild through one that did not --
+    // the arrangement the tool uses, and the only one that can replay a deployment correctly.
+    drop(ledger);
+
+    let database = open_db(storage_mode.clone());
+    rocksdb::set_schema_version(&database, CurrentNetwork::ID, 0).unwrap();
+
+    // As the tool does: the schema gate exists to keep a node out of exactly this database.
+    rocksdb::allow_downlevel_open();
+    let store = CurrentConsensusStore::open(storage_mode).unwrap();
+    let vm = VM::from_without_deployments(store).unwrap();
+    vm.rebuild_finalize_state().unwrap();
+
+    let rebuilt = vm
+        .finalize_store()
+        .get_mapping_update_heights(program_id, mapping_name, key)
+        .unwrap()
+        .map(|heights| heights.into_owned());
+    assert_eq!(rebuilt, expected, "the replayed program's mapping history differs from the chain's");
+}
+
 /// A rebuild must reproduce the history the chain originally wrote, entry for entry.
 #[test]
 fn test_rebuild_reproduces_history() {

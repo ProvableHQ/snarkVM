@@ -253,19 +253,21 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
              Rebuild it with a build that has the features the node runs with."
         );
 
-        // Refuse a ledger carrying an upgraded program, before discarding anything.
+        // Refuse to replay against a preloaded process, before discarding anything.
         //
-        // `VM::from` preloads the latest edition of every program, so replaying an *earlier*
-        // deployment of an upgraded one hands `Process::finalize_deployment` the wrong stack: for a
-        // non-zero edition it diffs the block's mappings against the latest program's, yielding
-        // fewer `InitializeMapping` operations than the block records, and for a program with a
-        // constructor it runs the upgrade check in reverse. Either way the replay aborts.
-        //
-        // A pre-flight rather than a mid-run failure. Aborting after the clear would leave the
-        // finalize state discarded and the rebuild flagged in progress -- a ledger that serves
-        // nothing, from one that only read history wrongly.
-        //
-        // Lifting this needs the process built as the replay proceeds rather than preloaded.
+        // A process holding programs beyond `credits.aleo` was loaded from storage, so it carries
+        // each program's latest edition and amendments. Replaying an earlier deployment of a
+        // revised program would check it against the wrong program and abort -- after the state had
+        // been discarded, leaving a ledger that serves nothing.
+        let credits = ProgramID::<N>::from_str("credits.aleo")?;
+        let preloaded = self.process().program_ids().into_iter().filter(|id| *id != credits).count();
+        ensure!(
+            preloaded == 0,
+            "This VM holds {preloaded} program(s) loaded from storage, so replaying their \
+             deployments would check them against their latest editions rather than the ones the \
+             blocks carry. Build the VM with `from_without_deployments` to rebuild."
+        );
+
         if check_only {
             tracing::info!(
                 "Blocks {} (tip {tip}), history {}, staking rewards {}{}",
@@ -275,33 +277,6 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
                 if resuming { ", and an unfinished rebuild would be resumed" } else { "" },
             );
         }
-
-        //
-        // Amendments are checked alongside editions because a V3 deployment deliberately keeps the
-        // edition it amends, so an amended program reads as edition 0 and would slip past a check
-        // on the edition alone -- into the same stale-process problem, since the amendment count
-        // would be taken from the fully-amended stack.
-        let deployments = self.transaction_store().deployment_store();
-        let mut revised = None;
-        for (program_id, edition) in deployments.program_ids_and_latest_editions() {
-            let (program_id, edition) = (program_id.into_owned(), edition.into_owned());
-            if edition > 0 {
-                revised = Some(format!("{program_id} is at edition {edition}"));
-                break;
-            }
-            if deployments.get_amendment_count(&program_id, edition)?.is_some_and(|count| count > 0) {
-                revised = Some(format!("{program_id} has been amended"));
-                break;
-            }
-        }
-        ensure!(
-            revised.is_none(),
-            "This ledger carries a revised program ({}), which the replay cannot reproduce: the \
-             process is loaded with the latest edition and amendments of every program, so \
-             replaying an earlier deployment of one would be checked against the wrong program. \
-             Rebuilding such a ledger needs the process to be built as the replay proceeds.",
-            revised.unwrap_or_default()
-        );
 
         if check_only {
             tracing::info!("Nothing blocks a rebuild of this ledger.");

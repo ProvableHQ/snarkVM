@@ -70,7 +70,9 @@ fn rebuild<N: Network>(path: PathBuf, check: bool) -> Result<()> {
     allow_downlevel_open();
 
     let store = ConsensusStore::<N, ConsensusDB<N>>::open(StorageMode::Custom(path))?;
-    let vm = VM::from(store)?;
+    // Without preloaded deployments: the replay adds each program as it reaches its deployment, so
+    // a program revised later is checked against the edition the block carries.
+    let vm = VM::from_without_deployments(store)?;
     match check {
         true => vm.check_rebuild(),
         false => vm.rebuild_finalize_state(),
