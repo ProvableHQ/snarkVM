@@ -24,6 +24,17 @@ use snarkvm_console::{
     program::{Identifier, Plaintext, ProgramID, Value},
 };
 use snarkvm_ledger_store::helpers::rocksdb;
+
+/// Opens the ledger's database and restores the schema gate afterwards.
+///
+/// `open_for_rebuild` latches the bypass on for the whole process. Left set, it disables
+/// `check_storage_version` for every later open in this test binary -- which is how two of these
+/// tests came to pass without exercising a rebuild at all.
+fn open_db(storage_mode: StorageMode) -> rocksdb::RocksDB {
+    let database = rocksdb::open_for_rebuild(CurrentNetwork::ID, storage_mode).unwrap();
+    rocksdb::disallow_downlevel_open();
+    database
+}
 use snarkvm_synthesizer::vm::VM;
 
 use std::sync::{Mutex, MutexGuard};
@@ -118,7 +129,7 @@ fn sample_ledger(rng: &mut TestRng) -> (CurrentLedger, StorageMode) {
     // hold trivially over a chain nothing had touched. Winding the version back is what makes these
     // tests exercise a replay at all -- and the sentinel each test plants is what proves they did,
     // rather than this being trusted to stay true.
-    let database = rocksdb::open_for_rebuild(CurrentNetwork::ID, storage_mode.clone()).unwrap();
+    let database = open_db(storage_mode.clone());
     rocksdb::set_schema_version(&database, CurrentNetwork::ID, 0).unwrap();
 
     (ledger, storage_mode)
@@ -153,13 +164,7 @@ fn sentinel_survives(
 /// because genesis ratification replaces those mappings wholesale and refuses one that is absent.
 fn initialize_credits_mappings(ledger: &CurrentLedger) {
     let credits = snarkvm_synthesizer::program::Program::<CurrentNetwork>::credits().unwrap();
-    let store = ledger.vm().finalize_store();
-    let initialized = store.get_mapping_names_confirmed(credits.id()).unwrap().unwrap_or_default();
-    for mapping in credits.mappings().values() {
-        if !initialized.contains(mapping.name()) {
-            store.initialize_mapping(*credits.id(), *mapping.name()).unwrap();
-        }
-    }
+    ledger.vm().finalize_store().initialize_credits_mappings(&credits).unwrap();
 }
 
 /// A rebuild must reproduce the history the chain originally wrote, entry for entry.
@@ -182,7 +187,7 @@ fn test_rebuild_reproduces_history() {
 
     // A completed rebuild stamps the schema version and clears the in-progress flag, which is what
     // lets a node start again.
-    let database = rocksdb::open_for_rebuild(CurrentNetwork::ID, storage_mode).unwrap();
+    let database = open_db(storage_mode);
     assert_eq!(rocksdb::schema_version(&database, CurrentNetwork::ID).unwrap(), rocksdb::STORAGE_VERSION);
     assert!(!rocksdb::is_rebuilding(&database, CurrentNetwork::ID).unwrap());
 }
@@ -197,14 +202,14 @@ fn test_rebuild_resumes_after_interruption() {
     let expected = snapshot_history(&ledger);
 
     // Interrupt a rebuild by hand: discard the state, then replay only part of the chain.
-    let database = rocksdb::open_for_rebuild(CurrentNetwork::ID, storage_mode).unwrap();
+    let database = open_db(storage_mode);
     rocksdb::clear_rebuilt_state(&database, CurrentNetwork::ID).unwrap();
     initialize_credits_mappings(&ledger);
 
     let stopped_at = NUM_BLOCKS / 2;
     for height in 0..=stopped_at {
         let block = ledger.get_block(height).unwrap();
-        ledger.vm().replay_block(&block).unwrap();
+        ledger.vm().replay_block(block).unwrap();
     }
     assert_eq!(ledger.vm().finalize_store().committee_store().current_height().unwrap(), stopped_at);
 

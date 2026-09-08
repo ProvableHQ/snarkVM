@@ -61,7 +61,7 @@
 //! that never opens the typed history map can still discard it.
 
 use aleo_std_storage::StorageMode;
-use anyhow::Result;
+use anyhow::{Result, bail};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::{
@@ -73,6 +73,7 @@ use super::{
     RocksDB,
     get_metadata,
     map_context,
+    metadata_key,
     put_metadata,
 };
 
@@ -223,9 +224,8 @@ pub fn set_rebuilding(database: &rocksdb::DB, network_id: u16, rebuilding: bool)
 /// re-derive this -- an emptied history map and one that never existed look identical -- and
 /// without the record a rebuild begun by a `history` build could be finished by one without it,
 /// which would stamp the schema version over a history that had been discarded and never rewritten.
-fn record_required_features(database: &rocksdb::DB, network_id: u16, history: bool, rewards: bool) -> Result<()> {
-    let mask = u8::from(history) | (u8::from(rewards) << 1);
-    put_metadata(database, network_id, MetadataKey::RebuildRequiredFeatures, &[mask])
+fn required_features_mask(history: bool, rewards: bool) -> [u8; 1] {
+    [u8::from(history) | (u8::from(rewards) << 1)]
 }
 
 /// Returns which optional maps the discarded data occupied, as `(history, staking rewards)`.
@@ -250,18 +250,37 @@ pub fn required_features(database: &rocksdb::DB, network_id: u16) -> Result<(boo
 /// seeks through hundreds of millions of them pays for every one on every read.
 pub fn clear_rebuilt_state(database: &rocksdb::DB, network_id: u16) -> Result<()> {
     let (history, rewards) = (has_history(database, network_id)?, has_staking_rewards(database, network_id)?);
-    record_required_features(database, network_id, history, rewards)?;
-    set_rebuilding(database, network_id, true)?;
 
+    // One batch for the flag, the record and every range. A batch is applied atomically, so the
+    // ledger is either untouched or fully cleared, and never the state in between.
+    //
+    // That state is unrecoverable, not merely untidy: the resume path skips the clear whenever the
+    // rebuild flag is set, so a half-cleared store is never cleared again. With the committee maps
+    // emptied but the mapping maps intact, a resumed run would replay from genesis on top of
+    // tip-era key-values and the original little-endian history, and could finish and stamp the
+    // schema version over entries it never touched.
+    let mut batch = rocksdb::WriteBatch::default();
+    batch.put(metadata_key(network_id, MetadataKey::RebuildInProgress), [1]);
+    batch.put(metadata_key(network_id, MetadataKey::RebuildRequiredFeatures), required_features_mask(history, rewards));
+
+    let mut ranges = Vec::with_capacity(REBUILT_MAPS.len());
     for map_id in REBUILT_MAPS {
         let start = map_context(network_id, *map_id);
-        let Some(end) = prefix_end(&start) else { continue };
-
-        let mut batch = rocksdb::WriteBatch::default();
+        // Fail closed. Skipping a map here would leave its pre-rebuild contents in place while the
+        // run went on to stamp the ledger as repaired.
+        let Some(end) = prefix_end(&start) else {
+            bail!("The key range of {map_id:?} cannot be bounded, so it cannot be discarded safely")
+        };
         batch.delete_range(&start, &end);
-        database.write(batch)?;
+        ranges.push((start, end));
+    }
+    database.write(batch)?;
 
-        database.compact_range(Some(&start), Some(&end));
+    // Compaction only reclaims space, so it is outside the batch. It is also the longest blocking
+    // step in the whole run, hence a line per map rather than silence for hours.
+    for (index, (start, end)) in ranges.iter().enumerate() {
+        tracing::info!("Compacting discarded map {} of {}", index + 1, ranges.len());
+        database.compact_range(Some(start), Some(end));
     }
 
     Ok(())

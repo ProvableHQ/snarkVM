@@ -29,7 +29,7 @@ required-features = [ "rocks" ]
 [[test]]
 name = "history-rebuild"
 path = "tests/history_rebuild.rs"
-required-features = [ "rocks", "history", "test" ]
+required-features = [ "rebuild", "history", "test" ]
 
 [[bench]]
 name = "block"
@@ -251,7 +251,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-synthesizer]
 workspace = true
-features = [ "rocks", "test" ]
+features = [ "test" ]
 
 [dependencies.tracing-subscriber]
 version = "0.3"

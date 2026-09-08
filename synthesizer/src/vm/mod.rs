@@ -150,14 +150,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     #[inline]
     pub fn from(store: ConsensusStore<N, C>) -> Result<Self> {
         // Initialize the store for 'credits.aleo'.
-        let credits = Program::<N>::credits()?;
-        for mapping in credits.mappings().values() {
-            // Ensure that all mappings are initialized.
-            if !store.finalize_store().contains_mapping_confirmed(credits.id(), mapping.name())? {
-                // Initialize the mappings for 'credits.aleo'.
-                store.finalize_store().initialize_mapping(*credits.id(), *mapping.name())?;
-            }
-        }
+        store.finalize_store().initialize_credits_mappings(&Program::<N>::credits()?)?;
 
         // Retrieve the transaction store.
         let transaction_store = store.transaction_store();
@@ -638,9 +631,30 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // batch still open and the database's atomic depth non-zero. Every later block would then
         // fail to start a batch at all, turning one transient write error into a rebuild that cannot
         // be retried without restarting the process.
-        if let Err(error) = self.finalize(state, block.ratifications(), block.solutions(), block.transactions()) {
+        let ratified_finalize_operations =
+            match self.finalize(state, block.ratifications(), block.solutions(), block.transactions()) {
+                Ok(operations) => operations,
+                Err(error) => {
+                    self.finalize_store().abort_atomic();
+                    return Err(error);
+                }
+            };
+
+        // Check the finalize root, which is what covers the ratification half of the block.
+        //
+        // `atomic_finalize` diffs recomputed operations against recorded ones per confirmed
+        // transaction, but nothing compares the operations that pre- and post-ratify return. On a
+        // live node that coverage comes from `check_next_block`, which a replay does not run -- so
+        // without this every `replace_mapping` of the credits staking mappings, which is the
+        // majority of an archive node's history, would be rebuilt against nothing.
+        let finalize_root = block.transactions().to_finalize_root(ratified_finalize_operations)?;
+        if finalize_root != block.header().finalize_root() {
             self.finalize_store().abort_atomic();
-            return Err(error);
+            bail!(
+                "Replay of block {} produced finalize root {finalize_root}, but the block records {}",
+                block.height(),
+                block.header().finalize_root()
+            );
         }
 
         // If the block advances to `ConsensusVersion::V8`, update the VKs used for the credits program.

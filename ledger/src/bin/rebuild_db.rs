@@ -42,11 +42,15 @@ use anyhow::{Result, bail};
 use std::path::PathBuf;
 
 const USAGE: &str = "\
-usage: rebuild_db <ledger-dir> [network-id]
+usage: rebuild_db [--check] <ledger-dir> [network-id]
 
 Discards the ledger's finalize state and rebuilds it by replaying every block already in
 storage. The network is inferred from a directory name ending in `-<id>` (0 = mainnet,
 1 = testnet, 2 = canary), or given as the final argument.
+
+--check runs every pre-flight the rebuild runs and stops before the first write, reporting
+whether this ledger is a candidate and how much of it there is to replay. It still needs the
+node stopped, since opening the ledger takes RocksDB's single writer lock.
 
 Stop the node first. Progress is reported as it runs, and it can be interrupted and resumed.";
 
@@ -64,19 +68,28 @@ fn network_from_name(path: &std::path::Path) -> Option<u16> {
 }
 
 /// Opens the ledger at `path` and rebuilds its finalize state.
-fn rebuild<N: Network>(path: PathBuf) -> Result<()> {
+fn rebuild<N: Network>(path: PathBuf, check: bool) -> Result<()> {
     // Said before opening: the schema gate exists to keep a node out of exactly this database.
     allow_downlevel_open();
 
     let store = ConsensusStore::<N, ConsensusDB<N>>::open(StorageMode::Custom(path))?;
-    VM::from(store)?.rebuild_finalize_state()
+    let vm = VM::from(store)?;
+    match check {
+        true => vm.check_rebuild(),
+        false => vm.rebuild_finalize_state(),
+    }
 }
 
 fn main() -> Result<()> {
-    let args = std::env::args().skip(1).collect::<Vec<_>>();
-    if args.is_empty() || args.iter().any(|arg| arg == "-h" || arg == "--help") {
+    let all = std::env::args().skip(1).collect::<Vec<_>>();
+    if all.is_empty() || all.iter().any(|arg| arg == "-h" || arg == "--help") {
         println!("{USAGE}");
         return Ok(());
+    }
+    let check = all.iter().any(|arg| arg == "--check" || arg == "-c");
+    let args = all.into_iter().filter(|arg| !arg.starts_with('-')).collect::<Vec<_>>();
+    if args.is_empty() {
+        bail!("No ledger directory given.\n\n{USAGE}");
     }
 
     let path = PathBuf::from(&args[0]);
@@ -93,9 +106,9 @@ fn main() -> Result<()> {
     tracing_subscriber::fmt().with_env_filter("info").with_target(false).init();
 
     match network_id {
-        0 => rebuild::<MainnetV0>(path),
-        1 => rebuild::<TestnetV0>(path),
-        2 => rebuild::<CanaryV0>(path),
+        0 => rebuild::<MainnetV0>(path, check),
+        1 => rebuild::<TestnetV0>(path, check),
+        2 => rebuild::<CanaryV0>(path, check),
         other => bail!("Unknown network id {other}.\n\n{USAGE}"),
     }
 }

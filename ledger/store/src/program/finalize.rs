@@ -26,7 +26,7 @@ use console::{
     types::Field,
 };
 use snarkvm_ledger_block::RejectedReason;
-use snarkvm_synthesizer_program::{FinalizeOperation, FinalizeStoreTrait};
+use snarkvm_synthesizer_program::{FinalizeOperation, FinalizeStoreTrait, Program};
 
 use aleo_std_storage::StorageMode;
 use anyhow::Result;
@@ -805,6 +805,20 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
                 });
             }
         }
+    }
+
+    /// Initializes any `credits.aleo` mapping that is not already present.
+    ///
+    /// Called when a store is opened and again after a rebuild discards it, since genesis
+    /// ratification replaces these mappings wholesale and refuses one that does not yet exist.
+    pub fn initialize_credits_mappings(&self, credits: &Program<N>) -> Result<()> {
+        let initialized = self.get_mapping_names_confirmed(credits.id())?.unwrap_or_default();
+        for mapping in credits.mappings().values() {
+            if !initialized.contains(mapping.name()) {
+                self.initialize_mapping(*credits.id(), *mapping.name())?;
+            }
+        }
+        Ok(())
     }
 
     /// Returns the historical value of a mapping at or before the given block height.

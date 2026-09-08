@@ -120,8 +120,8 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
     /// This function panics if called from an async context.
     #[doc(hidden)]
     #[inline]
-    pub fn replay_block(&self, block: &Block<N>) -> Result<()> {
-        let sequential_op = SequentialOperation::ReplayBlock(block.clone());
+    pub fn replay_block(&self, block: Block<N>) -> Result<()> {
+        let sequential_op = SequentialOperation::ReplayBlock(block);
         let Some(SequentialOperationResult::ReplayBlock(ret)) = self.run_sequential_operation(sequential_op) else {
             bail!("Already shutting down");
         };
@@ -141,6 +141,24 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
     /// The node must not be running: this rewrites the state underneath it, and RocksDB permits a
     /// single writer in any case.
     pub fn rebuild_finalize_state(&self) -> Result<()> {
+        self.rebuild_finalize_state_inner(false)
+    }
+
+    /// Reports whether this ledger can be rebuilt, without changing it.
+    ///
+    /// Runs every pre-flight the rebuild runs and stops before the first write, so an operator can
+    /// find out whether a ledger is a candidate without committing to hours of replay or
+    /// discarding anything.
+    pub fn check_rebuild(&self) -> Result<()> {
+        self.rebuild_finalize_state_inner(true)
+    }
+
+    /// Discards the finalize state and rebuilds it, or with `check_only` reports and stops.
+    ///
+    /// One body rather than two so that a check cannot drift from the thing it claims to predict:
+    /// an operator told a ledger is rebuildable, by code checking something slightly different from
+    /// what the rebuild checks, is worse off than one told nothing.
+    fn rebuild_finalize_state_inner(&self, check_only: bool) -> Result<()> {
         let network_id = N::ID;
         let storage_mode = self.finalize_store().storage_mode().clone();
         let database = rocksdb::open_for_rebuild(network_id, storage_mode)?;
@@ -166,6 +184,12 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
                 rocksdb::STORAGE_VERSION
             );
             return Ok(());
+        }
+
+        // Reported before the pre-flights below, which are about the work rather than the need for
+        // it, so that a check on a ledger needing no rebuild says so plainly.
+        if check_only {
+            tracing::info!("This ledger is at storage schema v0, and needs a rebuild.");
         }
 
         // The blocks are the source this reads from, so the tip is the extent of the work.
@@ -237,21 +261,47 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
         //
         // The fix is to build the process as the replay goes rather than preloading it, which is a
         // change to how a VM is constructed and is deliberately not made here.
-        let upgraded = self
-            .transaction_store()
-            .deployment_store()
-            .program_ids_and_latest_editions()
-            .find(|(_, edition)| **edition > 0)
-            .map(|(program_id, edition)| (program_id.into_owned(), edition.into_owned()));
+        if check_only {
+            tracing::info!(
+                "Blocks {} (tip {tip}), history {}, staking rewards {}{}",
+                tip + 1,
+                if needs_history { "present" } else { "absent" },
+                if needs_rewards { "present" } else { "absent" },
+                if resuming { ", and an unfinished rebuild would be resumed" } else { "" },
+            );
+        }
+
+        //
+        // Amendments are checked alongside editions because a V3 deployment deliberately keeps the
+        // edition it amends, so an amended program reads as edition 0 and would slip past a check
+        // on the edition alone -- into the same stale-process problem, since the amendment count
+        // would be taken from the fully-amended stack.
+        let deployments = self.transaction_store().deployment_store();
+        let mut revised = None;
+        for (program_id, edition) in deployments.program_ids_and_latest_editions() {
+            let (program_id, edition) = (program_id.into_owned(), edition.into_owned());
+            if edition > 0 {
+                revised = Some(format!("{program_id} is at edition {edition}"));
+                break;
+            }
+            if deployments.get_amendment_count(&program_id, edition)?.is_some_and(|count| count > 0) {
+                revised = Some(format!("{program_id} has been amended"));
+                break;
+            }
+        }
         ensure!(
-            upgraded.is_none(),
-            "This ledger carries an upgraded program ({} is at edition {}), which the replay cannot \
-             reproduce: the process is loaded with the latest edition of every program, so \
+            revised.is_none(),
+            "This ledger carries a revised program ({}), which the replay cannot reproduce: the \
+             process is loaded with the latest edition and amendments of every program, so \
              replaying an earlier deployment of one would be checked against the wrong program. \
              Rebuilding such a ledger needs the process to be built as the replay proceeds.",
-            upgraded.as_ref().map(|(id, _)| id.to_string()).unwrap_or_default(),
-            upgraded.as_ref().map(|(_, edition)| *edition).unwrap_or_default()
+            revised.unwrap_or_default()
         );
+
+        if check_only {
+            tracing::info!("Nothing blocks a rebuild of this ledger.");
+            return Ok(());
+        }
 
         // Discard the state, unless a previous run already did and was interrupted before finishing.
         // Re-clearing would be harmless but would throw away every block already replayed.
@@ -263,17 +313,18 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
         // Re-initialize the mappings of 'credits.aleo', which the clear removed. Genesis ratification
         // replaces their contents wholesale and refuses a mapping that does not yet exist, so this
         // has to happen before the first block rather than as part of it.
-        let credits = Program::<N>::credits()?;
-        for mapping in credits.mappings().values() {
-            if !self.finalize_store().contains_mapping_confirmed(credits.id(), mapping.name())? {
-                self.finalize_store().initialize_mapping(*credits.id(), *mapping.name())?;
-            }
-        }
+        self.finalize_store().initialize_credits_mappings(&Program::<N>::credits()?)?;
 
         // Resume after the last height the committee store recorded, or start at genesis.
         let next = match self.finalize_store().committee_store().current_height() {
             Ok(height) => height + 1,
-            Err(..) => 0,
+            // An empty committee store and a failed read are indistinguishable here, and after a
+            // clear the empty case is the expected one. Reported rather than swallowed, so a real
+            // fault does not surface later as a confusing "Next height must be block height 0".
+            Err(error) => {
+                tracing::info!("No committee height recorded ({error}); replaying from genesis");
+                0
+            }
         };
         if next > 0 {
             tracing::info!("Resuming an interrupted rebuild at block {next}");
@@ -290,7 +341,7 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
             let Some(block) = self.block_store().get_block(&hash)? else {
                 bail!("Block {height} ({hash}) is missing from storage; the ledger must be resynced from genesis")
             };
-            self.replay_block(&block)?;
+            self.replay_block(block)?;
             progress.report(height);
         }
 
