@@ -615,24 +615,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
     /// Re-applies a block's finalize operations, without inserting the block.
     ///
-    /// Used to rebuild the finalize state from blocks already in storage. Inserting them again
-    /// would append to the block Merkle tree a second time, so this deliberately covers only the
-    /// half of `add_next_block` that writes mapping state.
-    ///
-    /// # Panics
-    /// This function panics if called from an async context.
-    #[inline]
-    pub fn replay_block(&self, block: &Block<N>) -> Result<()> {
-        let sequential_op = SequentialOperation::ReplayBlock(block.clone());
-        let Some(SequentialOperationResult::ReplayBlock(ret)) = self.run_sequential_operation(sequential_op) else {
-            bail!("Already shutting down");
-        };
-
-        ret
-    }
-
-    /// Re-applies a block's finalize operations, without inserting the block.
-    ///
     /// # Note
     /// This must only be called from the sequential operation thread.
     ///
@@ -650,7 +632,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         //
         // `atomic_finalize` checks every operation it recomputes against the one the block records,
         // so reaching this point means the replay agreed with the chain on every transaction.
-        self.finalize(state, block.ratifications(), block.solutions(), block.transactions())?;
+        //
+        // The explicit abort matters for a failure in `finish_atomic` itself rather than inside the
+        // batch: that walks the maps in sequence, so an error partway leaves the earlier ones with a
+        // batch still open and the database's atomic depth non-zero. Every later block would then
+        // fail to start a batch at all, turning one transient write error into a rebuild that cannot
+        // be retried without restarting the process.
+        if let Err(error) = self.finalize(state, block.ratifications(), block.solutions(), block.transactions()) {
+            self.finalize_store().abort_atomic();
+            return Err(error);
+        }
 
         // If the block advances to `ConsensusVersion::V8`, update the VKs used for the credits program.
         if N::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap_or_default() == block.height() {

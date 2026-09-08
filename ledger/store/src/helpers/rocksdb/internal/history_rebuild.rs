@@ -112,20 +112,28 @@ pub(crate) fn downlevel_open_allowed() -> bool {
 /// leave the rebuild without a resume point: `CommitteeStorage::insert` requires each height to
 /// follow the last, so a cleared committee store is what makes a resumed replay verify its own
 /// position instead of trusting a recorded cursor.
+///
+/// **The committee maps must stay first.** The resume point is the committee store's height, so
+/// clearing them last would mean an interruption partway -- most likely during `MappingUpdate`,
+/// which holds hundreds of millions of rows and is followed by a synchronous compaction -- left the
+/// mapping state gone while the committee still read as the tip. The next run would then resume at
+/// `tip + 1`, replay nothing, satisfy its completeness check vacuously, and stamp the schema
+/// version over a destroyed ledger. Clearing them first makes any interruption resume from
+/// genesis.
 /// `RejectedReason` is deliberately absent. Its rows are keyed by transaction id rather than by
 /// height, so the encoding fault never touched them -- and a replay could not put them back. They
 /// are written from `atomic_finalize` only for transaction ids present in `VM::pending_rejected_reasons`,
 /// which is populated exclusively by speculation, a step a replay does not perform. Clearing them
 /// would empty the map for good.
 const REBUILT_MAPS: &[MapID] = &[
+    MapID::Committee(CommitteeMap::CurrentRound),
+    MapID::Committee(CommitteeMap::RoundToHeight),
+    MapID::Committee(CommitteeMap::Committee),
     MapID::Program(ProgramMap::ProgramID),
     MapID::Program(ProgramMap::KeyValueID),
     MapID::Program(ProgramMap::MappingUpdate),
     MapID::Program(ProgramMap::MappingUpdateHeights),
     MapID::Program(ProgramMap::StakingRewards),
-    MapID::Committee(CommitteeMap::CurrentRound),
-    MapID::Committee(CommitteeMap::RoundToHeight),
-    MapID::Committee(CommitteeMap::Committee),
 ];
 
 /// The maps holding historical mapping updates.
@@ -164,7 +172,10 @@ fn prefix_is_occupied(database: &rocksdb::DB, prefix: &[u8]) -> bool {
 /// that same database back rather than a second connection to it.
 pub fn open_for_rebuild<S: Into<StorageMode>>(network_id: u16, storage: S) -> Result<RocksDB> {
     allow_downlevel_open();
-    RocksDB::open(network_id, storage)
+    // Restore the gate if the open fails -- a wrong path, or a node still holding the lock. There is
+    // no rebuild to keep it open for in that case, and leaving a process-wide latch set is exactly
+    // what `disallow_downlevel_open` exists to prevent.
+    RocksDB::open(network_id, storage).inspect_err(|_| disallow_downlevel_open())
 }
 
 /// Returns the storage schema version the database was last written under.

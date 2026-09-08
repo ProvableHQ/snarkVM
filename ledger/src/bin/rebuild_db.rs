@@ -16,14 +16,16 @@
 //! Rebuilds a ledger's finalize state by replaying its blocks.
 //!
 //! ```text
-//! cargo build --release --example rebuild_db --features rocks,history
-//! ./target/release/examples/rebuild_db ~/.aleo/storage/ledger-0
+//! cargo build --release --bin rebuild_db --features rebuild,history
+//! ./target/release/rebuild_db ~/.aleo/storage/ledger-0
 //! ```
 //!
-//! An example rather than a binary so that it can borrow the crate's existing
-//! `tracing-subscriber` dev-dependency instead of adding one, and because it is temporary: the
-//! operator-facing form of this is `snarkos developer rebuild-history`, which calls the same
-//! `VM::rebuild_finalize_state`. Nothing here is more than argument parsing and a log subscriber.
+//! Deliberately a binary rather than an example: an example is built with the crate's
+//! dev-dependencies unified into the graph, which would hand an operator a tool compiled with
+//! `snarkvm-synthesizer/test` -- one that loads the wrong `Process` and caps confirmed transactions
+//! at eight. Temporary either way; the operator-facing form is `snarkos developer rebuild-history`,
+//! which calls the same `VM::rebuild_finalize_state`. Nothing here is more than argument parsing
+//! and a log subscriber.
 //!
 //! The node must be stopped. RocksDB permits a single writer, so this refuses to open a ledger a
 //! node still holds, and the rebuild rewrites the state a running node would be reading.

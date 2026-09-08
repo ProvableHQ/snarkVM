@@ -54,14 +54,18 @@ struct Progress {
     started: Instant,
     /// The start of the current reporting window.
     window_started: Instant,
-    /// The last height replayed before the current window opened.
+    /// The height the current window started from, one below the first block it covers.
     window_from: u32,
 }
 
 impl Progress {
     fn new(from: u32, to: u32) -> Self {
         let now = Instant::now();
-        Self { from, to, started: now, window_started: now, window_from: from }
+        // One below the first block, since `from` is replayed *within* the opening window rather
+        // than before it. Counting from `from` itself loses a block, which on an archive replay
+        // slow enough to manage one block per window makes the first estimate -- the one an
+        // operator reads while deciding on a maintenance window -- print "unknown".
+        Self { from, to, started: now, window_started: now, window_from: from.saturating_sub(1) }
     }
 
     /// Reports progress if the interval has elapsed, and opens a new window if it did.
@@ -102,6 +106,29 @@ impl Progress {
 /// memory-backed VM those calls would find no such database and open one, then discard the state of
 /// a ledger on disk that this VM was never reading.
 impl<N: Network> VM<N, ConsensusDB<N>> {
+    /// Re-applies a block's finalize operations, without inserting the block.
+    ///
+    /// Part of the rebuild, and dangerous outside it: applied to a block a running node has already
+    /// finalized, it would re-apply that block's mapping updates and append a duplicate historical
+    /// entry. Kept on this backend-bound impl rather than the generic one for that reason -- it is
+    /// not a general VM operation.
+    ///
+    /// Inserting the block again is deliberately not done: the blocks are already in storage, and
+    /// re-inserting would append to the block Merkle tree a second time.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
+    #[doc(hidden)]
+    #[inline]
+    pub fn replay_block(&self, block: &Block<N>) -> Result<()> {
+        let sequential_op = SequentialOperation::ReplayBlock(block.clone());
+        let Some(SequentialOperationResult::ReplayBlock(ret)) = self.run_sequential_operation(sequential_op) else {
+            bail!("Already shutting down");
+        };
+
+        ret
+    }
+
     /// Discards the finalize state and rebuilds it by replaying every block in storage.
     ///
     /// Resumable: interrupt it and call it again. The resume point is the committee store's current

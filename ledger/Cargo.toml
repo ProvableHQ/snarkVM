@@ -16,10 +16,10 @@ categories = [ "cryptography", "web-programming" ]
 license = "Apache-2.0"
 edition = "2024"
 
-[[example]]
+[[bin]]
 name = "rebuild_db"
-path = "examples/rebuild_db.rs"
-required-features = [ "rocks" ]
+path = "src/bin/rebuild_db.rs"
+required-features = [ "rebuild" ]
 
 [[test]]
 name = "block-cache"
@@ -99,6 +99,10 @@ locktick = [
 metrics = [ "snarkvm-ledger-committee/metrics", "snarkvm-ledger-store/metrics" ]
 prop-tests = [ "snarkvm-ledger-committee/prop-tests" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
+# The offline finalize-state rebuild, and the tool that drives it. Opt-in and separate from `rocks`
+# so that enabling RocksDB storage does not also change `add_next_block`'s atomic-batch path for
+# anyone building this crate on its own.
+rebuild = [ "rocks", "snarkvm-synthesizer/rocks", "dep:tracing-subscriber" ]
 serial = [
   "snarkvm-console/serial",
   "snarkvm-ledger-authority/serial",
@@ -248,6 +252,11 @@ workspace = true
 [dev-dependencies.snarkvm-synthesizer]
 workspace = true
 features = [ "rocks", "test" ]
+
+[dependencies.tracing-subscriber]
+version = "0.3"
+features = [ "env-filter", "std" ]
+optional = true
 
 [dev-dependencies.tracing-subscriber]
 version = "0.3"

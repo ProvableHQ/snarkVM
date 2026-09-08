@@ -26,6 +26,20 @@ use snarkvm_console::{
 use snarkvm_ledger_store::helpers::rocksdb;
 use snarkvm_synthesizer::vm::VM;
 
+use std::sync::{Mutex, MutexGuard};
+
+/// Serialises the tests in this file.
+///
+/// The schema-gate bypass these tests rely on is a single process-wide latch over a shared database
+/// registry, so two tests running at once decide for each other whether a freshly created ledger
+/// gets its schema version stamped. Left parallel, whether a rebuild actually runs depends on
+/// thread interleaving.
+static SERIAL: Mutex<()> = Mutex::new(());
+
+fn serial() -> MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// The number of blocks each test replays.
 ///
 /// Every block ratifies a block reward, which rewrites `credits.aleo/{committee, delegated, bonded}`
@@ -98,7 +112,39 @@ fn sample_ledger(rng: &mut TestRng) -> (CurrentLedger, StorageMode) {
     }
     assert_eq!(ledger.latest_height(), NUM_BLOCKS);
 
+    // A ledger built here is stamped at the current schema version the moment it is created: it has
+    // no history yet, so the startup gate records the version in passing. Left that way, every
+    // rebuild below would take the "already rebuilt, nothing to do" path and each assertion would
+    // hold trivially over a chain nothing had touched. Winding the version back is what makes these
+    // tests exercise a replay at all -- and the sentinel each test plants is what proves they did,
+    // rather than this being trusted to stay true.
+    let database = rocksdb::open_for_rebuild(CurrentNetwork::ID, storage_mode.clone()).unwrap();
+    rocksdb::set_schema_version(&database, CurrentNetwork::ID, 0).unwrap();
+
     (ledger, storage_mode)
+}
+
+/// Leaves a mapping behind that no replay would recreate, so a caller can tell whether the finalize
+/// state was actually discarded.
+fn plant_sentinel(ledger: &CurrentLedger) -> (ProgramID<CurrentNetwork>, Identifier<CurrentNetwork>) {
+    let program = ProgramID::<CurrentNetwork>::from_str("not_on_chain.aleo").unwrap();
+    let mapping = Identifier::<CurrentNetwork>::from_str("sentinel").unwrap();
+    ledger.vm().finalize_store().initialize_mapping(program, mapping).unwrap();
+    (program, mapping)
+}
+
+/// Returns whether the sentinel planted by [`plant_sentinel`] is still present.
+fn sentinel_survives(
+    ledger: &CurrentLedger,
+    program: ProgramID<CurrentNetwork>,
+    mapping: Identifier<CurrentNetwork>,
+) -> bool {
+    ledger
+        .vm()
+        .finalize_store()
+        .get_mapping_names_confirmed(&program)
+        .unwrap()
+        .is_some_and(|names| names.contains(&mapping))
 }
 
 /// Re-initializes the `credits.aleo` mappings a clear removes.
@@ -119,12 +165,17 @@ fn initialize_credits_mappings(ledger: &CurrentLedger) {
 /// A rebuild must reproduce the history the chain originally wrote, entry for entry.
 #[test]
 fn test_rebuild_reproduces_history() {
+    let _guard = serial();
     let rng = &mut TestRng::default();
     let (ledger, storage_mode) = sample_ledger(rng);
 
     let expected = snapshot_history(&ledger);
+    let (program, mapping) = plant_sentinel(&ledger);
 
     ledger.vm().rebuild_finalize_state().unwrap();
+
+    // Without this the comparison below would pass on a rebuild that never ran.
+    assert!(!sentinel_survives(&ledger, program, mapping), "the rebuild did not discard the finalize state");
 
     assert_eq!(snapshot_history(&ledger), expected, "the rebuilt history differs from the one the chain wrote");
     assert_eq!(ledger.vm().block_store().current_block_height(), NUM_BLOCKS, "the rebuild changed the block store");
@@ -139,6 +190,7 @@ fn test_rebuild_reproduces_history() {
 /// A rebuild interrupted partway must resume where it stopped, not start over or skip ahead.
 #[test]
 fn test_rebuild_resumes_after_interruption() {
+    let _guard = serial();
     let rng = &mut TestRng::default();
     let (ledger, storage_mode) = sample_ledger(rng);
 
@@ -172,21 +224,21 @@ fn test_rebuild_resumes_after_interruption() {
 /// no replay would recreate: if it survives, the second call returned without touching anything.
 #[test]
 fn test_rebuild_is_idempotent() {
+    let _guard = serial();
     let rng = &mut TestRng::default();
     let (ledger, _storage_mode) = sample_ledger(rng);
 
+    // The first call must genuinely rebuild, or the second one proves nothing.
+    let (program, mapping) = plant_sentinel(&ledger);
     ledger.vm().rebuild_finalize_state().unwrap();
+    assert!(!sentinel_survives(&ledger, program, mapping), "the first rebuild did not discard the finalize state");
     let once = snapshot_history(&ledger);
 
-    let sentinel_program = ProgramID::<CurrentNetwork>::from_str("not_on_chain.aleo").unwrap();
-    let sentinel_mapping = Identifier::<CurrentNetwork>::from_str("sentinel").unwrap();
-    ledger.vm().finalize_store().initialize_mapping(sentinel_program, sentinel_mapping).unwrap();
-
+    let (program, mapping) = plant_sentinel(&ledger);
     ledger.vm().rebuild_finalize_state().unwrap();
 
-    let names = ledger.vm().finalize_store().get_mapping_names_confirmed(&sentinel_program).unwrap();
     assert!(
-        names.is_some_and(|names| names.contains(&sentinel_mapping)),
+        sentinel_survives(&ledger, program, mapping),
         "the second rebuild discarded the finalize state instead of returning early"
     );
     assert_eq!(snapshot_history(&ledger), once);
