@@ -22,6 +22,8 @@ pub use powers::*;
 /// The restrictions list as a JSON-compatible string.
 pub const RESTRICTIONS_LIST: &str = include_str!("./resources/restrictions.json");
 
+/// The remote URLs to fetch parameters from.
+#[cfg_attr(not(any(feature = "filesystem", feature = "wasm")), allow(dead_code))]
 const REMOTE_URLS: [&str; 2] =
     ["https://parameters.provable.com/mainnet", "https://s3.us-west-1.amazonaws.com/mainnet.parameters"];
 
