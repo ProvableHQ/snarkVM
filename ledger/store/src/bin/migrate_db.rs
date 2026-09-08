@@ -32,9 +32,13 @@
 use anyhow::{Result, bail};
 use snarkvm_ledger_store::helpers::rocksdb::{PREFIX_LEN, STORAGE_VERSION, is_resuming, migrate, plan, schema_version};
 
-/// Entries per second, measured on the migration itself. Only used to turn a count into a figure an
-/// operator can plan around, so it is deliberately conservative.
-const ENTRIES_PER_SECOND: f64 = 300_000.0;
+/// Entries per second, measured migrating a 234-million-entry ledger end to end.
+///
+/// An earlier value of 300,000 came from synthetic benchmarks on a freshly built database and was
+/// roughly seven times optimistic: it advertised thirteen minutes for a run that took ninety. An
+/// operator plans a maintenance window around this number, so it is taken from a real migration
+/// (m7i.4xlarge, gp3) rather than from a microbenchmark, and rounded down.
+const ENTRIES_PER_SECOND: f64 = 40_000.0;
 
 /// The ledger to act on, and whether to only report.
 struct Args {
@@ -171,12 +175,11 @@ fn main() -> Result<()> {
     println!("  mixed keys       {} (hold both encodings; only these can be undecidable)", report.mixed_keys);
     println!("  undecidable      {} across {} keys\n", report.undecidable.len(), report.undecidable_keys);
 
-    // The big-endian span is the window in which a newer build ran, readable from the data rather
-    // than from anyone's recollection of what ran when.
-    if let Some((low, high)) = report.big_endian_range {
-        println!("Entries already in the new format span heights {low}..{high}, so a build writing");
-        println!("that format ran for roughly {} blocks.\n", high.saturating_sub(low) + 1);
-    }
+    // Deliberately no inference from the big-endian span to "a build writing that format ran for N
+    // blocks". On a ledger written only by v4.8.0 that sentence reported a 2.3-million-block window
+    // for a build that had never touched it: entries whose two readings are identical are counted
+    // as already migrated, since moving them is a no-op, and they carry heights of their own. The
+    // spans above are facts; that reading of them was not.
 
     if !report.undecidable.is_empty() {
         println!("This ledger CANNOT be migrated and must be resynced from genesis.\n");
