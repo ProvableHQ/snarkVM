@@ -13,52 +13,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Storage migration v0 -> v1: discard the finalize state and rebuild it by replaying blocks.
+//! Storage migration v0 -> v1: discard the finalize state so it can be rebuilt by replaying blocks.
 //!
-//! # What is being repaired
+//! # Hazard: the two height encodings collide
 //!
-//! Three incompatible layouts of `MappingUpdateMap` shipped in quick succession, and nothing on
-//! disk records which one wrote a given entry:
+//! `HeightBytes` is the last field of a `MappingUpdateMap` key, so `LE(256)` and `BE(65_536)` are
+//! the same raw key. A key written at both heights kept only the later value; the other is gone and
+//! cannot be recovered from this database. Any repair that relocates surviving entries inherits
+//! those holes, which is why the state is discarded and recomputed rather than re-encoded.
 //!
-//! | snarkOS | height encoding | `MappingUpdateHeightsMap` |
-//! |---|---|---|
-//! | <= v4.7.4 | little-endian | written, and lists every entry |
-//! | v4.7.5, v4.8.0 | little-endian | **not written** |
-//! | v4.8.1+ | big-endian for keys with no heights row, little-endian for keys with one | frozen or appended |
+//! # Hazard: the mapping state must go with the history
 //!
-//! # Why the entries cannot be repaired in place
-//!
-//! `HeightBytes` is the final field of the raw key, so re-encoding an entry is a suffix
-//! byte-reversal -- which makes it tempting to classify each entry and move the little-endian ones.
-//! That cannot be made complete, because the two encodings collide and the collision already
-//! destroyed data on the running node.
-//!
-//! `LE(256)` and `BE(65_536)` are the same four bytes. A key written at height 256 while the node
-//! ran a little-endian build, and again at height 65,536 after it upgraded, produced *one* raw key:
-//! the second write overwrote the first, and height 256's value is gone. Nothing on disk can bring
-//! it back. The collision needs `byte_reverse(h)` to also be a real height, which for a ~20.8M tip
-//! bounds it at roughly 0.6% of the little-endian window -- and `credits.aleo/{committee, delegated,
-//! bonded}` reach that bound exactly, because `replace_mapping` rewrites every key in the mapping on
-//! every reward block.
-//!
-//! So any repair that relocates existing entries inherits those holes. Rebuilding the values is the
-//! only way to fill them, and the values are recoverable: the blocks are still on disk, and
-//! replaying their finalize operations reproduces every mapping update at the height it happened.
-//!
-//! # What is discarded
-//!
-//! Everything the finalize and committee stores own. The mapping state is discarded along with the
-//! history because a replay must run forward from genesis: reproducing the update at height `h`
-//! requires the state as it stood at `h - 1`, and the only state on disk is the one at the tip.
-//!
-//! Blocks, transactions, transitions and deployments are never touched. They are the source the
-//! rebuild reads from.
-//!
-//! # Why this is raw
-//!
-//! Clearing a map through the typed API would deserialize every key and value only to drop them.
-//! Working on raw prefixes also means the clear runs whatever cargo features are enabled: a build
-//! that never opens the typed history map can still discard it.
+//! Reproducing the update at height `h` needs the state as it stood at `h - 1`, and the only state
+//! on disk is the one at the tip. Blocks, transactions, transitions and deployments are never
+//! touched; they are the source the rebuild reads from.
 
 use aleo_std_storage::StorageMode;
 use anyhow::{Result, bail};
@@ -163,8 +131,16 @@ fn prefix_end(prefix: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Returns whether any key exists under the given prefix.
-fn prefix_is_occupied(database: &rocksdb::DB, prefix: &[u8]) -> bool {
-    database.prefix_iterator(prefix).next().is_some()
+///
+/// A read failure is propagated rather than counted as occupied. Reporting it as occupied would
+/// record staking rewards as present on a ledger that may hold none, pinning every resumed run to a
+/// build with that feature.
+fn prefix_is_occupied(database: &rocksdb::DB, prefix: &[u8]) -> Result<bool> {
+    match database.prefix_iterator(prefix).next() {
+        Some(Ok(_)) => Ok(true),
+        Some(Err(error)) => Err(error.into()),
+        None => Ok(false),
+    }
 }
 
 /// Opens the ledger at `storage`, bypassing the storage schema gate for the rest of the process.
@@ -194,7 +170,12 @@ pub fn set_schema_version(database: &rocksdb::DB, network_id: u16, version: u32)
 /// A ledger with none has nothing to rebuild, so the version is stamped in passing and a node that
 /// never enabled the `history` feature never sees a rebuild prompt for work that does not exist.
 pub fn has_history(database: &rocksdb::DB, network_id: u16) -> Result<bool> {
-    Ok(HISTORY_MAPS.iter().any(|map_id| prefix_is_occupied(database, &map_context(network_id, *map_id))))
+    for map_id in HISTORY_MAPS {
+        if prefix_is_occupied(database, &map_context(network_id, *map_id))? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Returns whether the ledger holds historical staking rewards.
@@ -202,7 +183,7 @@ pub fn has_history(database: &rocksdb::DB, network_id: u16) -> Result<bool> {
 /// Asked separately from the history because it is written under a separate cargo feature, and a
 /// build without that feature would discard these entries and rebuild nothing in their place.
 pub fn has_staking_rewards(database: &rocksdb::DB, network_id: u16) -> Result<bool> {
-    Ok(prefix_is_occupied(database, &map_context(network_id, MapID::Program(ProgramMap::StakingRewards))))
+    prefix_is_occupied(database, &map_context(network_id, MapID::Program(ProgramMap::StakingRewards)))
 }
 
 /// Returns whether the finalize state has been discarded and is awaiting replay.

@@ -99,8 +99,7 @@ locktick = [
 metrics = [ "snarkvm-ledger-committee/metrics", "snarkvm-ledger-store/metrics" ]
 prop-tests = [ "snarkvm-ledger-committee/prop-tests" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
-# The offline finalize-state rebuild, and the tool that drives it. Opt-in and separate from `rocks`
-# so that enabling RocksDB storage does not also change `add_next_block`'s atomic-batch path for
+# Separate from `rocks`: pairing them there would change `add_next_block`'s atomic-batch path for
 # anyone building this crate on its own.
 rebuild = [ "rocks", "snarkvm-synthesizer/rocks", "dep:tracing-subscriber" ]
 serial = [

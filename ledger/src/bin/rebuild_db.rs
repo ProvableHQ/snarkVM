@@ -20,12 +20,9 @@
 //! ./target/release/rebuild_db ~/.aleo/storage/ledger-0
 //! ```
 //!
-//! Deliberately a binary rather than an example: an example is built with the crate's
-//! dev-dependencies unified into the graph, which would hand an operator a tool compiled with
-//! `snarkvm-synthesizer/test` -- one that loads the wrong `Process` and caps confirmed transactions
-//! at eight. Temporary either way; the operator-facing form is `snarkos developer rebuild-history`,
-//! which calls the same `VM::rebuild_finalize_state`. Nothing here is more than argument parsing
-//! and a log subscriber.
+//! Must stay a binary, not an example: an example is built with this crate's dev-dependencies
+//! unified into the graph, which compiles it with `snarkvm-synthesizer/test` -- the wrong `Process`
+//! for the tip height, and confirmed transactions capped at eight.
 //!
 //! The node must be stopped. RocksDB permits a single writer, so this refuses to open a ledger a
 //! node still holds, and the rebuild rewrites the state a running node would be reading.
@@ -102,8 +99,10 @@ fn main() -> Result<()> {
     };
 
     // The rebuild reports progress through `tracing`; without a subscriber a multi-hour run would
-    // print nothing at all.
-    tracing_subscriber::fmt().with_env_filter("info").with_target(false).init();
+    // print nothing at all. `RUST_LOG` overrides the default, so a stalled run can be turned up.
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    tracing_subscriber::fmt().with_env_filter(filter).with_target(false).init();
 
     match network_id {
         0 => rebuild::<MainnetV0>(path, check),

@@ -205,12 +205,14 @@ fn check_storage_version(database: &rocksdb::DB, network_id: u16) -> Result<()> 
     // Asked per outstanding migration rather than as one hardcoded probe: a future v1 -> v2
     // migration concerning some other map would otherwise be skipped on any ledger without
     // history, stamping a database as being in a layout it is not in.
-    if !(found..STORAGE_VERSION)
-        .map(|v| has_work(database, network_id, v))
-        .collect::<Result<Vec<_>>>()?
-        .iter()
-        .any(|has| *has)
-    {
+    let mut outstanding = false;
+    for version in found..STORAGE_VERSION {
+        if has_work(database, network_id, version)? {
+            outstanding = true;
+            break;
+        }
+    }
+    if !outstanding {
         put_metadata(database, network_id, MetadataKey::StorageVersion, &STORAGE_VERSION.to_le_bytes())?;
         return Ok(());
     }

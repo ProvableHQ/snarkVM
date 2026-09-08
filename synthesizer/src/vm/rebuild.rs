@@ -15,13 +15,8 @@
 
 //! Rebuilds the finalize state by replaying the blocks already in storage.
 //!
-//! Discarding and replaying, rather than repairing the historical mapping entries in place, because
-//! the two height encodings that shipped collide: `LE(256)` and `BE(65_536)` are the same four
-//! bytes, so a key written at both heights kept only the later value. That loss happened on the
-//! running node, and no repair that relocates surviving entries can undo it. Replaying recomputes
-//! the values instead of moving them, so it fills those holes rather than inheriting them.
-//!
-//! See `snarkvm_ledger_store::helpers::rocksdb::internal::history_rebuild` for the storage side.
+//! See `snarkvm_ledger_store::helpers::rocksdb::internal::history_rebuild` for the storage side and
+//! the hazards that shape it.
 
 use super::*;
 
@@ -56,6 +51,8 @@ struct Progress {
     window_started: Instant,
     /// The height the current window started from, one below the first block it covers.
     window_from: u32,
+    /// The smoothed replay rate, in blocks per second.
+    rate: Option<f64>,
 }
 
 impl Progress {
@@ -65,7 +62,7 @@ impl Progress {
         // than before it. Counting from `from` itself loses a block, which on an archive replay
         // slow enough to manage one block per window makes the first estimate -- the one an
         // operator reads while deciding on a maintenance window -- print "unknown".
-        Self { from, to, started: now, window_started: now, window_from: from.saturating_sub(1) }
+        Self { from, to, started: now, window_started: now, window_from: from.saturating_sub(1), rate: None }
     }
 
     /// Reports progress if the interval has elapsed, and opens a new window if it did.
@@ -81,9 +78,20 @@ impl Progress {
         let done = height.saturating_sub(self.from) + 1;
         let total = self.to.saturating_sub(self.from) + 1;
 
+        // Smoothed, not the raw window. A 30-second window holds only tens of blocks at archive
+        // replay speeds, so the raw rate swings by whole multiples between reports and the estimate
+        // with it -- observed ranging from 5h to 48h on consecutive lines of the same run, which is
+        // worse than useless to an operator sizing a maintenance window.
+        const SMOOTHING: f64 = 0.3;
         let window_blocks = f64::from(height.saturating_sub(self.window_from));
-        let rate = window_blocks / self.window_started.elapsed().as_secs_f64();
-        // A window that somehow advanced no blocks would divide by zero on the way to an estimate.
+        let window_rate = window_blocks / self.window_started.elapsed().as_secs_f64();
+        let rate = match self.rate {
+            Some(previous) => previous + SMOOTHING * (window_rate - previous),
+            None => window_rate,
+        };
+        self.rate = Some(rate);
+
+        // A run that has genuinely not advanced would divide by zero on the way to an estimate.
         let remaining = match rate > 0.0 {
             true => human_duration(Duration::from_secs_f64(f64::from(self.to - height) / rate)),
             false => "unknown".to_string(),
@@ -155,9 +163,7 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
 
     /// Discards the finalize state and rebuilds it, or with `check_only` reports and stops.
     ///
-    /// One body rather than two so that a check cannot drift from the thing it claims to predict:
-    /// an operator told a ledger is rebuildable, by code checking something slightly different from
-    /// what the rebuild checks, is worse off than one told nothing.
+    /// The check shares this body so that it cannot drift from what it predicts.
     fn rebuild_finalize_state_inner(&self, check_only: bool) -> Result<()> {
         let network_id = N::ID;
         let storage_mode = self.finalize_store().storage_mode().clone();
@@ -259,8 +265,7 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
         // finalize state discarded and the rebuild flagged in progress -- a ledger that serves
         // nothing, from one that only read history wrongly.
         //
-        // The fix is to build the process as the replay goes rather than preloading it, which is a
-        // change to how a VM is constructed and is deliberately not made here.
+        // Lifting this needs the process built as the replay proceeds rather than preloaded.
         if check_only {
             tracing::info!(
                 "Blocks {} (tip {tip}), history {}, staking rewards {}{}",
