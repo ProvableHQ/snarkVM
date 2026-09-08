@@ -17,6 +17,7 @@ mod history_rebuild;
 pub use history_rebuild::{
     allow_downlevel_open,
     clear_rebuilt_state,
+    disallow_downlevel_open,
     has_history,
     has_staking_rewards,
     is_rebuilding,

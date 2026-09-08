@@ -91,6 +91,15 @@ pub fn allow_downlevel_open() {
     DOWNLEVEL_OPEN_ALLOWED.store(true, Ordering::SeqCst);
 }
 
+/// Restores the storage schema gate, undoing [`allow_downlevel_open`].
+///
+/// The bypass is a process-wide latch, so leaving it set outlives the rebuild that needed it: a
+/// rebuild that fails partway would otherwise let the same process go on to open the half-emptied
+/// finalize state it just refused to leave behind.
+pub fn disallow_downlevel_open() {
+    DOWNLEVEL_OPEN_ALLOWED.store(false, Ordering::SeqCst);
+}
+
 /// Returns whether [`allow_downlevel_open`] has been called.
 pub(crate) fn downlevel_open_allowed() -> bool {
     DOWNLEVEL_OPEN_ALLOWED.load(Ordering::SeqCst)
@@ -103,13 +112,17 @@ pub(crate) fn downlevel_open_allowed() -> bool {
 /// leave the rebuild without a resume point: `CommitteeStorage::insert` requires each height to
 /// follow the last, so a cleared committee store is what makes a resumed replay verify its own
 /// position instead of trusting a recorded cursor.
+/// `RejectedReason` is deliberately absent. Its rows are keyed by transaction id rather than by
+/// height, so the encoding fault never touched them -- and a replay could not put them back. They
+/// are written from `atomic_finalize` only for transaction ids present in `VM::pending_rejected_reasons`,
+/// which is populated exclusively by speculation, a step a replay does not perform. Clearing them
+/// would empty the map for good.
 const REBUILT_MAPS: &[MapID] = &[
     MapID::Program(ProgramMap::ProgramID),
     MapID::Program(ProgramMap::KeyValueID),
     MapID::Program(ProgramMap::MappingUpdate),
     MapID::Program(ProgramMap::MappingUpdateHeights),
     MapID::Program(ProgramMap::StakingRewards),
-    MapID::Program(ProgramMap::RejectedReason),
     MapID::Committee(CommitteeMap::CurrentRound),
     MapID::Committee(CommitteeMap::RoundToHeight),
     MapID::Committee(CommitteeMap::Committee),

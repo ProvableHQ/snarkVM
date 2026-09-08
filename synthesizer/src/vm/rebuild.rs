@@ -27,6 +27,8 @@ use super::*;
 
 use snarkvm_ledger_store::helpers::rocksdb::{self, ConsensusDB};
 
+use snarkvm_utilities::defer;
+
 use std::time::{Duration, Instant};
 
 /// How often to report progress.
@@ -116,6 +118,29 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
         let storage_mode = self.finalize_store().storage_mode().clone();
         let database = rocksdb::open_for_rebuild(network_id, storage_mode)?;
 
+        // Restore the schema gate however this returns. The bypass has to outlast the store's own
+        // open, which happens before this is called, but it must not outlast the rebuild: a run
+        // that fails partway leaves a discarded finalize state behind, and the gate is what stops
+        // anything else in this process from opening it.
+        defer! {
+            rocksdb::disallow_downlevel_open();
+        }
+
+        let resuming = rocksdb::is_rebuilding(&database, network_id)?;
+
+        // A ledger already at this schema version has nothing to rebuild, and rebuilding it anyway
+        // would discard a healthy finalize state and replay the whole chain to reproduce it. That
+        // matters because this is an operator command: running it twice, or wiring it into a
+        // startup script, must not take the node offline for a second full pass -- and an
+        // interruption during that pass would leave a half-empty store where a complete one stood.
+        if !resuming && rocksdb::schema_version(&database, network_id)? >= rocksdb::STORAGE_VERSION {
+            tracing::info!(
+                "This ledger is already at storage schema v{}; nothing to rebuild",
+                rocksdb::STORAGE_VERSION
+            );
+            return Ok(());
+        }
+
         // The blocks are the source this reads from, so the tip is the extent of the work.
         let tip = self.block_store().current_block_height();
 
@@ -152,7 +177,6 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
         // Read from the record once a rebuild is under way, because by then the data it describes
         // is gone and an emptied history map is indistinguishable from one that never existed. A
         // run begun by a `history` build must not be finishable by one without it.
-        let resuming = rocksdb::is_rebuilding(&database, network_id)?;
         let (needs_history, needs_rewards) = match resuming {
             true => rocksdb::required_features(&database, network_id)?,
             false => {
@@ -170,6 +194,36 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
             "This ledger holds staking rewards history, but this build was compiled without the \
              `history-staking-rewards` feature and so would discard it without writing any back. \
              Rebuild it with a build that has the features the node runs with."
+        );
+
+        // Refuse a ledger carrying an upgraded program, before discarding anything.
+        //
+        // `VM::from` preloads the latest edition of every program, so replaying an *earlier*
+        // deployment of an upgraded one hands `Process::finalize_deployment` the wrong stack: for a
+        // non-zero edition it diffs the block's mappings against the latest program's, yielding
+        // fewer `InitializeMapping` operations than the block records, and for a program with a
+        // constructor it runs the upgrade check in reverse. Either way the replay aborts.
+        //
+        // A pre-flight rather than a mid-run failure. Aborting after the clear would leave the
+        // finalize state discarded and the rebuild flagged in progress -- a ledger that serves
+        // nothing, from one that only read history wrongly.
+        //
+        // The fix is to build the process as the replay goes rather than preloading it, which is a
+        // change to how a VM is constructed and is deliberately not made here.
+        let upgraded = self
+            .transaction_store()
+            .deployment_store()
+            .program_ids_and_latest_editions()
+            .find(|(_, edition)| **edition > 0)
+            .map(|(program_id, edition)| (program_id.into_owned(), edition.into_owned()));
+        ensure!(
+            upgraded.is_none(),
+            "This ledger carries an upgraded program ({} is at edition {}), which the replay cannot \
+             reproduce: the process is loaded with the latest edition of every program, so \
+             replaying an earlier deployment of one would be checked against the wrong program. \
+             Rebuilding such a ledger needs the process to be built as the replay proceeds.",
+            upgraded.as_ref().map(|(id, _)| id.to_string()).unwrap_or_default(),
+            upgraded.as_ref().map(|(_, edition)| *edition).unwrap_or_default()
         );
 
         // Discard the state, unless a previous run already did and was interrupted before finishing.

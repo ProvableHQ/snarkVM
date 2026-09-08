@@ -166,6 +166,10 @@ fn test_rebuild_resumes_after_interruption() {
 }
 
 /// A rebuild that has already finished must be a no-op, not a second pass over the chain.
+///
+/// Comparing the history across the two runs would not show the difference -- a second full pass
+/// reproduces it exactly. So this leaves a mapping behind that only a clear would remove and that
+/// no replay would recreate: if it survives, the second call returned without touching anything.
 #[test]
 fn test_rebuild_is_idempotent() {
     let rng = &mut TestRng::default();
@@ -174,6 +178,16 @@ fn test_rebuild_is_idempotent() {
     ledger.vm().rebuild_finalize_state().unwrap();
     let once = snapshot_history(&ledger);
 
+    let sentinel_program = ProgramID::<CurrentNetwork>::from_str("not_on_chain.aleo").unwrap();
+    let sentinel_mapping = Identifier::<CurrentNetwork>::from_str("sentinel").unwrap();
+    ledger.vm().finalize_store().initialize_mapping(sentinel_program, sentinel_mapping).unwrap();
+
     ledger.vm().rebuild_finalize_state().unwrap();
+
+    let names = ledger.vm().finalize_store().get_mapping_names_confirmed(&sentinel_program).unwrap();
+    assert!(
+        names.is_some_and(|names| names.contains(&sentinel_mapping)),
+        "the second rebuild discarded the finalize state instead of returning early"
+    );
     assert_eq!(snapshot_history(&ledger), once);
 }
