@@ -16,10 +16,20 @@ categories = [ "cryptography", "web-programming" ]
 license = "Apache-2.0"
 edition = "2024"
 
+[[example]]
+name = "rebuild_db"
+path = "examples/rebuild_db.rs"
+required-features = [ "rocks" ]
+
 [[test]]
 name = "block-cache"
 path = "tests/block_cache.rs"
 required-features = [ "rocks" ]
+
+[[test]]
+name = "history-rebuild"
+path = "tests/history_rebuild.rs"
+required-features = [ "rocks", "history", "test" ]
 
 [[bench]]
 name = "block"
@@ -237,7 +247,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-synthesizer]
 workspace = true
-features = [ "test" ]
+features = [ "rocks", "test" ]
 
 [dev-dependencies.tracing-subscriber]
 version = "0.3"
