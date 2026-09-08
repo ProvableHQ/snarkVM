@@ -171,15 +171,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Initialize the store for 'credits.aleo'.
         store.finalize_store().initialize_credits_mappings(&Program::<N>::credits()?)?;
 
-        // Retrieve the transaction store.
-        let transaction_store = store.transaction_store();
-        // Retrieve the block store.
-        let block_store = store.block_store();
-
         #[cfg(not(any(test, feature = "test")))]
         let process = {
             // Determine the latest block height.
-            let latest_block_height = block_store.current_block_height();
+            let latest_block_height = store.block_store().current_block_height();
             // Determine the consensus version.
             let consensus_version = N::CONSENSUS_VERSION(latest_block_height)?; // TODO (raychu86): Record Commitment - Select the proper consensus version.
             // Initialize a new process based on the consensus version.
@@ -193,11 +188,50 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Initialize a new process.
         let process = Process::load()?;
 
-        // Retrieve the list of deployment transaction IDs and their associated block heights.
-        let deployment_ids = match preload_deployments {
-            true => transaction_store.deployment_transaction_ids().collect::<Vec<_>>(),
-            false => Vec::new(),
+        // Construct the VM object.
+        let vm = Self {
+            process: Arc::new(process),
+            puzzle: Self::new_puzzle()?,
+            store,
+            partially_verified_transactions: Arc::new(RwLock::new(LruCache::new(
+                NonZeroUsize::new(Transactions::<N>::MAX_TRANSACTIONS).unwrap(),
+            ))),
+            restrictions: Restrictions::load()?,
+            sequential_ops_tx: Default::default(),
+            pending_rejected_reasons: Default::default(),
+            sequential_ops_thread: Default::default(),
         };
+
+        // Load every deployment in storage, unless the caller is replaying and will load them as it
+        // reaches them.
+        if preload_deployments {
+            vm.load_deployments_below(u32::MAX)?;
+        }
+
+        // Spawn a thread for sequential operations.
+        let (sequential_ops_tx, sequential_ops_rx) = mpsc::channel();
+        let sequential_ops_thread = vm.start_sequential_queue(sequential_ops_rx);
+
+        // Populate the fields related to the sequential operations.
+        *vm.sequential_ops_tx.write() = Some(sequential_ops_tx);
+        *vm.sequential_ops_thread.lock() = Some(sequential_ops_thread);
+
+        // Return the new VM.
+        Ok(vm)
+    }
+
+    /// Loads into the process every program deployed below `height`, in deployment order.
+    ///
+    /// A replay must see each program as it stood at the block being replayed, so a resumed run
+    /// loads exactly the deployments that had already happened. Loading all of them, as a node
+    /// does, would hand a replayed deployment its program's latest edition to check against.
+    fn load_deployments_below(&self, height: u32) -> Result<()> {
+        let transaction_store = self.transaction_store();
+        let block_store = self.block_store();
+        let process = &self.process;
+
+        // Retrieve the list of deployment transaction IDs and their associated block heights.
+        let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
         let mut deployment_ids = cfg_into_iter!(deployment_ids)
             .map(|transaction_id| {
                 // Retrieve the block hash for the deployment transaction ID.
@@ -219,6 +253,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 Ok((transaction_id, (height, index)))
             })
             .collect::<Result<Vec<_>>>()?;
+        // Keep only the deployments that had happened by `height`, so the process matches the state
+        // a replay resuming there expects.
+        deployment_ids.retain(|(_, (deployed_at, _))| *deployed_at < height);
         // Sort the deployment transaction IDs by their block heights.
         deployment_ids.sort_unstable_by(|(_, a), (_, b)| a.cmp(b));
 
@@ -246,30 +283,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             deployments.iter().try_for_each(|deployment| process.load_deployment(deployment))?;
         }
 
-        // Construct the VM object.
-        let vm = Self {
-            process: Arc::new(process),
-            puzzle: Self::new_puzzle()?,
-            store,
-            partially_verified_transactions: Arc::new(RwLock::new(LruCache::new(
-                NonZeroUsize::new(Transactions::<N>::MAX_TRANSACTIONS).unwrap(),
-            ))),
-            restrictions: Restrictions::load()?,
-            sequential_ops_tx: Default::default(),
-            pending_rejected_reasons: Default::default(),
-            sequential_ops_thread: Default::default(),
-        };
-
-        // Spawn a thread for sequential operations.
-        let (sequential_ops_tx, sequential_ops_rx) = mpsc::channel();
-        let sequential_ops_thread = vm.start_sequential_queue(sequential_ops_rx);
-
-        // Populate the fields related to the sequential operations.
-        *vm.sequential_ops_tx.write() = Some(sequential_ops_tx);
-        *vm.sequential_ops_thread.lock() = Some(sequential_ops_thread);
-
-        // Return the new VM.
-        Ok(vm)
+        Ok(())
     }
 
     /// Returns `true` if a program with the given program ID exists.
@@ -642,42 +656,38 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Construct the finalize state.
         let state = Self::finalize_state(&block)?;
 
-        // Finalize the transactions. A failure aborts the atomic batch, leaving the finalize store
-        // as it stood before this block, which is what a resumed replay expects to find.
-        //
-        // `atomic_finalize` checks every operation it recomputes against the one the block records,
-        // so reaching this point means the replay agreed with the chain on every transaction.
-        //
-        // The explicit abort matters for a failure in `finish_atomic` itself rather than inside the
-        // batch: that walks the maps in sequence, so an error partway leaves the earlier ones with a
-        // batch still open and the database's atomic depth non-zero. Every later block would then
-        // fail to start a batch at all, turning one transient write error into a rebuild that cannot
-        // be retried without restarting the process.
-        let ratified_finalize_operations =
-            match self.finalize(state, block.ratifications(), block.solutions(), block.transactions()) {
-                Ok(operations) => operations,
-                Err(error) => {
-                    self.finalize_store().abort_atomic();
-                    return Err(error);
-                }
-            };
+        // Hold the writes until the finalize root has been checked. Without this the batch commits
+        // inside `finalize`, so a mismatch would be detected only after the block's mapping updates
+        // and its committee row were already durable -- and a resumed run, starting after that
+        // block, would never look at it again.
+        self.block_store().pause_atomic_writes()?;
 
-        // Check the finalize root, which is what covers the ratification half of the block.
-        //
-        // `atomic_finalize` diffs recomputed operations against recorded ones per confirmed
-        // transaction, but nothing compares the operations that pre- and post-ratify return. On a
-        // live node that coverage comes from `check_next_block`, which a replay does not run -- so
-        // without this every `replace_mapping` of the credits staking mappings, which is the
-        // majority of an archive node's history, would be rebuilt against nothing.
-        let finalize_root = block.transactions().to_finalize_root(ratified_finalize_operations)?;
-        if finalize_root != block.header().finalize_root() {
+        let outcome = self.finalize(state, block.ratifications(), block.solutions(), block.transactions()).and_then(
+            |ratified_finalize_operations| {
+                // Check the finalize root, which is what covers the ratification half of the block.
+                // `atomic_finalize` diffs recomputed operations against recorded ones per confirmed
+                // transaction, but nothing compares what pre- and post-ratify return; on a live node
+                // that coverage comes from `check_next_block`, which a replay does not run.
+                let finalize_root = block.transactions().to_finalize_root(ratified_finalize_operations)?;
+                match finalize_root == block.header().finalize_root() {
+                    true => Ok(()),
+                    false => bail!(
+                        "Replay of block {} produced finalize root {finalize_root}, but the block records {}",
+                        block.height(),
+                        block.header().finalize_root()
+                    ),
+                }
+            },
+        );
+
+        if let Err(error) = outcome {
             self.finalize_store().abort_atomic();
-            bail!(
-                "Replay of block {} produced finalize root {finalize_root}, but the block records {}",
-                block.height(),
-                block.header().finalize_root()
-            );
+            self.block_store().abort_atomic();
+            // Discards the queued writes, leaving the store as it stood before this block.
+            self.block_store().unpause_atomic_writes::<true>()?;
+            return Err(error);
         }
+        self.block_store().unpause_atomic_writes::<false>()?;
 
         // If the block advances to `ConsensusVersion::V8`, update the VKs used for the credits program.
         if N::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap_or_default() == block.height() {

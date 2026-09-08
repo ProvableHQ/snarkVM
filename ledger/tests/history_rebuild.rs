@@ -167,15 +167,19 @@ fn initialize_credits_mappings(ledger: &CurrentLedger) {
     ledger.vm().finalize_store().initialize_credits_mappings(&credits).unwrap();
 }
 
-/// A rebuild must replay a program's own deployment and the mapping updates its execution made.
-///
-/// The beacon-only chains above hold no programs, so they never exercise the process being built as
-/// the replay proceeds -- the whole reason the rebuild constructs its VM without preloaded
-/// deployments. Here the program's stack exists only because its deployment was replayed first.
-#[test]
-fn test_rebuild_replays_a_deployed_program() {
-    let _guard = serial();
-    let rng = &mut TestRng::default();
+/// Builds a chain that deploys a program and executes it twice, and returns what its mapping
+/// history should look like.
+#[allow(clippy::type_complexity)]
+fn sample_program_ledger(
+    rng: &mut TestRng,
+) -> (
+    CurrentLedger,
+    StorageMode,
+    ProgramID<CurrentNetwork>,
+    Identifier<CurrentNetwork>,
+    Plaintext<CurrentNetwork>,
+    Option<Vec<u32>>,
+) {
     let storage_mode = StorageMode::new_test(None);
 
     let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -233,6 +237,20 @@ finalize bump:
         .map(|heights| heights.into_owned());
     assert!(expected.as_ref().is_some_and(|heights| heights.len() == 2), "the chain should have written two updates");
 
+    (ledger, storage_mode, program_id, mapping_name, key, expected)
+}
+
+/// A rebuild must replay a program's own deployment and the mapping updates its execution made.
+///
+/// The beacon-only chains above hold no programs, so they never exercise the process being built as
+/// the replay proceeds -- the whole reason the rebuild constructs its VM without preloaded
+/// deployments. Here the program's stack exists only because its deployment was replayed first.
+#[test]
+fn test_rebuild_replays_a_deployed_program() {
+    let _guard = serial();
+    let rng = &mut TestRng::default();
+    let (ledger, storage_mode, program_id, mapping_name, key, expected) = sample_program_ledger(rng);
+
     // Release the ledger's VM, which preloaded the program, and rebuild through one that did not --
     // the arrangement the tool uses, and the only one that can replay a deployment correctly.
     drop(ledger);
@@ -244,7 +262,18 @@ finalize bump:
     rocksdb::allow_downlevel_open();
     let store = CurrentConsensusStore::open(storage_mode).unwrap();
     let vm = VM::from_without_deployments(store).unwrap();
+
+    // Without this the comparison below would hold on a rebuild that returned early.
+    let sentinel_program = ProgramID::<CurrentNetwork>::from_str("not_on_chain.aleo").unwrap();
+    let sentinel_mapping = Identifier::<CurrentNetwork>::from_str("sentinel").unwrap();
+    vm.finalize_store().initialize_mapping(sentinel_program, sentinel_mapping).unwrap();
+
     vm.rebuild_finalize_state().unwrap();
+
+    assert!(
+        vm.finalize_store().get_mapping_names_confirmed(&sentinel_program).unwrap().is_none(),
+        "the rebuild did not discard the finalize state"
+    );
 
     let rebuilt = vm
         .finalize_store()
@@ -252,6 +281,52 @@ finalize bump:
         .unwrap()
         .map(|heights| heights.into_owned());
     assert_eq!(rebuilt, expected, "the replayed program's mapping history differs from the chain's");
+}
+
+/// A rebuild interrupted after a program's deployment must still replay that program's executions.
+///
+/// The process is built empty, so a resumed run holds none of the programs deployed below the
+/// resume point. Without loading them it fails on the first execution of one -- and since resuming
+/// skips the clear, such a ledger can neither continue nor start over.
+#[test]
+fn test_rebuild_resumes_over_a_deployed_program() {
+    let _guard = serial();
+    let rng = &mut TestRng::default();
+    let (ledger, storage_mode, program_id, mapping_name, key, expected) = sample_program_ledger(rng);
+    drop(ledger);
+
+    let database = open_db(storage_mode.clone());
+    rocksdb::clear_rebuilt_state(&database, CurrentNetwork::ID).unwrap();
+
+    rocksdb::allow_downlevel_open();
+    let store = CurrentConsensusStore::open(storage_mode.clone()).unwrap();
+    let vm = VM::from_without_deployments(store).unwrap();
+    vm.finalize_store()
+        .initialize_credits_mappings(&snarkvm_synthesizer::program::Program::<CurrentNetwork>::credits().unwrap())
+        .unwrap();
+
+    // Stop after the deployment but before the executions that depend on it.
+    let tip = vm.block_store().current_block_height();
+    let stop_at = tip - 2;
+    for height in 0..=stop_at {
+        let hash = vm.block_store().get_block_hash(height).unwrap().unwrap();
+        let block = vm.block_store().get_block(&hash).unwrap().unwrap();
+        vm.replay_block(block).unwrap();
+    }
+    drop(vm);
+
+    // A fresh VM, as a second invocation of the tool would build: empty process, resuming.
+    rocksdb::allow_downlevel_open();
+    let store = CurrentConsensusStore::open(storage_mode).unwrap();
+    let vm = VM::from_without_deployments(store).unwrap();
+    vm.rebuild_finalize_state().unwrap();
+
+    let rebuilt = vm
+        .finalize_store()
+        .get_mapping_update_heights(program_id, mapping_name, key)
+        .unwrap()
+        .map(|heights| heights.into_owned());
+    assert_eq!(rebuilt, expected, "the resumed rebuild lost the program's mapping history");
 }
 
 /// A rebuild must reproduce the history the chain originally wrote, entry for entry.

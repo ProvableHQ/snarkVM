@@ -147,11 +147,11 @@ fn has_work(database: &rocksdb::DB, network_id: u16, version: u32) -> Result<boo
 /// The remedy printed when a ledger needs rebuilding.
 const REBUILD_REMEDY: &str = "Stop the node and rebuild its finalize state with snarkVM's \
                               `rebuild_db` tool, built from this release:\n\n    cargo build \
-                              --release --bin rebuild_db --features rebuild,history\n    \
+                              --release --bin rebuild_db --features rebuild,history[,history-staking-rewards]\n    \
                               rebuild_db <ledger-dir>\n\nIt replays every block from local \
                               storage and can take hours on an archive node. It reports progress, \
                               and can be interrupted and resumed. Pass --check first to see what it \
-                              would do.";
+                              would do. Build it with the same history features the node runs with.";
 
 /// Verifies the ledger's storage schema is one this build understands.
 ///

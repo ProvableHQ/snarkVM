@@ -195,7 +195,11 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
         // Reported before the pre-flights below, which are about the work rather than the need for
         // it, so that a check on a ledger needing no rebuild says so plainly.
         if check_only {
-            tracing::info!("This ledger is at storage schema v0, and needs a rebuild.");
+            tracing::info!(
+                "This ledger is at storage schema v{}, and needs v{}.",
+                rocksdb::schema_version(&database, network_id)?,
+                rocksdb::STORAGE_VERSION
+            );
         }
 
         // The blocks are the source this reads from, so the tip is the extent of the work.
@@ -278,6 +282,18 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
             );
         }
 
+        // Nothing to rebuild: stamp the version and stop. The startup gate does the same for such a
+        // ledger, but it cannot here -- the gate returns early while the rebuild's downlevel bypass
+        // is set, so the version stays at 0 and this would otherwise discard and replay a ledger
+        // whose history was never wrong.
+        if !needs_history && !needs_rewards {
+            tracing::info!("This ledger holds no history to rebuild; recording schema v{}", rocksdb::STORAGE_VERSION);
+            if !check_only {
+                rocksdb::set_schema_version(&database, network_id, rocksdb::STORAGE_VERSION)?;
+            }
+            return Ok(());
+        }
+
         if check_only {
             tracing::info!("Nothing blocks a rebuild of this ledger.");
             return Ok(());
@@ -308,6 +324,11 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
         };
         if next > 0 {
             tracing::info!("Resuming an interrupted rebuild at block {next}");
+            // The process was built empty, so a resumed run holds none of the programs deployed
+            // below the resume point and would fail on the first execution of one. Load exactly the
+            // deployments that had happened by then, in order, so the process matches the state the
+            // next block is finalized against.
+            self.load_deployments_below(next)?;
         }
 
         let mut progress = Progress::new(next, tip);
