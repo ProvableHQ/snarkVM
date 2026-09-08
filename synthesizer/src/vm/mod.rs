@@ -20,6 +20,8 @@ mod authorize;
 mod deploy;
 mod execute;
 mod finalize;
+#[cfg(feature = "rocks")]
+mod rebuild;
 mod verify;
 
 #[cfg(test)]
@@ -584,6 +586,80 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
     }
 
+    /// Returns the finalize state a block is finalized under.
+    ///
+    /// Shared by the block-advancing path and the rebuild's replay, which must derive it
+    /// identically: a replay that finalized a block under different state would produce different
+    /// mapping values from the same block.
+    fn finalize_state(block: &Block<N>) -> Result<FinalizeGlobalState> {
+        // Determine if the block timestamp should be included.
+        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
+            .then_some(block.timestamp());
+        // Determine the block spend and synthesis limits.
+        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
+            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
+        } else {
+            (None, None)
+        };
+        FinalizeGlobalState::new::<N>(
+            block.round(),
+            block.height(),
+            block_timestamp,
+            block.cumulative_weight(),
+            block.cumulative_proof_target(),
+            block.previous_hash(),
+            block_spend_limit,
+            block_synthesis_limit,
+        )
+    }
+
+    /// Re-applies a block's finalize operations, without inserting the block.
+    ///
+    /// Used to rebuild the finalize state from blocks already in storage. Inserting them again
+    /// would append to the block Merkle tree a second time, so this deliberately covers only the
+    /// half of `add_next_block` that writes mapping state.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
+    #[inline]
+    pub fn replay_block(&self, block: &Block<N>) -> Result<()> {
+        let sequential_op = SequentialOperation::ReplayBlock(block.clone());
+        let Some(SequentialOperationResult::ReplayBlock(ret)) = self.run_sequential_operation(sequential_op) else {
+            bail!("Already shutting down");
+        };
+
+        ret
+    }
+
+    /// Re-applies a block's finalize operations, without inserting the block.
+    ///
+    /// # Note
+    /// This must only be called from the sequential operation thread.
+    ///
+    /// # Panics
+    /// This function panics if not called from the sequential operation thread.
+    #[inline]
+    pub(crate) fn replay_block_inner(&self, block: Block<N>) -> Result<()> {
+        self.ensure_sequential_processing();
+
+        // Construct the finalize state.
+        let state = Self::finalize_state(&block)?;
+
+        // Finalize the transactions. A failure aborts the atomic batch, leaving the finalize store
+        // as it stood before this block, which is what a resumed replay expects to find.
+        //
+        // `atomic_finalize` checks every operation it recomputes against the one the block records,
+        // so reaching this point means the replay agreed with the chain on every transaction.
+        self.finalize(state, block.ratifications(), block.solutions(), block.transactions())?;
+
+        // If the block advances to `ConsensusVersion::V8`, update the VKs used for the credits program.
+        if N::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap_or_default() == block.height() {
+            self.process.lock().update_credits_verifying_keys()?;
+        }
+
+        Ok(())
+    }
+
     /// Adds the given block into the VM.
     ///
     /// # Panics
@@ -609,26 +685,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     pub(crate) fn add_next_block_inner(&self, block: Block<N>) -> Result<()> {
         self.ensure_sequential_processing();
 
-        // Determine if the block timestamp should be included.
-        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
-            .then_some(block.timestamp());
-        // Determine the block spend and synthesis limits.
-        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
-            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
-        } else {
-            (None, None)
-        };
         // Construct the finalize state.
-        let state = FinalizeGlobalState::new::<N>(
-            block.round(),
-            block.height(),
-            block_timestamp,
-            block.cumulative_weight(),
-            block.cumulative_proof_target(),
-            block.previous_hash(),
-            block_spend_limit,
-            block_synthesis_limit,
-        )?;
+        let state = Self::finalize_state(&block)?;
 
         // Pause the atomic writes, so that both the insertion and finalization belong to a single batch.
         #[cfg(feature = "rocks")]
