@@ -348,7 +348,15 @@ impl<E: PairingEngine> CanonicalDeserialize for Proof<E> {
         validate: Validate,
     ) -> Result<Self, SerializationError> {
         let batch_sizes: Vec<u64> = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
-        let batch_sizes: Vec<usize> = batch_sizes.into_iter().map(|x| x as usize).collect();
+        // On a target whose `usize` is narrower than 64 bits, `as` would truncate a
+        // batch size into a smaller one that the rest of the proof can satisfy,
+        // so convert rather than cast. This mirrors the `usize` codec in
+        // `snarkvm-utilities`, and the `u64::try_from` that
+        // `serialize_with_mode` already applies to these same values.
+        let batch_sizes: Vec<usize> = batch_sizes
+            .into_iter()
+            .map(|x| usize::try_from(x).map_err(|_| SerializationError::IncompatibleTarget))
+            .collect::<Result<_, _>>()?;
         let commitments = Commitments::deserialize_with_mode(&batch_sizes, &mut reader, compress, validate)?;
         let evaluations = Evaluations::deserialize_with_mode(&batch_sizes, &mut reader, compress, validate)?;
         let third_msg_sums = batch_sizes
