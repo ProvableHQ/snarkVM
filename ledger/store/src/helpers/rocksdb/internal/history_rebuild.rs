@@ -1,0 +1,295 @@
+// Copyright (c) 2019-2026 Provable Inc.
+// This file is part of the snarkVM library.
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at:
+
+// http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Storage migration v0 -> v1: discard the finalize state so it can be rebuilt by replaying blocks.
+//!
+//! # Hazard: the two height encodings collide
+//!
+//! `HeightBytes` is the last field of a `MappingUpdateMap` key, so `LE(256)` and `BE(65_536)` are
+//! the same raw key. A key written at both heights kept only the later value; the other is gone and
+//! cannot be recovered from this database. Any repair that relocates surviving entries inherits
+//! those holes, which is why the state is discarded and recomputed rather than re-encoded.
+//!
+//! # Hazard: the mapping state must go with the history
+//!
+//! Reproducing the update at height `h` needs the state as it stood at `h - 1`, and the only state
+//! on disk is the one at the tip. Blocks, transactions, transitions and deployments are never
+//! touched; they are the source the rebuild reads from.
+
+use aleo_std_storage::StorageMode;
+use anyhow::{Result, bail};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use super::{
+    CommitteeMap,
+    Database as _,
+    MapID,
+    MetadataKey,
+    ProgramMap,
+    RocksDB,
+    get_metadata,
+    map_context,
+    metadata_key,
+    put_metadata,
+};
+
+/// Whether this process may open a ledger whose storage schema predates this build.
+///
+/// The version gate exists to keep a node out of a database it would misread. The rebuild is the
+/// one caller that must open exactly such a database, so it says so explicitly rather than the gate
+/// guessing at intent from the storage mode or the calling crate.
+static DOWNLEVEL_OPEN_ALLOWED: AtomicBool = AtomicBool::new(false);
+
+/// Permits this process to open a ledger whose storage schema predates this build.
+///
+/// Intended for the rebuild alone. A node must never call it: the gate is what stops a build from
+/// reading little-endian history entries as big-endian.
+pub fn allow_downlevel_open() {
+    DOWNLEVEL_OPEN_ALLOWED.store(true, Ordering::SeqCst);
+}
+
+/// Restores the storage schema gate, undoing [`allow_downlevel_open`].
+///
+/// The bypass is a process-wide latch, so leaving it set outlives the rebuild that needed it: a
+/// rebuild that fails partway would otherwise let the same process go on to open the half-emptied
+/// finalize state it just refused to leave behind.
+pub fn disallow_downlevel_open() {
+    DOWNLEVEL_OPEN_ALLOWED.store(false, Ordering::SeqCst);
+}
+
+/// Returns whether [`allow_downlevel_open`] has been called.
+pub(crate) fn downlevel_open_allowed() -> bool {
+    DOWNLEVEL_OPEN_ALLOWED.load(Ordering::SeqCst)
+}
+
+/// The maps the rebuild discards and replays.
+///
+/// The committee maps are here because the committee store is written by ratification, inside the
+/// same atomic batch as the mapping updates, and a replay reproduces it. Leaving it would also
+/// leave the rebuild without a resume point: `CommitteeStorage::insert` requires each height to
+/// follow the last, so a cleared committee store is what makes a resumed replay verify its own
+/// position instead of trusting a recorded cursor.
+///
+/// **The committee maps must stay first.** The resume point is the committee store's height, so
+/// clearing them last would mean an interruption partway -- most likely during `MappingUpdate`,
+/// which holds hundreds of millions of rows and is followed by a synchronous compaction -- left the
+/// mapping state gone while the committee still read as the tip. The next run would then resume at
+/// `tip + 1`, replay nothing, satisfy its completeness check vacuously, and stamp the schema
+/// version over a destroyed ledger. Clearing them first makes any interruption resume from
+/// genesis.
+/// `RejectedReason` is deliberately absent. Its rows are keyed by transaction id rather than by
+/// height, so the encoding fault never touched them -- and a replay could not put them back. They
+/// are written from `atomic_finalize` only for transaction ids present in `VM::pending_rejected_reasons`,
+/// which is populated exclusively by speculation, a step a replay does not perform. Clearing them
+/// would empty the map for good.
+const REBUILT_MAPS: &[MapID] = &[
+    MapID::Committee(CommitteeMap::CurrentRound),
+    MapID::Committee(CommitteeMap::RoundToHeight),
+    MapID::Committee(CommitteeMap::Committee),
+    MapID::Program(ProgramMap::ProgramID),
+    MapID::Program(ProgramMap::KeyValueID),
+    MapID::Program(ProgramMap::MappingUpdate),
+    MapID::Program(ProgramMap::MappingUpdateHeights),
+    MapID::Program(ProgramMap::StakingRewards),
+];
+
+/// The maps holding historical mapping updates.
+///
+/// Both are consulted when deciding whether a ledger has history to rebuild: a node that ran only
+/// <= v4.7.4 has a heights row for every key, and one that ran only v4.7.5+ has none.
+const HISTORY_MAPS: &[MapID] =
+    &[MapID::Program(ProgramMap::MappingUpdate), MapID::Program(ProgramMap::MappingUpdateHeights)];
+
+/// Returns the exclusive upper bound of the key range a prefix covers.
+///
+/// `None` when the prefix is all `0xFF` and so has no successor, meaning the range runs to the end
+/// of the keyspace. A map prefix is `[network_id, map_id]` and neither is `0xFFFF` today, but the
+/// bound is handled rather than assumed away, since getting it wrong deletes an unrelated map.
+fn prefix_end(prefix: &[u8]) -> Option<Vec<u8>> {
+    let mut end = prefix.to_vec();
+    while let Some(byte) = end.last_mut() {
+        if *byte == u8::MAX {
+            end.pop();
+        } else {
+            *byte += 1;
+            return Some(end);
+        }
+    }
+    None
+}
+
+/// Returns whether any key exists under the given prefix.
+///
+/// A read failure is propagated rather than counted as occupied. Reporting it as occupied would
+/// record staking rewards as present on a ledger that may hold none, pinning every resumed run to a
+/// build with that feature.
+fn prefix_is_occupied(database: &rocksdb::DB, prefix: &[u8]) -> Result<bool> {
+    match database.prefix_iterator(prefix).next() {
+        Some(Ok(_)) => Ok(true),
+        Some(Err(error)) => Err(error.into()),
+        None => Ok(false),
+    }
+}
+
+/// Opens the ledger at `storage`, bypassing the storage schema gate for the rest of the process.
+///
+/// The handle is the one the node's stores already share, so a caller that has a store open gets
+/// that same database back rather than a second connection to it.
+pub fn open_for_rebuild<S: Into<StorageMode>>(network_id: u16, storage: S) -> Result<RocksDB> {
+    allow_downlevel_open();
+    // Restore the gate if the open fails -- a wrong path, or a node still holding the lock. There is
+    // no rebuild to keep it open for in that case, and leaving a process-wide latch set is exactly
+    // what `disallow_downlevel_open` exists to prevent.
+    RocksDB::open(network_id, storage).inspect_err(|_| disallow_downlevel_open())
+}
+
+/// Returns the storage schema version the database was last written under.
+pub fn schema_version(database: &rocksdb::DB, network_id: u16) -> Result<u32> {
+    super::get_metadata_u32(database, network_id, MetadataKey::StorageVersion)
+}
+
+/// Records the storage schema version the database is now in.
+pub fn set_schema_version(database: &rocksdb::DB, network_id: u16, version: u32) -> Result<()> {
+    put_metadata(database, network_id, MetadataKey::StorageVersion, &version.to_le_bytes())
+}
+
+/// Returns whether the ledger holds historical mapping updates.
+///
+/// A ledger with none has nothing to rebuild, so the version is stamped in passing and a node that
+/// never enabled the `history` feature never sees a rebuild prompt for work that does not exist.
+pub fn has_history(database: &rocksdb::DB, network_id: u16) -> Result<bool> {
+    for map_id in HISTORY_MAPS {
+        if prefix_is_occupied(database, &map_context(network_id, *map_id))? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Returns whether the ledger holds historical staking rewards.
+///
+/// Asked separately from the history because it is written under a separate cargo feature, and a
+/// build without that feature would discard these entries and rebuild nothing in their place.
+pub fn has_staking_rewards(database: &rocksdb::DB, network_id: u16) -> Result<bool> {
+    prefix_is_occupied(database, &map_context(network_id, MapID::Program(ProgramMap::StakingRewards)))
+}
+
+/// Returns whether the finalize state has been discarded and is awaiting replay.
+///
+/// Recorded rather than inferred from an empty finalize store, which cannot distinguish a ledger
+/// mid-rebuild from a fresh one: both are empty, but only the first must refuse to serve reads.
+pub fn is_rebuilding(database: &rocksdb::DB, network_id: u16) -> Result<bool> {
+    Ok(get_metadata(database, network_id, MetadataKey::RebuildInProgress)?.is_some_and(|flag| flag == [1]))
+}
+
+/// Records that the finalize state has been discarded, or that the replay has finished.
+pub fn set_rebuilding(database: &rocksdb::DB, network_id: u16, rebuilding: bool) -> Result<()> {
+    put_metadata(database, network_id, MetadataKey::RebuildInProgress, &[u8::from(rebuilding)])
+}
+
+/// Records which optional maps the discarded data occupied, as `(history, staking rewards)`.
+///
+/// Written by the clear, because after it nothing on disk says what was there. A resumed run cannot
+/// re-derive this -- an emptied history map and one that never existed look identical -- and
+/// without the record a rebuild begun by a `history` build could be finished by one without it,
+/// which would stamp the schema version over a history that had been discarded and never rewritten.
+fn required_features_mask(history: bool, rewards: bool) -> [u8; 1] {
+    [u8::from(history) | (u8::from(rewards) << 1)]
+}
+
+/// Returns which optional maps the discarded data occupied, as `(history, staking rewards)`.
+///
+/// An absent record reads as neither, which is what a ledger clear of both would have written.
+pub fn required_features(database: &rocksdb::DB, network_id: u16) -> Result<(bool, bool)> {
+    let mask = get_metadata(database, network_id, MetadataKey::RebuildRequiredFeatures)?
+        .and_then(|bytes| bytes.first().copied())
+        .unwrap_or(0);
+    Ok((mask & 1 != 0, mask & 2 != 0))
+}
+
+/// Discards every map the replay reproduces, and compacts the space back.
+///
+/// Marks the rebuild in progress *before* deleting anything. A crash between the two would
+/// otherwise leave a partly emptied finalize store that reports itself intact, which is the one
+/// state worse than the corruption being repaired. Ordered the other way the failure is benign: a
+/// flag set over an untouched store just makes the next run clear it again, which it would do
+/// anyway since this is idempotent.
+///
+/// The compaction is deliberate. `delete_range` only writes tombstones, and a replay that then
+/// seeks through hundreds of millions of them pays for every one on every read.
+pub fn clear_rebuilt_state(database: &rocksdb::DB, network_id: u16) -> Result<()> {
+    let (history, rewards) = (has_history(database, network_id)?, has_staking_rewards(database, network_id)?);
+
+    // One batch for the flag, the record and every range. A batch is applied atomically, so the
+    // ledger is either untouched or fully cleared, and never the state in between.
+    //
+    // That state is unrecoverable, not merely untidy: the resume path skips the clear whenever the
+    // rebuild flag is set, so a half-cleared store is never cleared again. With the committee maps
+    // emptied but the mapping maps intact, a resumed run would replay from genesis on top of
+    // tip-era key-values and the original little-endian history, and could finish and stamp the
+    // schema version over entries it never touched.
+    let mut batch = rocksdb::WriteBatch::default();
+    batch.put(metadata_key(network_id, MetadataKey::RebuildInProgress), [1]);
+    batch.put(metadata_key(network_id, MetadataKey::RebuildRequiredFeatures), required_features_mask(history, rewards));
+
+    let mut ranges = Vec::with_capacity(REBUILT_MAPS.len());
+    for map_id in REBUILT_MAPS {
+        let start = map_context(network_id, *map_id);
+        // Fail closed. Skipping a map here would leave its pre-rebuild contents in place while the
+        // run went on to stamp the ledger as repaired.
+        let Some(end) = prefix_end(&start) else {
+            bail!("The key range of {map_id:?} cannot be bounded, so it cannot be discarded safely")
+        };
+        batch.delete_range(&start, &end);
+        ranges.push((start, end));
+    }
+    database.write(batch)?;
+
+    // Compaction only reclaims space, so it is outside the batch. It is also the longest blocking
+    // step in the whole run, hence a line per map rather than silence for hours.
+    for (index, (start, end)) in ranges.iter().enumerate() {
+        tracing::info!("Compacting discarded map {} of {}", index + 1, ranges.len());
+        database.compact_range(Some(start), Some(end));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_prefix_end_carries() {
+        assert_eq!(prefix_end(&[0, 0]), Some(vec![0, 1]));
+        assert_eq!(prefix_end(&[0, 0xFF]), Some(vec![1]));
+        assert_eq!(prefix_end(&[0xFF, 0xFF]), None);
+    }
+
+    /// The bound must cover every key of the map, and nothing outside it.
+    #[test]
+    fn test_prefix_end_bounds_one_map() {
+        let start = map_context(3, MapID::Program(ProgramMap::MappingUpdate));
+        let end = prefix_end(&start).unwrap();
+
+        // A key of this map, however long its body, sorts below the bound.
+        let mut longest = start.clone();
+        longest.extend_from_slice(&[0xFF; 64]);
+        assert!(longest.as_slice() < end.as_slice());
+
+        // Nothing at or above the bound carries this map's prefix, so no other map is in range.
+        assert!(!end.starts_with(&start));
+    }
+}

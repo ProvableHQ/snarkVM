@@ -44,6 +44,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         let ret = vm.atomic_speculate_inner(a, b, c, d, e, f);
                         SequentialOperationResult::AtomicSpeculate(ret)
                     }
+                    SequentialOperation::ReplayBlock(block) => {
+                        let ret = vm.replay_block_inner(block);
+                        SequentialOperationResult::ReplayBlock(ret)
+                    }
                 };
 
                 // Relay the results of the operation to the caller.
@@ -89,6 +93,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 pub enum SequentialOperation<N: Network> {
     AddNextBlock(Block<N>),
     AtomicSpeculate(FinalizeGlobalState, i64, Option<u64>, Vec<Ratify<N>>, Solutions<N>, Vec<Transaction<N>>),
+    ReplayBlock(Block<N>),
 }
 
 impl<N: Network> fmt::Display for SequentialOperation<N> {
@@ -99,6 +104,9 @@ impl<N: Network> fmt::Display for SequentialOperation<N> {
             }
             SequentialOperation::AtomicSpeculate(state, ..) => {
                 write!(f, "atomic speculate (height {}, round {})", state.block_height(), state.block_round())
+            }
+            SequentialOperation::ReplayBlock(block) => {
+                write!(f, "replay block ({})", block.height())
             }
         }
     }
@@ -121,4 +129,5 @@ pub enum SequentialOperationResult<N: Network> {
             Vec<FinalizeOperation<N>>,
         )>,
     ),
+    ReplayBlock(Result<()>),
 }

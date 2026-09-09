@@ -16,10 +16,20 @@ categories = [ "cryptography", "web-programming" ]
 license = "Apache-2.0"
 edition = "2024"
 
+[[bin]]
+name = "rebuild_db"
+path = "src/bin/rebuild_db.rs"
+required-features = [ "rebuild" ]
+
 [[test]]
 name = "block-cache"
 path = "tests/block_cache.rs"
 required-features = [ "rocks" ]
+
+[[test]]
+name = "history-rebuild"
+path = "tests/history_rebuild.rs"
+required-features = [ "rebuild", "history", "test" ]
 
 [[bench]]
 name = "block"
@@ -89,6 +99,9 @@ locktick = [
 metrics = [ "snarkvm-ledger-committee/metrics", "snarkvm-ledger-store/metrics" ]
 prop-tests = [ "snarkvm-ledger-committee/prop-tests" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
+# Separate from `rocks`: pairing them there would change `add_next_block`'s atomic-batch path for
+# anyone building this crate on its own.
+rebuild = [ "rocks", "snarkvm-synthesizer/rocks", "dep:tracing-subscriber" ]
 serial = [
   "snarkvm-console/serial",
   "snarkvm-ledger-authority/serial",
@@ -238,6 +251,11 @@ workspace = true
 [dev-dependencies.snarkvm-synthesizer]
 workspace = true
 features = [ "test" ]
+
+[dependencies.tracing-subscriber]
+version = "0.3"
+features = [ "env-filter", "std" ]
+optional = true
 
 [dev-dependencies.tracing-subscriber]
 version = "0.3"

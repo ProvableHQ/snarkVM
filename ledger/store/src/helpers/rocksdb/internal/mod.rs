@@ -13,6 +13,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod history_rebuild;
+pub use history_rebuild::{
+    allow_downlevel_open,
+    clear_rebuilt_state,
+    disallow_downlevel_open,
+    has_history,
+    has_staking_rewards,
+    is_rebuilding,
+    open_for_rebuild,
+    required_features,
+    schema_version,
+    set_rebuilding,
+    set_schema_version,
+};
+
 mod id;
 pub use id::*;
 
@@ -26,7 +41,7 @@ pub use nested_map::*;
 mod tests;
 
 use aleo_std_storage::StorageMode;
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, anyhow, bail, ensure};
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::Mutex;
 #[cfg(not(feature = "locktick"))]
@@ -47,6 +62,163 @@ use std::{
 };
 
 pub const PREFIX_LEN: usize = 4; // N::ID (u16) + DataID (u16)
+
+/// The storage schema version this build writes and understands.
+///
+/// Bump this whenever the on-disk layout changes in a way that a build expecting the previous
+/// version would read incorrectly. A database records the version it was last written under, so a
+/// build can refuse a database from the future instead of silently misreading it.
+///
+/// Note this only protects forward from the release that introduced it: builds older than that do
+/// not consult the record at all. Three incompatible historical-mapping layouts shipped within
+/// three weeks with nothing on disk to distinguish them, which is the situation this exists to
+/// prevent recurring.
+pub const STORAGE_VERSION: u32 = 1;
+
+/// The well-known keys of the storage metadata map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub(crate) enum MetadataKey {
+    /// The storage schema version the database was last written under.
+    StorageVersion = 0,
+    /// Whether the finalize state has been discarded and is awaiting replay.
+    ///
+    /// Distinct from the version, which only advances once a rebuild completes. This says the
+    /// ledger is mid-rebuild, and an empty finalize store cannot say that for itself: a fresh
+    /// ledger looks identical, and only one of the two must refuse to serve reads.
+    RebuildInProgress = 1,
+    /// Which optional maps the discarded data occupied, so a resumed rebuild can still tell.
+    RebuildRequiredFeatures = 2,
+}
+
+/// Returns the 4-byte `[network_id, map_id]` prefix a map's keys sit behind.
+///
+/// The layout is a persisted on-disk invariant, so it is built in one place rather than repeated
+/// wherever a raw key is needed.
+pub(crate) fn map_context(network_id: u16, map_id: MapID) -> Vec<u8> {
+    let mut raw = Vec::with_capacity(PREFIX_LEN);
+    raw.extend_from_slice(&network_id.to_le_bytes());
+    raw.extend_from_slice(&u16::from(map_id).to_le_bytes());
+    raw
+}
+
+/// Returns the raw database key for a metadata entry.
+pub(crate) fn metadata_key(network_id: u16, key: MetadataKey) -> Vec<u8> {
+    let mut raw = map_context(network_id, MapID::Metadata(MetadataMap::Metadata));
+    raw.push(key as u8);
+    raw
+}
+
+/// Reads a metadata entry, or `None` if the database has never recorded it.
+pub(crate) fn get_metadata(database: &rocksdb::DB, network_id: u16, key: MetadataKey) -> Result<Option<Vec<u8>>> {
+    Ok(database.get(metadata_key(network_id, key))?)
+}
+
+/// Writes a metadata entry.
+pub(crate) fn put_metadata(database: &rocksdb::DB, network_id: u16, key: MetadataKey, value: &[u8]) -> Result<()> {
+    Ok(database.put(metadata_key(network_id, key), value)?)
+}
+
+/// Reads a `u32` metadata entry, treating an absent record as zero.
+///
+/// Zero is the right default: every database written before this record existed is, by definition,
+/// at the version that preceded it.
+pub(crate) fn get_metadata_u32(database: &rocksdb::DB, network_id: u16, key: MetadataKey) -> Result<u32> {
+    match get_metadata(database, network_id, key)? {
+        Some(bytes) => {
+            let bytes: [u8; 4] = bytes.as_slice().try_into().map_err(|_| anyhow!("Malformed metadata for {key:?}"))?;
+            Ok(u32::from_le_bytes(bytes))
+        }
+        None => Ok(0),
+    }
+}
+
+/// Returns whether the migration from `version` to `version + 1` has anything to do here.
+///
+/// Lets the version be stamped in passing when every outstanding migration is a no-op, without that
+/// shortcut being tied to what any one of them happens to be about.
+fn has_work(database: &rocksdb::DB, network_id: u16, version: u32) -> Result<bool> {
+    match version {
+        0 => history_rebuild::has_history(database, network_id),
+        other => bail!("No storage migration is defined for schema v{other}"),
+    }
+}
+
+/// The remedy printed when a ledger needs rebuilding.
+const REBUILD_REMEDY: &str = "Stop the node and rebuild its finalize state with snarkVM's \
+                              `rebuild_db` tool, built from this release:\n\n    cargo build \
+                              --release --bin rebuild_db --features rebuild,history[,history-staking-rewards]\n    \
+                              rebuild_db <ledger-dir>\n\nIt replays every block from local \
+                              storage and can take hours on an archive node. It reports progress, \
+                              and can be interrupted and resumed. Pass --check first to see what it \
+                              would do. Build it with the same history features the node runs with.";
+
+/// Verifies the ledger's storage schema is one this build understands.
+///
+/// Deliberately does **not** rebuild. A rebuild replays the whole chain and can take hours, which
+/// is not something a node should do as a side effect of starting: an operator wants to run it when
+/// they choose, watching it, able to stop it. So this is a point lookup that refuses to proceed and
+/// says what to run, in the manner of every other system that separates schema migration from
+/// application startup.
+///
+/// A database with no history to rebuild is stamped in passing, so a fresh node -- or one that never
+/// enabled the `history` feature -- never sees a rebuild prompt for work that does not exist.
+fn check_storage_version(database: &rocksdb::DB, network_id: u16) -> Result<()> {
+    // The rebuild must open the very database this gate exists to keep a node out of.
+    if history_rebuild::downlevel_open_allowed() {
+        return Ok(());
+    }
+
+    // Checked before the version, which is still at the old one throughout a rebuild and so cannot
+    // distinguish "not started" from "half done". It matters because the finalize state has already
+    // been discarded by this point: were this ordered after the stamp-in-passing shortcut below,
+    // that shortcut would find no history, conclude there was nothing to do, and start a node on an
+    // empty finalize store.
+    ensure!(
+        !history_rebuild::is_rebuilding(database, network_id)?,
+        "This ledger's finalize state was discarded by a rebuild that has not finished. It cannot \
+         be read until the rebuild completes.\n\n{REBUILD_REMEDY}"
+    );
+
+    let found = get_metadata_u32(database, network_id, MetadataKey::StorageVersion)?;
+
+    // A database from the future cannot be read safely, and the failure would otherwise be silent
+    // and data-dependent rather than immediate.
+    ensure!(
+        found <= STORAGE_VERSION,
+        "This ledger was written by a newer version of snarkVM (storage schema v{found}; this \
+         build understands v{STORAGE_VERSION}). Upgrade snarkVM, or resync from genesis."
+    );
+    if found == STORAGE_VERSION {
+        return Ok(());
+    }
+
+    // Nothing recorded, and nothing to record: stamp it and carry on.
+    //
+    // The gate is on the *data*, not on which features this build was compiled with, and that is a
+    // correctness requirement rather than a convenience. A build that does not read history could
+    // stamp the version without rebuilding, since it would never notice the difference -- but the
+    // stamp is what a later history-enabled build consults, and it would then skip the rebuild and
+    // read little-endian entries as big-endian. Blocking a non-history node that carries unrebuilt
+    // history is the price of the version meaning what it says.
+    //
+    // Asked per outstanding migration rather than as one hardcoded probe: a future v1 -> v2
+    // migration concerning some other map would otherwise be skipped on any ledger without
+    // history, stamping a database as being in a layout it is not in.
+    let mut outstanding = false;
+    for version in found..STORAGE_VERSION {
+        if has_work(database, network_id, version)? {
+            outstanding = true;
+            break;
+        }
+    }
+    if !outstanding {
+        put_metadata(database, network_id, MetadataKey::StorageVersion, &STORAGE_VERSION.to_le_bytes())?;
+        return Ok(());
+    }
+
+    bail!("This ledger is at storage schema v{found}, and this build requires v{STORAGE_VERSION}.\n\n{REBUILD_REMEDY}");
+}
 
 // A static map of database paths to their objects; it's needed in order to facilitate concurrent
 // tests involving persistent storage, but it only ever has a single member outside of them.
@@ -181,6 +353,9 @@ impl Database for RocksDB {
         } else {
             ensure!(databases.len() == 1, "There can only be one active rocksDB database when not in test mode.");
         }
+
+        // Refuse a schema this build does not understand, before anything reads it.
+        check_storage_version(&database.rocksdb, network_id)?;
 
         // Ensure the database network ID and storage mode match.
         match database.network_id == network_id && database.storage_mode == storage {

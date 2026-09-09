@@ -20,6 +20,8 @@ mod authorize;
 mod deploy;
 mod execute;
 mod finalize;
+#[cfg(feature = "rocks")]
+mod rebuild;
 mod verify;
 
 #[cfg(test)]
@@ -147,25 +149,32 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Initializes the VM from storage.
     #[inline]
     pub fn from(store: ConsensusStore<N, C>) -> Result<Self> {
-        // Initialize the store for 'credits.aleo'.
-        let credits = Program::<N>::credits()?;
-        for mapping in credits.mappings().values() {
-            // Ensure that all mappings are initialized.
-            if !store.finalize_store().contains_mapping_confirmed(credits.id(), mapping.name())? {
-                // Initialize the mappings for 'credits.aleo'.
-                store.finalize_store().initialize_mapping(*credits.id(), *mapping.name())?;
-            }
-        }
+        Self::from_inner(store, true)
+    }
 
-        // Retrieve the transaction store.
-        let transaction_store = store.transaction_store();
-        // Retrieve the block store.
-        let block_store = store.block_store();
+    /// Initializes the VM from storage, without loading the deployments already in it.
+    ///
+    /// For replaying a chain from genesis, where the process must hold each program as it stood at
+    /// the block being replayed. Loading them up front instead gives every replayed deployment the
+    /// program's *latest* edition and amendments to check itself against, which fails for any
+    /// program later revised.
+    ///
+    /// The process starts with `credits.aleo` alone and the replay adds the rest as it reaches
+    /// their deployments, which is how a node builds it when syncing.
+    #[inline]
+    pub fn from_without_deployments(store: ConsensusStore<N, C>) -> Result<Self> {
+        Self::from_inner(store, false)
+    }
+
+    #[inline]
+    fn from_inner(store: ConsensusStore<N, C>, preload_deployments: bool) -> Result<Self> {
+        // Initialize the store for 'credits.aleo'.
+        store.finalize_store().initialize_credits_mappings(&Program::<N>::credits()?)?;
 
         #[cfg(not(any(test, feature = "test")))]
         let process = {
             // Determine the latest block height.
-            let latest_block_height = block_store.current_block_height();
+            let latest_block_height = store.block_store().current_block_height();
             // Determine the consensus version.
             let consensus_version = N::CONSENSUS_VERSION(latest_block_height)?; // TODO (raychu86): Record Commitment - Select the proper consensus version.
             // Initialize a new process based on the consensus version.
@@ -178,6 +187,48 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         #[cfg(any(test, feature = "test"))]
         // Initialize a new process.
         let process = Process::load()?;
+
+        // Construct the VM object.
+        let vm = Self {
+            process: Arc::new(process),
+            puzzle: Self::new_puzzle()?,
+            store,
+            partially_verified_transactions: Arc::new(RwLock::new(LruCache::new(
+                NonZeroUsize::new(Transactions::<N>::MAX_TRANSACTIONS).unwrap(),
+            ))),
+            restrictions: Restrictions::load()?,
+            sequential_ops_tx: Default::default(),
+            pending_rejected_reasons: Default::default(),
+            sequential_ops_thread: Default::default(),
+        };
+
+        // Load every deployment in storage, unless the caller is replaying and will load them as it
+        // reaches them.
+        if preload_deployments {
+            vm.load_deployments_below(u32::MAX)?;
+        }
+
+        // Spawn a thread for sequential operations.
+        let (sequential_ops_tx, sequential_ops_rx) = mpsc::channel();
+        let sequential_ops_thread = vm.start_sequential_queue(sequential_ops_rx);
+
+        // Populate the fields related to the sequential operations.
+        *vm.sequential_ops_tx.write() = Some(sequential_ops_tx);
+        *vm.sequential_ops_thread.lock() = Some(sequential_ops_thread);
+
+        // Return the new VM.
+        Ok(vm)
+    }
+
+    /// Loads into the process every program deployed below `height`, in deployment order.
+    ///
+    /// A replay must see each program as it stood at the block being replayed, so a resumed run
+    /// loads exactly the deployments that had already happened. Loading all of them, as a node
+    /// does, would hand a replayed deployment its program's latest edition to check against.
+    fn load_deployments_below(&self, height: u32) -> Result<()> {
+        let transaction_store = self.transaction_store();
+        let block_store = self.block_store();
+        let process = &self.process;
 
         // Retrieve the list of deployment transaction IDs and their associated block heights.
         let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
@@ -202,6 +253,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 Ok((transaction_id, (height, index)))
             })
             .collect::<Result<Vec<_>>>()?;
+        // Keep only the deployments that had happened by `height`, so the process matches the state
+        // a replay resuming there expects.
+        deployment_ids.retain(|(_, (deployed_at, _))| *deployed_at < height);
         // Sort the deployment transaction IDs by their block heights.
         deployment_ids.sort_unstable_by(|(_, a), (_, b)| a.cmp(b));
 
@@ -229,30 +283,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             deployments.iter().try_for_each(|deployment| process.load_deployment(deployment))?;
         }
 
-        // Construct the VM object.
-        let vm = Self {
-            process: Arc::new(process),
-            puzzle: Self::new_puzzle()?,
-            store,
-            partially_verified_transactions: Arc::new(RwLock::new(LruCache::new(
-                NonZeroUsize::new(Transactions::<N>::MAX_TRANSACTIONS).unwrap(),
-            ))),
-            restrictions: Restrictions::load()?,
-            sequential_ops_tx: Default::default(),
-            pending_rejected_reasons: Default::default(),
-            sequential_ops_thread: Default::default(),
-        };
-
-        // Spawn a thread for sequential operations.
-        let (sequential_ops_tx, sequential_ops_rx) = mpsc::channel();
-        let sequential_ops_thread = vm.start_sequential_queue(sequential_ops_rx);
-
-        // Populate the fields related to the sequential operations.
-        *vm.sequential_ops_tx.write() = Some(sequential_ops_tx);
-        *vm.sequential_ops_thread.lock() = Some(sequential_ops_thread);
-
-        // Return the new VM.
-        Ok(vm)
+        Ok(())
     }
 
     /// Returns `true` if a program with the given program ID exists.
@@ -584,6 +615,88 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
     }
 
+    /// Returns the finalize state a block is finalized under.
+    ///
+    /// Shared by the block-advancing path and the rebuild's replay, which must derive it
+    /// identically: a replay that finalized a block under different state would produce different
+    /// mapping values from the same block.
+    fn finalize_state(block: &Block<N>) -> Result<FinalizeGlobalState> {
+        // Determine if the block timestamp should be included.
+        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
+            .then_some(block.timestamp());
+        // Determine the block spend and synthesis limits.
+        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
+            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
+        } else {
+            (None, None)
+        };
+        FinalizeGlobalState::new::<N>(
+            block.round(),
+            block.height(),
+            block_timestamp,
+            block.cumulative_weight(),
+            block.cumulative_proof_target(),
+            block.previous_hash(),
+            block_spend_limit,
+            block_synthesis_limit,
+        )
+    }
+
+    /// Re-applies a block's finalize operations, without inserting the block.
+    ///
+    /// # Note
+    /// This must only be called from the sequential operation thread.
+    ///
+    /// # Panics
+    /// This function panics if not called from the sequential operation thread.
+    #[inline]
+    pub(crate) fn replay_block_inner(&self, block: Block<N>) -> Result<()> {
+        self.ensure_sequential_processing();
+
+        // Construct the finalize state.
+        let state = Self::finalize_state(&block)?;
+
+        // Hold the writes until the finalize root has been checked. Without this the batch commits
+        // inside `finalize`, so a mismatch would be detected only after the block's mapping updates
+        // and its committee row were already durable -- and a resumed run, starting after that
+        // block, would never look at it again.
+        self.block_store().pause_atomic_writes()?;
+
+        let outcome = self.finalize(state, block.ratifications(), block.solutions(), block.transactions()).and_then(
+            |ratified_finalize_operations| {
+                // Check the finalize root, which is what covers the ratification half of the block.
+                // `atomic_finalize` diffs recomputed operations against recorded ones per confirmed
+                // transaction, but nothing compares what pre- and post-ratify return; on a live node
+                // that coverage comes from `check_next_block`, which a replay does not run.
+                let finalize_root = block.transactions().to_finalize_root(ratified_finalize_operations)?;
+                match finalize_root == block.header().finalize_root() {
+                    true => Ok(()),
+                    false => bail!(
+                        "Replay of block {} produced finalize root {finalize_root}, but the block records {}",
+                        block.height(),
+                        block.header().finalize_root()
+                    ),
+                }
+            },
+        );
+
+        if let Err(error) = outcome {
+            self.finalize_store().abort_atomic();
+            self.block_store().abort_atomic();
+            // Discards the queued writes, leaving the store as it stood before this block.
+            self.block_store().unpause_atomic_writes::<true>()?;
+            return Err(error);
+        }
+        self.block_store().unpause_atomic_writes::<false>()?;
+
+        // If the block advances to `ConsensusVersion::V8`, update the VKs used for the credits program.
+        if N::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap_or_default() == block.height() {
+            self.process.lock().update_credits_verifying_keys()?;
+        }
+
+        Ok(())
+    }
+
     /// Adds the given block into the VM.
     ///
     /// # Panics
@@ -609,26 +722,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     pub(crate) fn add_next_block_inner(&self, block: Block<N>) -> Result<()> {
         self.ensure_sequential_processing();
 
-        // Determine if the block timestamp should be included.
-        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
-            .then_some(block.timestamp());
-        // Determine the block spend and synthesis limits.
-        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
-            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
-        } else {
-            (None, None)
-        };
         // Construct the finalize state.
-        let state = FinalizeGlobalState::new::<N>(
-            block.round(),
-            block.height(),
-            block_timestamp,
-            block.cumulative_weight(),
-            block.cumulative_proof_target(),
-            block.previous_hash(),
-            block_spend_limit,
-            block_synthesis_limit,
-        )?;
+        let state = Self::finalize_state(&block)?;
 
         // Pause the atomic writes, so that both the insertion and finalization belong to a single batch.
         #[cfg(feature = "rocks")]

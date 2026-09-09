@@ -1,0 +1,412 @@
+// Copyright (c) 2019-2026 Provable Inc.
+// This file is part of the snarkVM library.
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at:
+
+// http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Integration tests for rebuilding the finalize state by replaying blocks.
+
+use snarkvm_ledger::test_helpers::{CurrentConsensusStore, CurrentLedger, CurrentNetwork};
+
+use aleo_std::StorageMode;
+use snarkvm_console::{
+    account::PrivateKey,
+    prelude::*,
+    program::{Identifier, Plaintext, ProgramID, Value},
+};
+use snarkvm_ledger_store::helpers::rocksdb;
+
+/// Opens the ledger's database and restores the schema gate afterwards.
+///
+/// `open_for_rebuild` latches the bypass on for the whole process. Left set, it disables
+/// `check_storage_version` for every later open in this test binary -- which is how two of these
+/// tests came to pass without exercising a rebuild at all.
+fn open_db(storage_mode: StorageMode) -> rocksdb::RocksDB {
+    let database = rocksdb::open_for_rebuild(CurrentNetwork::ID, storage_mode).unwrap();
+    rocksdb::disallow_downlevel_open();
+    database
+}
+use snarkvm_synthesizer::vm::VM;
+
+use std::sync::{Mutex, MutexGuard};
+
+/// Serialises the tests in this file.
+///
+/// The schema-gate bypass these tests rely on is a single process-wide latch over a shared database
+/// registry, so two tests running at once decide for each other whether a freshly created ledger
+/// gets its schema version stamped. Left parallel, whether a rebuild actually runs depends on
+/// thread interleaving.
+static SERIAL: Mutex<()> = Mutex::new(());
+
+fn serial() -> MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// The number of blocks each test replays.
+///
+/// Every block ratifies a block reward, which rewrites `credits.aleo/{committee, delegated, bonded}`
+/// in full -- so a chain with no transactions at all still exercises the mappings that carry the
+/// overwhelming majority of a real archive node's history.
+const NUM_BLOCKS: u32 = 8;
+
+/// The `credits.aleo` mappings a rebuild must reproduce, and the history of each.
+const REBUILT_MAPPINGS: &[&str] = &["committee", "delegated", "bonded", "account", "withdraw"];
+
+/// The full history of every key of the given mappings: each key, the heights it changed at, and
+/// its value at each of those heights.
+type HistorySnapshot = Vec<(String, String, Vec<(u32, String)>)>;
+
+/// Reads back the entire history of the `credits.aleo` mappings a rebuild is expected to reproduce.
+///
+/// Goes through the public read path rather than the raw map, so the comparison is over what a node
+/// would actually serve. Rendered as strings so a mismatch names the key and value that differ.
+fn snapshot_history(ledger: &CurrentLedger) -> HistorySnapshot {
+    let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+    let store = ledger.vm().finalize_store();
+
+    let mut snapshot = HistorySnapshot::new();
+    for name in REBUILT_MAPPINGS {
+        let mapping_name = Identifier::<CurrentNetwork>::from_str(name).unwrap();
+        let entries = store.get_mapping_confirmed(program_id, mapping_name).unwrap();
+
+        let mut keys = entries.into_iter().map(|(key, _)| key).collect::<Vec<Plaintext<CurrentNetwork>>>();
+        keys.sort_by_key(ToString::to_string);
+
+        for key in keys {
+            let heights = store
+                .get_mapping_update_heights(program_id, mapping_name, key.clone())
+                .unwrap()
+                .map(|heights| heights.into_owned())
+                .unwrap_or_default();
+
+            let values = heights
+                .into_iter()
+                .map(|height| {
+                    let value: Value<CurrentNetwork> = store
+                        .get_historical_mapping_value(program_id, mapping_name, key.clone(), height)
+                        .unwrap()
+                        .unwrap_or_else(|| panic!("{name}/{key} reports an update at {height} but has no value there"))
+                        .into_owned();
+                    (height, value.to_string())
+                })
+                .collect();
+
+            snapshot.push((name.to_string(), key.to_string(), values));
+        }
+    }
+
+    assert!(!snapshot.is_empty(), "the chain wrote no history, so a rebuild of it would prove nothing");
+    snapshot
+}
+
+/// Returns a ledger of [`NUM_BLOCKS`] beacon blocks, and the key it was built with.
+fn sample_ledger(rng: &mut TestRng) -> (CurrentLedger, StorageMode) {
+    let storage_mode = StorageMode::new_test(None);
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let store = CurrentConsensusStore::open(storage_mode.clone()).unwrap();
+    let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, rng).unwrap();
+
+    let ledger = CurrentLedger::load(genesis, storage_mode.clone()).unwrap();
+    for _ in 1..=NUM_BLOCKS {
+        let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+        ledger.advance_to_next_block(&block).unwrap();
+    }
+    assert_eq!(ledger.latest_height(), NUM_BLOCKS);
+
+    // A ledger built here is stamped at the current schema version the moment it is created: it has
+    // no history yet, so the startup gate records the version in passing. Left that way, every
+    // rebuild below would take the "already rebuilt, nothing to do" path and each assertion would
+    // hold trivially over a chain nothing had touched. Winding the version back is what makes these
+    // tests exercise a replay at all -- and the sentinel each test plants is what proves they did,
+    // rather than this being trusted to stay true.
+    let database = open_db(storage_mode.clone());
+    rocksdb::set_schema_version(&database, CurrentNetwork::ID, 0).unwrap();
+
+    (ledger, storage_mode)
+}
+
+/// Leaves a mapping behind that no replay would recreate, so a caller can tell whether the finalize
+/// state was actually discarded.
+fn plant_sentinel(ledger: &CurrentLedger) -> (ProgramID<CurrentNetwork>, Identifier<CurrentNetwork>) {
+    let program = ProgramID::<CurrentNetwork>::from_str("not_on_chain.aleo").unwrap();
+    let mapping = Identifier::<CurrentNetwork>::from_str("sentinel").unwrap();
+    ledger.vm().finalize_store().initialize_mapping(program, mapping).unwrap();
+    (program, mapping)
+}
+
+/// Returns whether the sentinel planted by [`plant_sentinel`] is still present.
+fn sentinel_survives(
+    ledger: &CurrentLedger,
+    program: ProgramID<CurrentNetwork>,
+    mapping: Identifier<CurrentNetwork>,
+) -> bool {
+    ledger
+        .vm()
+        .finalize_store()
+        .get_mapping_names_confirmed(&program)
+        .unwrap()
+        .is_some_and(|names| names.contains(&mapping))
+}
+
+/// Re-initializes the `credits.aleo` mappings a clear removes.
+///
+/// Mirrors what the rebuild does before its first block; a test that hand-replays has to do it too,
+/// because genesis ratification replaces those mappings wholesale and refuses one that is absent.
+fn initialize_credits_mappings(ledger: &CurrentLedger) {
+    let credits = snarkvm_synthesizer::program::Program::<CurrentNetwork>::credits().unwrap();
+    ledger.vm().finalize_store().initialize_credits_mappings(&credits).unwrap();
+}
+
+/// Builds a chain that deploys a program and executes it twice, and returns what its mapping
+/// history should look like.
+#[allow(clippy::type_complexity)]
+fn sample_program_ledger(
+    rng: &mut TestRng,
+) -> (
+    CurrentLedger,
+    StorageMode,
+    ProgramID<CurrentNetwork>,
+    Identifier<CurrentNetwork>,
+    Plaintext<CurrentNetwork>,
+    Option<Vec<u32>>,
+) {
+    let storage_mode = StorageMode::new_test(None);
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let store = CurrentConsensusStore::open(storage_mode.clone()).unwrap();
+    let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, rng).unwrap();
+    let ledger = CurrentLedger::load(genesis, storage_mode.clone()).unwrap();
+
+    let program = snarkvm_synthesizer::program::Program::<CurrentNetwork>::from_str(
+        r"
+program rebuild_probe.aleo;
+
+mapping counter:
+    key as field.public;
+    value as u64.public;
+
+function bump:
+    input r0 as field.public;
+    async bump r0 into r1;
+    output r1 as rebuild_probe.aleo/bump.future;
+
+finalize bump:
+    input r0 as field.public;
+    get.or_use counter[r0] 0u64 into r1;
+    add r1 1u64 into r2;
+    set r2 into counter[r0];
+",
+    )
+    .unwrap();
+
+    let deployment = ledger.vm().deploy(&private_key, &program, None, 0, None, rng).unwrap();
+    let block =
+        ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![deployment], rng).unwrap();
+    ledger.advance_to_next_block(&block).unwrap();
+
+    // Two executions, so the mapping has a history rather than a single entry.
+    for _ in 0..2 {
+        let inputs = vec![snarkvm_console::program::Value::from_str("1field").unwrap()];
+        let execution = ledger
+            .vm()
+            .execute(&private_key, ("rebuild_probe.aleo", "bump"), inputs.iter(), None, 0, None, rng)
+            .unwrap();
+        let block =
+            ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![execution], rng).unwrap();
+        ledger.advance_to_next_block(&block).unwrap();
+    }
+
+    let program_id = ProgramID::<CurrentNetwork>::from_str("rebuild_probe.aleo").unwrap();
+    let mapping_name = Identifier::<CurrentNetwork>::from_str("counter").unwrap();
+    let key = Plaintext::<CurrentNetwork>::from_str("1field").unwrap();
+    let expected = ledger
+        .vm()
+        .finalize_store()
+        .get_mapping_update_heights(program_id, mapping_name, key.clone())
+        .unwrap()
+        .map(|heights| heights.into_owned());
+    assert!(expected.as_ref().is_some_and(|heights| heights.len() == 2), "the chain should have written two updates");
+
+    (ledger, storage_mode, program_id, mapping_name, key, expected)
+}
+
+/// A rebuild must replay a program's own deployment and the mapping updates its execution made.
+///
+/// The beacon-only chains above hold no programs, so they never exercise the process being built as
+/// the replay proceeds -- the whole reason the rebuild constructs its VM without preloaded
+/// deployments. Here the program's stack exists only because its deployment was replayed first.
+#[test]
+fn test_rebuild_replays_a_deployed_program() {
+    let _guard = serial();
+    let rng = &mut TestRng::default();
+    let (ledger, storage_mode, program_id, mapping_name, key, expected) = sample_program_ledger(rng);
+
+    // Release the ledger's VM, which preloaded the program, and rebuild through one that did not --
+    // the arrangement the tool uses, and the only one that can replay a deployment correctly.
+    drop(ledger);
+
+    let database = open_db(storage_mode.clone());
+    rocksdb::set_schema_version(&database, CurrentNetwork::ID, 0).unwrap();
+
+    // As the tool does: the schema gate exists to keep a node out of exactly this database.
+    rocksdb::allow_downlevel_open();
+    let store = CurrentConsensusStore::open(storage_mode).unwrap();
+    let vm = VM::from_without_deployments(store).unwrap();
+
+    // Without this the comparison below would hold on a rebuild that returned early.
+    let sentinel_program = ProgramID::<CurrentNetwork>::from_str("not_on_chain.aleo").unwrap();
+    let sentinel_mapping = Identifier::<CurrentNetwork>::from_str("sentinel").unwrap();
+    vm.finalize_store().initialize_mapping(sentinel_program, sentinel_mapping).unwrap();
+
+    vm.rebuild_finalize_state().unwrap();
+
+    assert!(
+        vm.finalize_store().get_mapping_names_confirmed(&sentinel_program).unwrap().is_none(),
+        "the rebuild did not discard the finalize state"
+    );
+
+    let rebuilt = vm
+        .finalize_store()
+        .get_mapping_update_heights(program_id, mapping_name, key)
+        .unwrap()
+        .map(|heights| heights.into_owned());
+    assert_eq!(rebuilt, expected, "the replayed program's mapping history differs from the chain's");
+}
+
+/// A rebuild interrupted after a program's deployment must still replay that program's executions.
+///
+/// The process is built empty, so a resumed run holds none of the programs deployed below the
+/// resume point. Without loading them it fails on the first execution of one -- and since resuming
+/// skips the clear, such a ledger can neither continue nor start over.
+#[test]
+fn test_rebuild_resumes_over_a_deployed_program() {
+    let _guard = serial();
+    let rng = &mut TestRng::default();
+    let (ledger, storage_mode, program_id, mapping_name, key, expected) = sample_program_ledger(rng);
+    drop(ledger);
+
+    let database = open_db(storage_mode.clone());
+    rocksdb::clear_rebuilt_state(&database, CurrentNetwork::ID).unwrap();
+
+    rocksdb::allow_downlevel_open();
+    let store = CurrentConsensusStore::open(storage_mode.clone()).unwrap();
+    let vm = VM::from_without_deployments(store).unwrap();
+    vm.finalize_store()
+        .initialize_credits_mappings(&snarkvm_synthesizer::program::Program::<CurrentNetwork>::credits().unwrap())
+        .unwrap();
+
+    // Stop after the deployment but before the executions that depend on it.
+    let tip = vm.block_store().current_block_height();
+    let stop_at = tip - 2;
+    for height in 0..=stop_at {
+        let hash = vm.block_store().get_block_hash(height).unwrap().unwrap();
+        let block = vm.block_store().get_block(&hash).unwrap().unwrap();
+        vm.replay_block(block).unwrap();
+    }
+    drop(vm);
+
+    // A fresh VM, as a second invocation of the tool would build: empty process, resuming.
+    rocksdb::allow_downlevel_open();
+    let store = CurrentConsensusStore::open(storage_mode).unwrap();
+    let vm = VM::from_without_deployments(store).unwrap();
+    vm.rebuild_finalize_state().unwrap();
+
+    let rebuilt = vm
+        .finalize_store()
+        .get_mapping_update_heights(program_id, mapping_name, key)
+        .unwrap()
+        .map(|heights| heights.into_owned());
+    assert_eq!(rebuilt, expected, "the resumed rebuild lost the program's mapping history");
+}
+
+/// A rebuild must reproduce the history the chain originally wrote, entry for entry.
+#[test]
+fn test_rebuild_reproduces_history() {
+    let _guard = serial();
+    let rng = &mut TestRng::default();
+    let (ledger, storage_mode) = sample_ledger(rng);
+
+    let expected = snapshot_history(&ledger);
+    let (program, mapping) = plant_sentinel(&ledger);
+
+    ledger.vm().rebuild_finalize_state().unwrap();
+
+    // Without this the comparison below would pass on a rebuild that never ran.
+    assert!(!sentinel_survives(&ledger, program, mapping), "the rebuild did not discard the finalize state");
+
+    assert_eq!(snapshot_history(&ledger), expected, "the rebuilt history differs from the one the chain wrote");
+    assert_eq!(ledger.vm().block_store().current_block_height(), NUM_BLOCKS, "the rebuild changed the block store");
+
+    // A completed rebuild stamps the schema version and clears the in-progress flag, which is what
+    // lets a node start again.
+    let database = open_db(storage_mode);
+    assert_eq!(rocksdb::schema_version(&database, CurrentNetwork::ID).unwrap(), rocksdb::STORAGE_VERSION);
+    assert!(!rocksdb::is_rebuilding(&database, CurrentNetwork::ID).unwrap());
+}
+
+/// A rebuild interrupted partway must resume where it stopped, not start over or skip ahead.
+#[test]
+fn test_rebuild_resumes_after_interruption() {
+    let _guard = serial();
+    let rng = &mut TestRng::default();
+    let (ledger, storage_mode) = sample_ledger(rng);
+
+    let expected = snapshot_history(&ledger);
+
+    // Interrupt a rebuild by hand: discard the state, then replay only part of the chain.
+    let database = open_db(storage_mode);
+    rocksdb::clear_rebuilt_state(&database, CurrentNetwork::ID).unwrap();
+    initialize_credits_mappings(&ledger);
+
+    let stopped_at = NUM_BLOCKS / 2;
+    for height in 0..=stopped_at {
+        let block = ledger.get_block(height).unwrap();
+        ledger.vm().replay_block(block).unwrap();
+    }
+    assert_eq!(ledger.vm().finalize_store().committee_store().current_height().unwrap(), stopped_at);
+
+    // Resuming must not re-clear: the committee store is the resume point, and clearing it would
+    // silently throw away the blocks already replayed rather than continuing from them.
+    ledger.vm().rebuild_finalize_state().unwrap();
+
+    assert_eq!(snapshot_history(&ledger), expected, "the resumed rebuild differs from the history the chain wrote");
+    assert_eq!(rocksdb::schema_version(&database, CurrentNetwork::ID).unwrap(), rocksdb::STORAGE_VERSION);
+    assert!(!rocksdb::is_rebuilding(&database, CurrentNetwork::ID).unwrap());
+}
+
+/// A rebuild that has already finished must be a no-op, not a second pass over the chain.
+///
+/// Comparing the history across the two runs would not show the difference -- a second full pass
+/// reproduces it exactly. So this leaves a mapping behind that only a clear would remove and that
+/// no replay would recreate: if it survives, the second call returned without touching anything.
+#[test]
+fn test_rebuild_is_idempotent() {
+    let _guard = serial();
+    let rng = &mut TestRng::default();
+    let (ledger, _storage_mode) = sample_ledger(rng);
+
+    // The first call must genuinely rebuild, or the second one proves nothing.
+    let (program, mapping) = plant_sentinel(&ledger);
+    ledger.vm().rebuild_finalize_state().unwrap();
+    assert!(!sentinel_survives(&ledger, program, mapping), "the first rebuild did not discard the finalize state");
+    let once = snapshot_history(&ledger);
+
+    let (program, mapping) = plant_sentinel(&ledger);
+    ledger.vm().rebuild_finalize_state().unwrap();
+
+    assert!(
+        sentinel_survives(&ledger, program, mapping),
+        "the second rebuild discarded the finalize state instead of returning early"
+    );
+    assert_eq!(snapshot_history(&ledger), once);
+}
