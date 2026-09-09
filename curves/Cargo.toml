@@ -57,6 +57,9 @@ workspace = true
 [dev-dependencies.criterion]
 workspace = true
 
+[dev-dependencies.proptest]
+workspace = true
+
 [dev-dependencies.rand]
 workspace = true
 

@@ -3596,6 +3596,7 @@ version = "4.9.0"
 dependencies = [
  "bincode",
  "criterion",
+ "proptest",
  "rand 0.10.2",
  "rustc_version",
  "serde",
