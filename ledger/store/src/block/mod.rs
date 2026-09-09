@@ -116,6 +116,7 @@ fn to_confirmed_transaction<N: Network>(
 ///
 /// Bump the trailing digits whenever the cached payload changes, so that a cache
 /// file written by an older version is discarded instead of failing to decode.
+#[cfg(feature = "rocks")]
 pub(crate) const BLOCK_TREE_CACHE_PREFIX: &[u8; 12] = b"aleo.tree.01";
 
 pub(crate) fn block_tree_cache_path<N: Network, B: BlockStorage<N>>(storage: &B) -> Option<std::path::PathBuf> {
@@ -1268,7 +1269,17 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             bail!("Failed to determine the block tree cache path");
         };
 
-        // Create the target file.
+        // Take an owned snapshot of the tree, so that the read lock is released before the write
+        // begins. Serializing a borrowed state would instead hold the lock for the entire write,
+        // which can take seconds - and `Self::insert` needs the write lock for every block, so that
+        // is a stall in block processing. The cost is one extra copy of the tree's nodes, held only
+        // until the write concludes.
+        let state = self.tree.read().to_state().into_owned();
+
+        // Create the target file. Truncating the previous cache in place is fine: it is consumed
+        // and deleted on startup (see `BlockStorage::create_block_tree`), so a cache from an older
+        // height is never reused, and an interrupted write leaves a file that fails to load and
+        // falls back to constructing the tree from scratch - exactly what no file at all does.
         let file = fs::File::create(&path)?;
         // The block tree can become quite large, so use a BufWriter in order to
         // not have to keep the entire serialized tree in memory, and to reduce
@@ -1278,12 +1289,12 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         writer.write_all(BLOCK_TREE_CACHE_PREFIX)?;
         // Note: only the contents of the tree are cached, not its hashers; the latter are
         // deterministic, and recreating them is far cheaper than deserializing them.
-        bincode::serialize_into(&mut writer, &self.tree.read().to_state())?;
+        bincode::serialize_into(&mut writer, &state)?;
         writer.flush()?;
-        // TODO(ljedrz): this operation can already take ~2.5s, so we may want
-        // to perform chunking and parallel serialization. This may be useful
-        // for other applications, so it should be implemented as a common
-        // utility.
+        // TODO(ljedrz): the serialization itself can still take ~2.5s, so we may want to perform
+        // chunking and parallel serialization. Now that it no longer holds the block tree lock,
+        // this is purely a matter of the background write finishing sooner. This may be useful for
+        // other applications, so it should be implemented as a common utility.
 
         tracing::debug!("Cached the current block tree to {}", path.display());
 
@@ -1593,6 +1604,15 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// Returns an iterator over the solution IDs, for all blocks in `self`.
     pub fn solution_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, SolutionID<N>>> {
         self.storage.solution_ids_map().keys_confirmed()
+    }
+}
+
+#[cfg(all(feature = "rocks", feature = "metrics"))]
+impl<N: Network> BlockStore<N, crate::helpers::rocksdb::BlockDB<N>> {
+    /// Reads RocksDB internal properties and publishes them to the metrics registry.
+    /// This is a cheap, synchronous call — properties come from in-memory counters with no I/O.
+    pub fn export_rocksdb_metrics(&self) {
+        self.storage.export_rocksdb_metrics();
     }
 }
 

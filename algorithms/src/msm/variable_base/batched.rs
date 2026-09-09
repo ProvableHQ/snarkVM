@@ -43,8 +43,8 @@ impl Ord for BucketPosition {
     }
 }
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for BucketPosition {
-    #[allow(clippy::non_canonical_partial_ord_impl)]
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         self.bucket_index.partial_cmp(&other.bucket_index)
     }
@@ -338,7 +338,7 @@ fn batched_window<G: AffineCurve>(
     c: usize,
 ) -> (G::Projective, usize) {
     // We don't need the "zero" bucket, so we only have 2^c - 1 buckets
-    let window_size = if (w_start % c) != 0 { w_start % c } else { c };
+    let window_size = if !w_start.is_multiple_of(c) { w_start % c } else { c };
     let num_buckets = (1 << window_size) - 1;
 
     let mut bucket_positions: Vec<_> = scalars

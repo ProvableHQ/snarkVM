@@ -80,8 +80,10 @@ impl<N: Network> Process<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ops::Deref;
 
     type CurrentAleo = circuit::network::AleoV0;
+    type CurrentNetwork = console::network::MainnetV0;
 
     /// Use `cargo test profiler --features timer` to run this test.
     #[ignore]
@@ -102,5 +104,99 @@ mod tests {
         assert!(process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).is_ok());
 
         bail!("\n\nRemember to #[ignore] this test!\n\n")
+    }
+
+    /// Inflates the claimed variable count on the first verifying key of `deployment`.
+    fn with_inflated_variables<N: Network>(deployment: &Deployment<N>, num_variables: u64) -> Deployment<N> {
+        let (function_id, (vk, certificate)) = &deployment.verifying_keys()[0];
+        let tampered_vks =
+            vec![(*function_id, (VerifyingKey::new(Arc::new(vk.deref().clone()), num_variables), certificate.clone()))];
+        Deployment::new(
+            deployment.edition(),
+            deployment.program().clone(),
+            tampered_vks,
+            deployment.program_checksum(),
+            deployment.program_owner(),
+        )
+        .unwrap()
+    }
+
+    /// Inflates the claimed constraint count on the first verifying key of `deployment`.
+    fn with_inflated_constraints<N: Network>(deployment: &Deployment<N>, num_constraints: usize) -> Deployment<N> {
+        let (function_id, (vk, certificate)) = &deployment.verifying_keys()[0];
+        let mut circuit_vk = vk.deref().clone();
+        circuit_vk.circuit_info.num_constraints = num_constraints;
+        let tampered_vks =
+            vec![(*function_id, (VerifyingKey::new(Arc::new(circuit_vk), vk.num_variables()), certificate.clone()))];
+        Deployment::new(
+            deployment.edition(),
+            deployment.program().clone(),
+            tampered_vks,
+            deployment.program_checksum(),
+            deployment.program_owner(),
+        )
+        .unwrap()
+    }
+
+    /// Per-transaction variable and constraint limits are enforced before V18 and from V19,
+    /// using the v2 limits from V19. V18 skips these checks in favor of a block-wide synthesis limit.
+    #[test]
+    fn test_deployment_variable_and_constraint_limits_by_consensus_version() -> Result<()> {
+        let rng = &mut TestRng::default();
+        let process = Process::load()?;
+
+        let program = Program::from_str(
+            r"
+program testing.aleo;
+function foo:
+    add 0u8 1u8 into r0;",
+        )?;
+        let deployment = process.deploy::<CurrentAleo, _>(&program, rng)?;
+
+        let over_v1_variables = with_inflated_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES + 1);
+        let over_v2_variables = with_inflated_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES_V2 + 1);
+        let over_v1_constraints =
+            with_inflated_constraints(&deployment, (CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS + 1) as usize);
+        let over_v2_constraints =
+            with_inflated_constraints(&deployment, (CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS_V2 + 1) as usize);
+
+        // V16 enforces the original per-transaction limits.
+        assert!(
+            process
+                .verify_deployment::<CurrentAleo, _>(ConsensusVersion::V16, &over_v1_variables, rng)
+                .unwrap_err()
+                .to_string()
+                .contains("combined variables exceeds the deployment limit")
+        );
+        assert!(
+            process
+                .verify_deployment::<CurrentAleo, _>(ConsensusVersion::V16, &over_v1_constraints, rng)
+                .unwrap_err()
+                .to_string()
+                .contains("combined constraints exceeds the deployment limit")
+        );
+
+        // V18 skips per-transaction variable/constraint limits.
+        process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V18, &over_v1_variables, rng)?;
+        process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V18, &over_v2_variables, rng)?;
+
+        // V19 enforces the v2 per-transaction limits.
+        process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V19, &over_v1_variables, rng)?;
+        assert!(
+            process
+                .verify_deployment::<CurrentAleo, _>(ConsensusVersion::V19, &over_v2_variables, rng)
+                .unwrap_err()
+                .to_string()
+                .contains("combined variables exceeds the deployment limit")
+        );
+        assert!(
+            process
+                .verify_deployment::<CurrentAleo, _>(ConsensusVersion::V19, &over_v2_constraints, rng)
+                .unwrap_err()
+                .to_string()
+                .contains("combined constraints exceeds the deployment limit")
+        );
+
+        Ok(())
     }
 }

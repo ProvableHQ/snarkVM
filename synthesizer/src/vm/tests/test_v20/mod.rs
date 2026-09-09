@@ -16,4 +16,11 @@
 // Tests that the translation-marked variants of Input and Output are checked correctly.
 mod translated_type_checks;
 
+// Tests for the V20 plaintext-type size bound.
+mod plaintext_size;
+
+// Tests on the deployment of programs with non-deterministic dynamic-call targets. The relevant
+// changes are not ConsensusVersion::V19-gated, but they were introduced at that point in time.
+mod non_deterministic_dynamic_targets;
+
 use super::*;

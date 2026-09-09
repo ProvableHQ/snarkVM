@@ -97,7 +97,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 itertools::izip!(instance_combiners, z_a, z_b, z_c).enumerate()
             {
                 job_pool.add_job(move || {
-                    let mut instance_lhs = DensePolynomial::zero();
                     let za_label = witness_label(circuit.id, "z_a", j);
                     let zb_label = witness_label(circuit.id, "z_b", j);
                     let zc_label = witness_label(circuit.id, "z_c", j);
@@ -111,7 +110,13 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     let mut rowcheck = multiplier_2.multiply().unwrap();
                     rowcheck.coeffs.iter_mut().zip(&z_c.coeffs).for_each(|(ab, c)| *ab -= c);
 
-                    instance_lhs += &(&rowcheck * instance_combiner);
+                    // Initialise `instance_lhs` as `instance_combiner * rowcheck`: one job
+                    // contributes one term, so there is nothing to accumulate onto. The trim is
+                    // necessary because `apply_randomized_selector` below is degree-sensitive,
+                    // and the `AddAssign` this replaced used to do it.
+                    let mut instance_lhs = rowcheck;
+                    instance_lhs.coeffs.iter_mut().for_each(|c| *c *= instance_combiner);
+                    instance_lhs.trim_trailing_zeros();
 
                     let (h_0_i, remainder) = apply_randomized_selector(
                         &mut instance_lhs,

@@ -98,3 +98,4 @@ workspace = true
 
 [dev-dependencies.snarkvm-ledger-puzzle-epoch]
 path = "epoch"
+features = [ "merkle" ]

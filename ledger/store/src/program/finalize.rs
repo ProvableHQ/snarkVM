@@ -841,19 +841,19 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         }
 
         let spm_guard = self.slipstream_plugin_manager.read();
-        if let Some(mgr) = spm_guard.as_ref() {
-            if mgr.has_subscribers(BroadcastEventKind::StakingReward) {
-                // Address serializes to a fixed 32-byte array; this cannot fail.
-                let staker_bytes = staker.to_bytes_le().expect("Address::to_bytes_le is infallible");
-                let validator_bytes = validator.to_bytes_le().expect("Address::to_bytes_le is infallible");
-                mgr.broadcast(BroadcastEvent::StakingReward {
-                    staker: &staker_bytes,
-                    validator: &validator_bytes,
-                    reward,
-                    new_stake,
-                    block_height,
-                });
-            }
+        if let Some(mgr) = spm_guard.as_ref()
+            && mgr.has_subscribers(BroadcastEventKind::StakingReward)
+        {
+            // Address serializes to a fixed 32-byte array; this cannot fail.
+            let staker_bytes = staker.to_bytes_le().expect("Address::to_bytes_le is infallible");
+            let validator_bytes = validator.to_bytes_le().expect("Address::to_bytes_le is infallible");
+            mgr.broadcast(BroadcastEvent::StakingReward {
+                staker: &staker_bytes,
+                validator: &validator_bytes,
+                reward,
+                new_stake,
+                block_height,
+            });
         }
     }
 

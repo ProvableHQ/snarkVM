@@ -217,17 +217,15 @@ impl<E: PairingEngine> KZG10<E> {
         point: E::Fr,
         randomness: &KZGRandomness<E>,
     ) -> Result<(DensePolynomial<E::Fr>, Option<DensePolynomial<E::Fr>>), PCError> {
-        let divisor = DensePolynomial::from_coefficients_vec(vec![-point, E::Fr::one()]);
-
         let witness_time = start_timer!(|| "Computing witness polynomial");
-        let witness_polynomial = polynomial / &divisor;
+        let (witness_polynomial, _) = polynomial.divide_by_monic_linear(point);
         end_timer!(witness_time);
 
         let random_witness_polynomial = if randomness.is_hiding() {
             let random_p = &randomness.blinding_polynomial;
 
             let witness_time = start_timer!(|| "Computing random witness polynomial");
-            let random_witness_polynomial = random_p / &divisor;
+            let (random_witness_polynomial, _) = random_p.divide_by_monic_linear(point);
             end_timer!(witness_time);
             Some(random_witness_polynomial)
         } else {
@@ -440,12 +438,12 @@ impl<E: PairingEngine> KZG10<E> {
             if enforced_degree_bounds.binary_search(&bound).is_err() {
                 Err(PCError::UnsupportedDegreeBound(bound))
             } else if bound < p.degree() || bound > max_degree {
-                return Err(PCError::IncorrectDegreeBound {
+                Err(PCError::IncorrectDegreeBound {
                     poly_degree: p.degree(),
                     degree_bound: p.degree_bound().unwrap(),
                     max_degree,
                     label: p.label().to_string(),
-                });
+                })
             } else {
                 Ok(())
             }
@@ -496,7 +494,7 @@ mod tests {
             pp: &UniversalParams<E>,
             mut supported_degree: usize,
             hiding_bound: Option<usize>,
-        ) -> (Powers<E>, VerifierKey<E>) {
+        ) -> (Powers<'_, E>, VerifierKey<E>) {
             if supported_degree == 1 {
                 supported_degree += 1;
             }

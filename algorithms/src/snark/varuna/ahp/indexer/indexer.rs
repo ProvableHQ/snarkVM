@@ -250,7 +250,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             let lagrange_coefficients_at_point = domain.evaluate_all_lagrange_coefficients(point);
             let evals_at_point = evals.evaluate(&lagrange_coefficients_at_point)?;
             ensure!(labels.len() == evals_at_point.len());
-            all_evals.push(labels.into_iter().zip_eq(evals_at_point.into_iter()));
+            all_evals.push(labels.into_iter().zip_eq(evals_at_point));
         }
         let sorted_evals = all_evals.into_iter().flatten().sorted_unstable_by(|(l1, _), (l2, _)| l1.cmp(l2));
         for (label, eval) in sorted_evals {

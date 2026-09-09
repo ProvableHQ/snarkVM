@@ -44,7 +44,7 @@ mod test_v16;
 mod test_v18;
 
 #[cfg(feature = "test")]
-mod test_v19;
+mod test_v20;
 
 use super::*;
 use crate::vm::test_helpers::*;

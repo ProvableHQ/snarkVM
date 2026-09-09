@@ -740,7 +740,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Inject the `tcm` (from the request) as `Mode::Public`.
             let tcm = circuit::Field::new(circuit::Mode::Public, request.tcm);
             // Compute the transition commitment as `Hash(tvk)`.
-            let candidate_tcm = A::hash_psd2(&[tvk.clone()]);
+            let candidate_tcm = A::hash_psd2(std::slice::from_ref(&tvk));
             // Ensure the transition commitment matches the computed transition commitment.
             A::assert_eq(&tcm, candidate_tcm)?;
 
@@ -978,11 +978,12 @@ impl<'a, N: Network> ResolvedTarget<'a, N> {
     }
 }
 
-// A helper function that attempts to resolve the target of a dynamic call.
-// This function returns:
-// - Ok(Some(ResolvedTarget)) if the target is successfully resolved.
+// A helper function that attempts to resolve the target of a dynamic call. This function returns:
+// - Ok(Some(ResolvedTarget)) if the target is successfully resolved to a non-closure.
 // - Ok(None) in `Synthesize` or `CheckDeployment` mode when the target cannot be resolved.
-// - Err(_) in other modes when the target cannot be resolved.
+// - Err(_) in
+//    - `Synthesize` or `CheckDeployment` mode when the target is resolved to a closure.
+//    - other modes when the target cannot be resolved or it is resolved to a closure.
 fn resolve_dynamic_target<'a, N: Network>(
     call_stack: &'a CallStack<N>,
     stack: &'a Stack<N>,

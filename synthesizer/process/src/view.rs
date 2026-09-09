@@ -176,13 +176,13 @@ pub(crate) fn evaluate_view_inner<N: Network>(
     }
 
     // Store the inputs.
-    for (input_stmt, value) in view.inputs().iter().zip(inputs.into_iter()) {
+    for (input_stmt, value) in view.inputs().iter().zip(inputs) {
         registers.store(stack, input_stmt.register(), value)?;
     }
 
     // Evaluate the commands. Views reject `await` at construction (`add_command`), so the
     // dispatch is identical to `Finalize` / `Constructor` — we share `finalize_command_except_await`
-    // directly to avoid drift. `try_vm_runtime!` inside that helper also gives views panic-catch
+    // directly to avoid drift. `try_vm_runtime` inside that helper also gives views panic-catch
     // protection, which is desirable on the off-consensus / RPC-exposed path.
     //
     // Termination & cost bounds (prototype):

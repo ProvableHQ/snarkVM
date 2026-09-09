@@ -77,7 +77,7 @@ impl<M: Serialize + DeserializeOwned, K: Serialize + DeserializeOwned, V: Serial
     }
 
     #[inline]
-    fn get_map_key_raw(&self, map: &M, key: &K) -> Result<Option<rocksdb::DBPinnableSlice>> {
+    fn get_map_key_raw(&self, map: &M, key: &K) -> Result<Option<rocksdb::DBPinnableSlice<'_>>> {
         let raw_map_key = self.create_prefixed_map_key(map, key)?;
         match self.database.get_pinned_opt(&raw_map_key, &self.database.default_readopts)? {
             Some(data) => Ok(Some(data)),

@@ -276,7 +276,7 @@ impl<E: PairingEngine> ToBytes for CommitterKey<E> {
 
 impl<E: PairingEngine> CommitterKey<E> {
     fn len(&self) -> usize {
-        if self.shifted_powers_of_beta_g.is_some() { self.shifted_powers_of_beta_g.as_ref().unwrap().len() } else { 0 }
+        self.shifted_powers_of_beta_g.as_ref().map_or(0, |powers| powers.len())
     }
 }
 
@@ -309,7 +309,7 @@ pub struct CommitterUnionKey<'a, E: PairingEngine> {
 
 impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
     /// Obtain powers for the underlying KZG10 construction
-    pub fn powers(&self) -> kzg10::Powers<E> {
+    pub fn powers(&self) -> kzg10::Powers<'_, E> {
         kzg10::Powers {
             powers_of_beta_g: self.powers_of_beta_g.unwrap().as_slice().into(),
             powers_of_beta_times_gamma_g: self.powers_of_beta_times_gamma_g.unwrap().as_slice().into(),
@@ -317,7 +317,7 @@ impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
     }
 
     /// Obtain powers for committing to shifted polynomials.
-    pub fn shifted_powers_of_beta_g(&self, degree_bound: impl Into<Option<usize>>) -> Option<kzg10::Powers<E>> {
+    pub fn shifted_powers_of_beta_g(&self, degree_bound: impl Into<Option<usize>>) -> Option<kzg10::Powers<'_, E>> {
         match (&self.shifted_powers_of_beta_g, &self.shifted_powers_of_beta_times_gamma_g) {
             (Some(shifted_powers_of_beta_g), Some(shifted_powers_of_beta_times_gamma_g)) => {
                 let max_bound = self.enforced_degree_bounds.as_ref().unwrap().last().unwrap();
@@ -342,7 +342,7 @@ impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
 
     /// Obtain elements of the SRS in the lagrange basis powers, for use with
     /// the underlying KZG10 construction.
-    pub fn lagrange_basis(&self, domain: EvaluationDomain<E::Fr>) -> Option<kzg10::LagrangeBasis<E>> {
+    pub fn lagrange_basis(&self, domain: EvaluationDomain<E::Fr>) -> Option<kzg10::LagrangeBasis<'_, E>> {
         self.lagrange_bases_at_beta_g.get(&domain.size()).map(|basis| kzg10::LagrangeBasis {
             lagrange_basis_at_beta_g: Cow::Borrowed(basis),
             powers_of_beta_times_gamma_g: Cow::Borrowed(self.powers_of_beta_times_gamma_g.unwrap()),

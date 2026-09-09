@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for ProgramCore<N> {
     /// Parses a string into a program.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // A helper to parse a program.
         enum P<N: Network> {
             Constructor(ConstructorCore<N>),
@@ -45,7 +45,7 @@ impl<N: Network> Parser for ProgramCore<N> {
         // Parse the semicolon ';' keyword from the string.
         let (string, _) = tag(";")(string)?;
 
-        fn intermediate<N: Network>(string: &str) -> ParserResult<P<N>> {
+        fn intermediate<N: Network>(string: &str) -> ParserResult<'_, P<N>> {
             // Parse the whitespace and comments from the string.
             let (string, _) = Sanitizer::parse(string)?;
 

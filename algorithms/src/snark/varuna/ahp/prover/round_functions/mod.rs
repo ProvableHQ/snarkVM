@@ -70,7 +70,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         }
         let indices_and_assignments = circuits_to_constraints
             .iter()
-            .zip_eq(randomizing_assignments.into_iter())
+            .zip_eq(randomizing_assignments)
             .map(|((circuit, constraints), circuit_rand_assignments)| {
                 let assignments = constraints
                     .iter()

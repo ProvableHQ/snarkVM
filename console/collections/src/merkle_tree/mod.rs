@@ -88,6 +88,22 @@ pub struct MerkleTreeState<'a, E: Environment> {
     number_of_leaves: usize,
 }
 
+impl<E: Environment> MerkleTreeState<'_, E> {
+    /// Converts the state into one that borrows nothing, cloning the tree's nodes if needed.
+    ///
+    /// This is what allows a state taken from a [`MerkleTree`] behind a lock to be used after the
+    /// lock is released - most importantly, to be serialized without holding it for the duration of
+    /// the write. It is a no-op for a state that already owns its nodes, such as a deserialized one.
+    pub fn into_owned(self) -> MerkleTreeState<'static, E> {
+        MerkleTreeState {
+            root: self.root,
+            tree: Cow::Owned(self.tree.into_owned()),
+            empty_hash: self.empty_hash,
+            number_of_leaves: self.number_of_leaves,
+        }
+    }
+}
+
 impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>>, const DEPTH: u8> Clone
     for MerkleTree<E, LH, PH, DEPTH>
 {
@@ -200,6 +216,11 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
     ///
     /// This borrows from the tree, so it is cheap even for very large trees; use
     /// [`Self::from_state`] to recreate the tree from the returned state.
+    ///
+    /// note: The borrow lasts as long as the state does, so a state obtained through a lock guard
+    /// keeps that guard alive. Serializing such a state therefore holds the lock for the entire
+    /// write, which for a large tree is far longer than taking it; [`MerkleTreeState::into_owned`]
+    /// trades a copy of the tree for the ability to release the lock first.
     pub fn to_state(&self) -> MerkleTreeState<'_, E> {
         MerkleTreeState {
             root: self.root,

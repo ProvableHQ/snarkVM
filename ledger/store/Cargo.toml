@@ -22,6 +22,7 @@ history = [ ]
 history-staking-rewards = [ ]
 slipstream-plugins = [ "dep:snarkvm-slipstream-plugin-manager" ]
 locktick = [ "dep:locktick", "snarkvm-ledger-puzzle/locktick" ]
+metrics = [ "dep:snarkvm-metrics" ]
 rocks = [ "rocksdb", "smallvec" ]
 serial = [
   "snarkvm-console/serial",
@@ -42,6 +43,10 @@ wasm = [
   "snarkvm-synthesizer-snark/wasm"
 ]
 test = [ ]
+
+[dependencies.snarkvm-metrics]
+workspace = true
+optional = true
 
 [dependencies.snarkvm-slipstream-plugin-manager]
 workspace = true

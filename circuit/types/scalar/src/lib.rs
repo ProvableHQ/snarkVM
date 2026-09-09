@@ -83,7 +83,7 @@ impl<E: Environment> Eject for Scalar<E> {
 impl<E: Environment> Parser for Scalar<E> {
     /// Parses a string into a scalar circuit.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the scalar from the string.
         let (string, scalar) = console::Scalar::parse(string)?;
         // Parse the mode from the string.

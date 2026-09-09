@@ -105,3 +105,9 @@ optional = true
 [dev-dependencies.snarkvm-console]
 workspace = true
 features = [ "test" ]
+
+[dev-dependencies.hex]
+workspace = true
+
+[dev-dependencies.sha2]
+workspace = true

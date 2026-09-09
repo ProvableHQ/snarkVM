@@ -22,7 +22,7 @@ categories = [
 include = [ "Cargo.toml", "vm", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
 edition = "2024"
-rust-version = "1.88.0" # Attention - Change the MSRV in rust-toolchain and in .circleci/config.yml as well
+rust-version = "1.96.0" # Attention - Change the MSRV in rust-toolchain and in .circleci/config.yml as well
 
 [workspace]
 members = [
@@ -141,6 +141,7 @@ locktick = [
   "snarkvm-parameters?/locktick",
   "snarkvm-synthesizer?/locktick"
 ]
+# No-op: Cargo features are not evaluated in `[target.<cfg>]` selectors.
 noconfig = [ ]
 prop-tests = [ "snarkvm-ledger?/prop-tests" ]
 rocks = [ "snarkvm-ledger/rocks", "snarkvm-synthesizer/rocks" ]
@@ -504,7 +505,7 @@ version = "1.4"
 version = "0.5"
 
 [workspace.dependencies.lru]
-version = "0.16"
+version = "0.18"
 
 [workspace.dependencies.num-traits]
 version = "0.2"
@@ -661,14 +662,14 @@ version = "2"
 [profile.release]
 opt-level = 3
 lto = "thin"
-incremental = true
+incremental = false
 
 [profile.bench]
 opt-level = 3
 debug = false
 rpath = false
 lto = "thin"
-incremental = true
+incremental = false
 debug-assertions = false
 
 [profile.dev]
@@ -677,9 +678,8 @@ lto = "off"
 incremental = true
 
 [profile.test]
-opt-level = 3
-lto = "thin"
+opt-level = 2
+lto = "off"
 incremental = true
 debug = true
 debug-assertions = true
-

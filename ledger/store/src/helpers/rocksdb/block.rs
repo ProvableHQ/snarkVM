@@ -282,3 +282,12 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         }
     }
 }
+
+#[cfg(all(feature = "rocks", feature = "metrics"))]
+impl<N: Network> BlockDB<N> {
+    /// Reads RocksDB internal properties and publishes them to the metrics registry.
+    /// Any map can be used since they all share the same underlying RocksDB instance.
+    pub fn export_rocksdb_metrics(&self) {
+        self.id_map.export_rocksdb_metrics();
+    }
+}
