@@ -348,7 +348,10 @@ impl<E: PairingEngine> CanonicalDeserialize for Proof<E> {
         validate: Validate,
     ) -> Result<Self, SerializationError> {
         let batch_sizes: Vec<u64> = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
-        let batch_sizes: Vec<usize> = batch_sizes.into_iter().map(|x| x as usize).collect();
+        // These counts come off the wire, so convert rather than truncate: on a target
+        // where `usize` is narrower than `u64`, `as` would silently turn an
+        // unreadable batch size into a readable one.
+        let batch_sizes: Vec<usize> = batch_sizes.into_iter().map(usize::try_from).collect::<Result<_, _>>()?;
         let commitments = Commitments::deserialize_with_mode(&batch_sizes, &mut reader, compress, validate)?;
         let evaluations = Evaluations::deserialize_with_mode(&batch_sizes, &mut reader, compress, validate)?;
         let third_msg_sums = batch_sizes
