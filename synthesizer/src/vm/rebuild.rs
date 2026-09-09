@@ -149,7 +149,16 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
     /// The node must not be running: this rewrites the state underneath it, and RocksDB permits a
     /// single writer in any case.
     pub fn rebuild_finalize_state(&self) -> Result<()> {
-        self.rebuild_finalize_state_inner(false)
+        self.rebuild_finalize_state_inner(false, false)
+    }
+
+    /// Rebuilds the finalize state even if the ledger already records this schema version.
+    ///
+    /// For a ledger whose history is suspect for a reason the schema version cannot express. It
+    /// discards a finalize state that nothing has reported as wrong, so it is deliberately a
+    /// separate entry point rather than a fallback inside the ordinary one.
+    pub fn force_rebuild_finalize_state(&self) -> Result<()> {
+        self.rebuild_finalize_state_inner(false, true)
     }
 
     /// Reports whether this ledger can be rebuilt, without changing it.
@@ -158,13 +167,13 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
     /// find out whether a ledger is a candidate without committing to hours of replay or
     /// discarding anything.
     pub fn check_rebuild(&self) -> Result<()> {
-        self.rebuild_finalize_state_inner(true)
+        self.rebuild_finalize_state_inner(true, false)
     }
 
     /// Discards the finalize state and rebuilds it, or with `check_only` reports and stops.
     ///
     /// The check shares this body so that it cannot drift from what it predicts.
-    fn rebuild_finalize_state_inner(&self, check_only: bool) -> Result<()> {
+    fn rebuild_finalize_state_inner(&self, check_only: bool, force: bool) -> Result<()> {
         let network_id = N::ID;
         let storage_mode = self.finalize_store().storage_mode().clone();
         let database = rocksdb::open_for_rebuild(network_id, storage_mode)?;
@@ -184,7 +193,7 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
         // matters because this is an operator command: running it twice, or wiring it into a
         // startup script, must not take the node offline for a second full pass -- and an
         // interruption during that pass would leave a half-empty store where a complete one stood.
-        if !resuming && rocksdb::schema_version(&database, network_id)? >= rocksdb::STORAGE_VERSION {
+        if !force && !resuming && rocksdb::schema_version(&database, network_id)? >= rocksdb::STORAGE_VERSION {
             tracing::info!(
                 "This ledger is already at storage schema v{}; nothing to rebuild",
                 rocksdb::STORAGE_VERSION
@@ -286,7 +295,7 @@ impl<N: Network> VM<N, ConsensusDB<N>> {
         // ledger, but it cannot here -- the gate returns early while the rebuild's downlevel bypass
         // is set, so the version stays at 0 and this would otherwise discard and replay a ledger
         // whose history was never wrong.
-        if !needs_history && !needs_rewards {
+        if !force && !needs_history && !needs_rewards {
             tracing::info!("This ledger holds no history to rebuild; recording schema v{}", rocksdb::STORAGE_VERSION);
             if !check_only {
                 rocksdb::set_schema_version(&database, network_id, rocksdb::STORAGE_VERSION)?;

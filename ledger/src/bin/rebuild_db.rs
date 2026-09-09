@@ -39,11 +39,15 @@ use anyhow::{Result, bail};
 use std::path::PathBuf;
 
 const USAGE: &str = "\
-usage: rebuild_db [--check] <ledger-dir> [network-id]
+usage: rebuild_db [--check] [--force] <ledger-dir> [network-id]
 
 Discards the ledger's finalize state and rebuilds it by replaying every block already in
 storage. The network is inferred from a directory name ending in `-<id>` (0 = mainnet,
 1 = testnet, 2 = canary), or given as the final argument.
+
+--force rebuilds a ledger that already records this schema version, discarding a finalize
+state nothing has reported as wrong. Only for a ledger whose history is suspect for some
+other reason.
 
 --check runs every pre-flight the rebuild runs and stops before the first write, reporting
 whether this ledger is a candidate and how much of it there is to replay. It still needs the
@@ -65,7 +69,7 @@ fn network_from_name(path: &std::path::Path) -> Option<u16> {
 }
 
 /// Opens the ledger at `path` and rebuilds its finalize state.
-fn rebuild<N: Network>(path: PathBuf, check: bool) -> Result<()> {
+fn rebuild<N: Network>(path: PathBuf, check: bool, force: bool) -> Result<()> {
     // Said before opening: the schema gate exists to keep a node out of exactly this database.
     allow_downlevel_open();
 
@@ -73,9 +77,10 @@ fn rebuild<N: Network>(path: PathBuf, check: bool) -> Result<()> {
     // Without preloaded deployments: the replay adds each program as it reaches its deployment, so
     // a program revised later is checked against the edition the block carries.
     let vm = VM::from_without_deployments(store)?;
-    match check {
-        true => vm.check_rebuild(),
-        false => vm.rebuild_finalize_state(),
+    match (check, force) {
+        (true, _) => vm.check_rebuild(),
+        (false, true) => vm.force_rebuild_finalize_state(),
+        (false, false) => vm.rebuild_finalize_state(),
     }
 }
 
@@ -86,6 +91,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
     let check = all.iter().any(|arg| arg == "--check" || arg == "-c");
+    let force = all.iter().any(|arg| arg == "--force");
     let args = all.into_iter().filter(|arg| !arg.starts_with('-')).collect::<Vec<_>>();
     if args.is_empty() {
         bail!("No ledger directory given.\n\n{USAGE}");
@@ -107,9 +113,9 @@ fn main() -> Result<()> {
     tracing_subscriber::fmt().with_env_filter(filter).with_target(false).init();
 
     match network_id {
-        0 => rebuild::<MainnetV0>(path, check),
-        1 => rebuild::<TestnetV0>(path, check),
-        2 => rebuild::<CanaryV0>(path, check),
+        0 => rebuild::<MainnetV0>(path, check, force),
+        1 => rebuild::<TestnetV0>(path, check, force),
+        2 => rebuild::<CanaryV0>(path, check, force),
         other => bail!("Unknown network id {other}.\n\n{USAGE}"),
     }
 }
