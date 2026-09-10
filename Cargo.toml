@@ -673,7 +673,7 @@ incremental = false
 debug-assertions = false
 
 [profile.dev]
-opt-level = 3
+debug = "line-tables-only"
 lto = "off"
 incremental = true
 
