@@ -660,26 +660,10 @@ workspace = true
 version = "2"
 
 [profile.release]
-opt-level = 3
 lto = "thin"
-incremental = false
-
-[profile.bench]
-opt-level = 3
-debug = false
-rpath = false
-lto = "thin"
-incremental = false
-debug-assertions = false
 
 [profile.dev]
-opt-level = 3
-lto = "off"
-incremental = true
+debug = "line-tables-only"
 
 [profile.test]
 opt-level = 2
-lto = "off"
-incremental = true
-debug = true
-debug-assertions = true
