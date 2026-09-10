@@ -133,6 +133,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         candidate_transactions: impl ExactSizeIterator<Item = &'a Transaction<N>>,
         rng: &mut R,
     ) -> Result<(Ratifications<N>, Transactions<N>, Vec<N::TransactionID>, Vec<FinalizeOperation<N>>)> {
+        #[cfg(feature = "metrics")]
+        let _speculate_metrics = snarkvm_metrics::vm::TimedInFlight::enter(
+            snarkvm_metrics::vm::SPECULATE_IN_FLIGHT,
+            snarkvm_metrics::vm::SPECULATE_DURATION_SECONDS,
+        );
         let timer = timer!("VM::speculate");
 
         // Collect the candidate transactions into a vector.
@@ -524,6 +529,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     )> {
         self.ensure_sequential_processing();
 
+        #[cfg(feature = "metrics")]
+        let _atomic_speculate_metrics = snarkvm_metrics::vm::TimedInFlight::enter(
+            snarkvm_metrics::vm::ATOMIC_SPECULATE_IN_FLIGHT,
+            snarkvm_metrics::vm::ATOMIC_SPECULATE_DURATION_SECONDS,
+        );
         let timer = timer!("VM::atomic_speculate");
 
         // Retrieve the number of solutions.
@@ -1432,6 +1442,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         state: FinalizeGlobalState,
         rng: &mut R,
     ) -> Result<(Vec<&'a Transaction<N>>, Vec<(&'a Transaction<N>, String)>)> {
+        #[cfg(feature = "metrics")]
+        let _prepare_metrics = snarkvm_metrics::vm::TimedInFlight::enter(
+            snarkvm_metrics::vm::PREPARE_FOR_SPECULATE_IN_FLIGHT,
+            snarkvm_metrics::vm::PREPARE_FOR_SPECULATE_DURATION_SECONDS,
+        );
+        #[cfg(feature = "metrics")]
+        snarkvm_metrics::histogram_label(
+            snarkvm_metrics::vm::PREPARE_FOR_SPECULATE_TRANSACTIONS,
+            "stage",
+            "candidates".to_string(),
+            transactions.len() as f64,
+        );
         // Construct the list of transactions that need to verified.
         let mut transactions_to_verify = Vec::with_capacity(transactions.len());
         // Construct the list of valid and invalid transactions.
@@ -1467,6 +1489,28 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
         }
 
+        #[cfg(feature = "metrics")]
+        snarkvm_metrics::histogram_label(
+            snarkvm_metrics::vm::PREPARE_FOR_SPECULATE_TRANSACTIONS,
+            "stage",
+            "verify".to_string(),
+            transactions_to_verify.len() as f64,
+        );
+        #[cfg(feature = "metrics")]
+        {
+            let verify_count = transactions_to_verify.len() as f64;
+            snarkvm_metrics::increment_gauge(
+                snarkvm_metrics::vm::PREPARE_FOR_SPECULATE_TRANSACTIONS_IN_FLIGHT,
+                verify_count,
+            );
+            defer! {
+                snarkvm_metrics::decrement_gauge(
+                    snarkvm_metrics::vm::PREPARE_FOR_SPECULATE_TRANSACTIONS_IN_FLIGHT,
+                    verify_count,
+                );
+            }
+        }
+
         // Separate the transactions into deploys and executions.
         let (deployments, executions): (Vec<&Transaction<N>>, Vec<&Transaction<N>>) =
             transactions_to_verify.into_iter().partition(|tx| tx.is_deploy());
@@ -1498,6 +1542,22 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let position: IndexSet<_> = transactions.iter().map(|tx| tx.id()).collect();
         cfg_sort_by_cached_key!(valid_transactions, |tx| position.get_index_of(&tx.id()));
         cfg_sort_by_cached_key!(aborted_transactions, |tx| position.get_index_of(&tx.0.id()));
+
+        #[cfg(feature = "metrics")]
+        {
+            snarkvm_metrics::histogram_label(
+                snarkvm_metrics::vm::PREPARE_FOR_SPECULATE_TRANSACTIONS,
+                "stage",
+                "accepted".to_string(),
+                valid_transactions.len() as f64,
+            );
+            snarkvm_metrics::histogram_label(
+                snarkvm_metrics::vm::PREPARE_FOR_SPECULATE_TRANSACTIONS,
+                "stage",
+                "aborted".to_string(),
+                aborted_transactions.len() as f64,
+            );
+        }
 
         // Return the valid and invalid transactions.
         Ok((valid_transactions, aborted_transactions))
