@@ -34,7 +34,9 @@ const GAUGE_NAMES: &[&str] = &[
     rocksdb::NUM_FILES_AT_LEVEL[5],
     rocksdb::NUM_FILES_AT_LEVEL[6],
     vm::CHECK_TRANSACTION_IN_FLIGHT,
+    vm::CHECK_TRANSACTION_DUPLICATE_IN_FLIGHT,
     vm::PREPARE_FOR_SPECULATE_IN_FLIGHT,
+    vm::PREPARE_FOR_SPECULATE_TRANSACTIONS_IN_FLIGHT,
     vm::ATOMIC_SPECULATE_IN_FLIGHT,
     vm::SPECULATE_IN_FLIGHT,
 ];
@@ -50,7 +52,15 @@ pub mod committee {
 /// stalls during block construction. Compare `cache="hit"` vs `cache="miss"`
 /// to separate duplicate proof work from contention on the cheap path.
 pub mod vm {
-    use std::{cell::Cell, time::Instant};
+    use std::{
+        cell::Cell,
+        collections::HashMap,
+        sync::{LazyLock, Mutex},
+        time::Instant,
+    };
+
+    /// In-flight `check_transaction` cache-miss fingerprints (cache key hash → count).
+    static IN_FLIGHT_CACHE_KEYS: LazyLock<Mutex<HashMap<u64, usize>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
     /// Concurrent `VM::check_transaction` calls.
     pub const CHECK_TRANSACTION_IN_FLIGHT: &str = "snarkvm_vm_check_transaction_in_flight";
@@ -62,10 +72,22 @@ pub mod vm {
     pub const CHECK_TRANSACTION_CACHE_HIT_TOTAL: &str = "snarkvm_vm_check_transaction_cache_hit_total";
     /// `check_transaction` calls that ran proof verification.
     pub const CHECK_TRANSACTION_CACHE_MISS_TOTAL: &str = "snarkvm_vm_check_transaction_cache_miss_total";
+    /// Extra concurrent `check_transaction` calls for a cache key that is already being verified.
+    pub const CHECK_TRANSACTION_DUPLICATE_IN_FLIGHT: &str = "snarkvm_vm_check_transaction_duplicate_in_flight";
+    /// `partially_verified_transactions` writes whose key and checksum were already present.
+    pub const CHECK_TRANSACTION_CACHE_REDUNDANT_WRITE_TOTAL: &str =
+        "snarkvm_vm_check_transaction_cache_redundant_write_total";
     /// Concurrent `VM::prepare_for_speculate` calls (block-template verification).
     pub const PREPARE_FOR_SPECULATE_IN_FLIGHT: &str = "snarkvm_vm_prepare_for_speculate_in_flight";
+    /// Transactions currently inside `VM::prepare_for_speculate` verification.
+    pub const PREPARE_FOR_SPECULATE_TRANSACTIONS_IN_FLIGHT: &str =
+        "snarkvm_vm_prepare_for_speculate_transactions_in_flight";
     /// Wall time of `VM::prepare_for_speculate` in seconds.
     pub const PREPARE_FOR_SPECULATE_DURATION_SECONDS: &str = "snarkvm_vm_prepare_for_speculate_duration_seconds";
+    /// Transaction counts per `VM::prepare_for_speculate` call, labeled by `stage`.
+    ///
+    /// Label values: `candidates` (input), `verify` (passed abort filters), `accepted`, `aborted`.
+    pub const PREPARE_FOR_SPECULATE_TRANSACTIONS: &str = "snarkvm_vm_prepare_for_speculate_transactions";
     /// Concurrent `VM::atomic_speculate_inner` calls (finalize dry-run).
     pub const ATOMIC_SPECULATE_IN_FLIGHT: &str = "snarkvm_vm_atomic_speculate_in_flight";
     /// Wall time of `VM::atomic_speculate_inner` in seconds.
@@ -134,6 +156,56 @@ pub mod vm {
                 _ => {}
             }
         }
+    }
+
+    fn in_flight_map() -> std::sync::MutexGuard<'static, HashMap<u64, usize>> {
+        // Recover from a poisoned lock so metrics cannot panic the verifier.
+        IN_FLIGHT_CACHE_KEYS.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Tracks concurrent cache-miss verifications of the same cache key.
+    pub struct DuplicateInFlight {
+        fingerprint: u64,
+    }
+
+    impl DuplicateInFlight {
+        /// Records a cache-miss verification for `fingerprint` until dropped.
+        #[must_use]
+        pub fn enter(fingerprint: u64) -> Self {
+            let mut in_flight = in_flight_map();
+            let count = in_flight.entry(fingerprint).or_insert(0);
+            *count += 1;
+            if *count >= 2 {
+                super::increment_gauge(CHECK_TRANSACTION_DUPLICATE_IN_FLIGHT, 1.0);
+            }
+            Self { fingerprint }
+        }
+    }
+
+    impl Drop for DuplicateInFlight {
+        fn drop(&mut self) {
+            let mut in_flight = in_flight_map();
+            let Some(count) = in_flight.get_mut(&self.fingerprint) else {
+                return;
+            };
+            *count -= 1;
+            if *count >= 1 {
+                super::decrement_gauge(CHECK_TRANSACTION_DUPLICATE_IN_FLIGHT, 1.0);
+            }
+            if *count == 0 {
+                in_flight.remove(&self.fingerprint);
+            }
+        }
+    }
+
+    /// Records that `partially_verified_transactions` already held this key and checksum.
+    pub fn record_redundant_cache_write() {
+        super::increment_counter(CHECK_TRANSACTION_CACHE_REDUNDANT_WRITE_TOTAL);
+    }
+
+    #[cfg(test)]
+    pub(super) fn in_flight_count(fingerprint: u64) -> usize {
+        in_flight_map().get(&fingerprint).copied().unwrap_or(0)
     }
 }
 
@@ -278,5 +350,19 @@ mod tests {
             hit.set_cache_hit(true);
         }
         let _pre_cache = vm::TimedCheckTransaction::enter();
+    }
+
+    #[test]
+    fn duplicate_in_flight_tracks_overlap() {
+        register_metrics();
+        let fingerprint = 42;
+        let first = vm::DuplicateInFlight::enter(fingerprint);
+        assert_eq!(vm::in_flight_count(fingerprint), 1);
+        let second = vm::DuplicateInFlight::enter(fingerprint);
+        assert_eq!(vm::in_flight_count(fingerprint), 2);
+        drop(second);
+        assert_eq!(vm::in_flight_count(fingerprint), 1);
+        drop(first);
+        assert_eq!(vm::in_flight_count(fingerprint), 0);
     }
 }
