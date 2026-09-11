@@ -562,7 +562,7 @@ impl<N: Network> ProgramCore<N> {
         let mapping_name = *mapping.name();
 
         // Ensure the program has not exceeded the maximum number of mappings.
-        ensure!(self.mappings.len() < N::MAX_MAPPINGS, "Program exceeds the maximum number of mappings");
+        ensure!(self.mappings.len() < N::LATEST_MAX_MAPPINGS(), "Program exceeds the maximum number of mappings");
 
         // Ensure the mapping name is new.
         ensure!(self.is_unique_name(&mapping_name), "'{mapping_name}' is already in use.");

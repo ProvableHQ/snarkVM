@@ -28,6 +28,14 @@ impl<N: Network> Process<N> {
 
         // Retrieve the program ID.
         let program_id = deployment.program().id();
+        // Retrieve the maximum number of mappings for the consensus version.
+        let max_mappings = consensus_config_value_by_version!(N, MAX_MAPPINGS, consensus_version)
+            .ok_or_else(|| anyhow!("Missing consensus config value: MAX_MAPPINGS"))?;
+        // Ensure the program does not exceed the maximum number of mappings.
+        ensure!(
+            deployment.program().mappings().len() <= max_mappings,
+            "Program '{program_id}' exceeds the maximum number of mappings ({max_mappings}) for {consensus_version}"
+        );
         // Check if this deployment is an amendment.
         let version = deployment.version()?;
         let is_amendment = matches!(version, DeploymentVersion::V3);
@@ -136,6 +144,44 @@ mod tests {
             deployment.program_owner(),
         )
         .unwrap()
+    }
+
+    fn program_with_mappings(num_mappings: usize) -> Result<Program<CurrentNetwork>> {
+        let mut program = String::new();
+        program.push_str("program mappings.aleo;\n\n");
+        for i in 0..num_mappings {
+            program
+                .push_str(&format!("mapping mapping_{i}:\n    key as field.public;\n    value as field.public;\n\n"));
+        }
+        program.push_str("function foo:\n    add 0u8 1u8 into r0;\n");
+        Program::from_str(&program)
+    }
+
+    #[test]
+    fn test_mapping_limits_by_consensus_version() -> Result<()> {
+        let rng = &mut TestRng::default();
+        let process = Process::load()?;
+
+        let program_with_31_mappings = program_with_mappings(31)?;
+        let deployment_with_31_mappings = process.deploy::<CurrentAleo, _>(&program_with_31_mappings, rng)?;
+        process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V20, &deployment_with_31_mappings, rng)?;
+
+        let program_with_32_mappings = program_with_mappings(32)?;
+        let deployment_with_32_mappings = process.deploy::<CurrentAleo, _>(&program_with_32_mappings, rng)?;
+        assert!(
+            process
+                .verify_deployment::<CurrentAleo, _>(ConsensusVersion::V20, &deployment_with_32_mappings, rng)
+                .unwrap_err()
+                .to_string()
+                .contains("exceeds the maximum number of mappings (31) for V20")
+        );
+        process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V21, &deployment_with_32_mappings, rng)?;
+
+        let program_with_128_mappings = program_with_mappings(128)?;
+        let deployment_with_128_mappings = process.deploy::<CurrentAleo, _>(&program_with_128_mappings, rng)?;
+        process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V21, &deployment_with_128_mappings, rng)?;
+
+        Ok(())
     }
 
     /// Per-transaction variable and constraint limits are enforced before V18 and from V19,
