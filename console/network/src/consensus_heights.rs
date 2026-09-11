@@ -76,7 +76,7 @@ pub enum ConsensusVersion {
     /// V20: Adds more accurate type checking for the root call, bounds the size of every
     /// `PlaintextType` declared in a deployed program, and updates the number of validators.
     V20 = 20,
-    /// V21: TBD
+    /// V21: Increases the maximum number of mappings in a program to 128.
     V21 = 21,
 }
 
@@ -398,6 +398,11 @@ mod tests {
             assert!(*version > previous_version);
             previous_version = *version;
         }
+        let mut previous_version = N::MAX_MAPPINGS.first().unwrap().0;
+        for (version, _) in N::MAX_MAPPINGS.iter().skip(1) {
+            assert!(*version > previous_version);
+            previous_version = *version;
+        }
         let mut previous_version = N::MAX_PROGRAM_SIZE.first().unwrap().0;
         for (version, _) in N::MAX_PROGRAM_SIZE.iter().skip(1) {
             assert!(*version > previous_version);
@@ -459,6 +464,12 @@ mod tests {
             // Double-check that consensus_config_value returns the correct value.
             assert_eq!(consensus_config_value!(N, MAX_ARRAY_ELEMENTS, height).unwrap(), *value);
         }
+        for (version, value) in N::MAX_MAPPINGS.iter() {
+            // Ensure that the height at which an update occurs are present in CONSENSUS_VERSION_HEIGHTS.
+            let height = N::CONSENSUS_VERSION_HEIGHTS().iter().find(|(c_version, _)| *c_version == *version).unwrap().1;
+            // Double-check that consensus_config_value returns the correct value.
+            assert_eq!(consensus_config_value!(N, MAX_MAPPINGS, height).unwrap(), *value);
+        }
         for (version, value) in N::MAX_PROGRAM_SIZE.iter() {
             // Ensure that the height at which an update occurs are present in CONSENSUS_VERSION_HEIGHTS.
             let height = N::CONSENSUS_VERSION_HEIGHTS().iter().find(|(c_version, _)| *c_version == *version).unwrap().1;
@@ -490,6 +501,7 @@ mod tests {
             assert!(consensus_config_value!(N, TRANSACTION_SPEND_LIMIT, *height).is_some());
             assert!(consensus_config_value!(N, CREDITS_PER_SECOND_OF_RUNTIME, *height).is_some());
             assert!(consensus_config_value!(N, MAX_ARRAY_ELEMENTS, *height).is_some());
+            assert!(consensus_config_value!(N, MAX_MAPPINGS, *height).is_some());
             assert!(consensus_config_value!(N, MAX_PROGRAM_SIZE, *height).is_some());
             assert!(consensus_config_value!(N, MAX_TRANSACTION_SIZE, *height).is_some());
             assert!(consensus_config_value!(N, MAX_WRITES, *height).is_some());
@@ -515,6 +527,15 @@ mod tests {
     fn max_array_elements_increasing<N: Network>() {
         let mut previous_value = N::MAX_ARRAY_ELEMENTS.first().unwrap().1;
         for (_, value) in N::MAX_ARRAY_ELEMENTS.iter().skip(1) {
+            assert!(*value >= previous_value);
+            previous_value = *value;
+        }
+    }
+
+    /// Ensure that `MAX_MAPPINGS` increases and is correctly defined.
+    fn max_mappings_increasing<N: Network>() {
+        let mut previous_value = N::MAX_MAPPINGS.first().unwrap().1;
+        for (_, value) in N::MAX_MAPPINGS.iter().skip(1) {
             assert!(*value >= previous_value);
             previous_value = *value;
         }
@@ -579,6 +600,7 @@ mod tests {
         let _ =
             [N1::CREDITS_PER_SECOND_OF_RUNTIME, N2::CREDITS_PER_SECOND_OF_RUNTIME, N3::CREDITS_PER_SECOND_OF_RUNTIME];
         let _ = [N1::MAX_ARRAY_ELEMENTS, N2::MAX_ARRAY_ELEMENTS, N3::MAX_ARRAY_ELEMENTS];
+        let _ = [N1::MAX_MAPPINGS, N2::MAX_MAPPINGS, N3::MAX_MAPPINGS];
         let _ = [N1::MAX_PROGRAM_SIZE, N2::MAX_PROGRAM_SIZE, N3::MAX_PROGRAM_SIZE];
         let _ = [N1::MAX_TRANSACTION_SIZE, N2::MAX_TRANSACTION_SIZE, N3::MAX_TRANSACTION_SIZE];
         let _ = [N1::MAX_WRITES, N2::MAX_WRITES, N3::MAX_WRITES];
@@ -590,6 +612,8 @@ mod tests {
     fn latest_max_functions_are_safe<N: Network>() {
         // Verify LATEST_MAX_CERTIFICATES returns a positive value.
         assert!(N::LATEST_MAX_CERTIFICATES() > 0, "LATEST_MAX_CERTIFICATES must be positive");
+        // Verify LATEST_MAX_MAPPINGS returns a positive value.
+        assert!(N::LATEST_MAX_MAPPINGS() > 0, "LATEST_MAX_MAPPINGS must be positive");
         // Verify LATEST_MAX_PROGRAM_SIZE returns a positive value.
         assert!(N::LATEST_MAX_PROGRAM_SIZE() > 0, "LATEST_MAX_PROGRAM_SIZE must be positive");
         // Verify LATEST_MAX_TRANSACTION_SIZE returns a positive value.
@@ -629,6 +653,10 @@ mod tests {
         max_array_elements_increasing::<MainnetV0>();
         max_array_elements_increasing::<TestnetV0>();
         max_array_elements_increasing::<CanaryV0>();
+
+        max_mappings_increasing::<MainnetV0>();
+        max_mappings_increasing::<TestnetV0>();
+        max_mappings_increasing::<CanaryV0>();
 
         transaction_size_exceeds_program_size::<MainnetV0>();
         transaction_size_exceeds_program_size::<TestnetV0>();

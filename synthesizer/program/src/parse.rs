@@ -526,9 +526,9 @@ function compute:
         // A program with more than MAX_RECORDS should fail.
         test_parse("", &gen_record_string(CurrentNetwork::MAX_RECORDS + 1), false);
         // A program with MAX_MAPPINGS should succeed.
-        test_parse("", &gen_mapping_string(CurrentNetwork::MAX_MAPPINGS), true);
+        test_parse("", &gen_mapping_string(CurrentNetwork::LATEST_MAX_MAPPINGS()), true);
         // A program with more than MAX_MAPPINGS should fail.
-        test_parse("", &gen_mapping_string(CurrentNetwork::MAX_MAPPINGS + 1), false);
+        test_parse("", &gen_mapping_string(CurrentNetwork::LATEST_MAX_MAPPINGS() + 1), false);
         // A program with MAX_CLOSURES should succeed.
         test_parse("", &gen_closure_string(CurrentNetwork::MAX_CLOSURES), true);
         // A program with more than MAX_CLOSURES should fail.
@@ -543,7 +543,7 @@ function compute:
             "{} {} {} {} {}",
             gen_struct_string(CurrentNetwork::MAX_STRUCTS),
             gen_record_string(CurrentNetwork::MAX_RECORDS),
-            gen_mapping_string(CurrentNetwork::MAX_MAPPINGS),
+            gen_mapping_string(CurrentNetwork::LATEST_MAX_MAPPINGS()),
             gen_closure_string(CurrentNetwork::MAX_CLOSURES),
             gen_function_string(CurrentNetwork::MAX_FUNCTIONS)
         );
