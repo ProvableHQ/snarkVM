@@ -63,9 +63,6 @@ workspace = true
 [dev-dependencies.rand]
 workspace = true
 
-[build-dependencies]
-rustc_version = "0.4"
-
 [features]
 serial = [ "snarkvm-fields/serial" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]

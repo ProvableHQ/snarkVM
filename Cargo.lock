@@ -3598,7 +3598,6 @@ dependencies = [
  "criterion",
  "proptest",
  "rand 0.10.2",
- "rustc_version",
  "serde",
  "snarkvm-fields",
  "snarkvm-utilities",
