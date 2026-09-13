@@ -25,7 +25,7 @@ use std::{
 use walkdir::WalkDir;
 
 // The following license text that should be present at the beginning of every source file.
-const EXPECTED_LICENSE_TEXT: &[u8] = include_bytes!(".resources/license_header");
+const EXPECTED_LICENSE_TEXT: &[u8] = include_bytes!("../.resources/license_header");
 
 // The following directories will be excluded from the license scan.
 const DIRS_TO_SKIP: [&str; 5] = [".cargo", ".circleci", ".git", ".github", "target"];
@@ -187,10 +187,16 @@ fn check_file_licenses<P: AsRef<Path>>(path: P) {
     }
 }
 
-// The build script; it currently only checks the licenses.
-fn main() {
-    // Check licenses in the current folder.
+// These ran from `build.rs`, which declared no `cargo:rerun-if-changed` -- so
+// cargo fingerprinted the root package by the newest mtime among its files and
+// the walk ran on every build of it, rather than once per test run.
+
+#[test]
+fn licenses_are_present() {
     check_file_licenses(".");
-    // Ensure that lock imports have locktick counterparts.
+}
+
+#[test]
+fn locks_have_locktick_counterparts() {
     check_locktick_imports(".");
 }
