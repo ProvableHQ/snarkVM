@@ -1182,6 +1182,16 @@ jobs:
       - clear_environment:
           cache_key: v4.7.3-rust-1.88.0-cargo-semver-checks-cache
 
+  check-sources:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.small >>
+    steps:
+      - checkout
+      - run:
+          name: Check licence headers and lock imports
+          command: |
+            python3 ./.circleci/check-sources.py
+
   check-clippy:
     executor: rust-docker
     resource_class: << pipeline.parameters.xlarge >>
@@ -1236,6 +1246,7 @@ workflows:
   cargo-workflow:
     jobs:
       - check-fmt
+      - check-sources
       - check-clippy
       - check-cargo-audit
       - check-all-targets
