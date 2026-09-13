@@ -187,16 +187,16 @@ fn check_file_licenses<P: AsRef<Path>>(path: P) {
     }
 }
 
-// These ran from `build.rs`, which declared no `cargo:rerun-if-changed` -- so
-// cargo fingerprinted the root package by the newest mtime among its files and
-// the walk ran on every build of it, rather than once per test run.
+// `CARGO_MANIFEST_DIR` rather than ".": a build script's working directory was
+// the package root by definition, a test binary's is only that when cargo runs
+// it, and against the wrong tree these walk nothing and pass.
 
 #[test]
 fn licenses_are_present() {
-    check_file_licenses(".");
+    check_file_licenses(env!("CARGO_MANIFEST_DIR"));
 }
 
 #[test]
 fn locks_have_locktick_counterparts() {
-    check_locktick_imports(".");
+    check_locktick_imports(env!("CARGO_MANIFEST_DIR"));
 }
