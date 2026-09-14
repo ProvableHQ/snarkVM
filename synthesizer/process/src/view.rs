@@ -18,7 +18,6 @@ use console::{
     network::prelude::*,
     program::{Identifier, Value},
 };
-#[cfg(feature = "history")]
 use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore};
 use snarkvm_synthesizer_program::{
     FinalizeGlobalState,
@@ -28,45 +27,36 @@ use snarkvm_synthesizer_program::{
     StackTrait,
 };
 
-/// Evaluates a view function against finalize-store state pinned to block `height`.
+/// Evaluates a view function against the latest confirmed finalize-store state.
 ///
-/// Evaluates whatever `stack` it is given; the caller must supply the stack for the edition live
-/// at `height`. Prefer `VM::evaluate_view_at_height`, which resolves the edition.
-///
-/// Available only with `--features history`.
-#[cfg(feature = "history")]
-pub fn evaluate_view_with_stack_at_height<N: Network, P: FinalizeStorage<N>>(
+/// Evaluates whatever `stack` it is given; the caller must supply the stack for the program's
+/// current edition. Prefer `VM::evaluate_view`, which resolves the stack.
+pub fn evaluate_view_with_stack<N: Network, P: FinalizeStorage<N>>(
     state: FinalizeGlobalState,
     store: &FinalizeStore<N, P>,
     stack: &Stack<N>,
     view_name: &Identifier<N>,
     inputs: Vec<Value<N>>,
-    height: u32,
 ) -> Result<Vec<Value<N>>> {
-    let historic = HistoricFinalizeStore { store, height };
-    evaluate_view_inner(state, &historic, stack, view_name, inputs)
+    let confirmed = ConfirmedFinalizeStore { store };
+    evaluate_view_inner(state, &confirmed, stack, view_name, inputs)
 }
 
-/// Read-only `FinalizeStoreTrait` adapter that routes mapping reads through the finalize
-/// store's historical update map at a fixed `height`. Writes bail — they are unreachable on
-/// the view path (views reject `set` / `remove` at construction), but bailing here
-/// preserves that invariant if the adapter is ever passed to other code.
-#[cfg(feature = "history")]
-struct HistoricFinalizeStore<'a, N: Network, P: FinalizeStorage<N>> {
+/// Read-only `FinalizeStoreTrait` adapter that routes mapping reads to the finalize store's
+/// *confirmed* state, so a view never observes the pending writes of an in-flight atomic batch.
+/// Writes bail — they are unreachable on the view path (views reject `set` / `remove` at
+/// construction), but bailing here preserves that invariant if the adapter is ever passed to
+/// other code.
+struct ConfirmedFinalizeStore<'a, N: Network, P: FinalizeStorage<N>> {
     store: &'a FinalizeStore<N, P>,
-    height: u32,
 }
 
-#[cfg(feature = "history")]
-impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinalizeStore<'_, N, P> {
+impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for ConfirmedFinalizeStore<'_, N, P> {
     fn contains_mapping_confirmed(
         &self,
         program_id: &console::program::ProgramID<N>,
         mapping_name: &Identifier<N>,
     ) -> Result<bool> {
-        // Mapping existence is not versioned per height. Delegate to the underlying store:
-        // if the mapping exists now, views at any height return per-key historic values
-        // (or `None` for keys that had no value at that height).
         self.store.contains_mapping_confirmed(program_id, mapping_name)
     }
 
@@ -75,7 +65,8 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinali
         program_id: &console::program::ProgramID<N>,
         mapping_name: &Identifier<N>,
     ) -> Result<bool> {
-        self.store.contains_mapping_speculative(program_id, mapping_name)
+        // Views only read confirmed state; the "speculative" query is answered from it too.
+        self.store.contains_mapping_confirmed(program_id, mapping_name)
     }
 
     fn contains_key_speculative(
@@ -84,7 +75,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinali
         mapping_name: Identifier<N>,
         key: &console::program::Plaintext<N>,
     ) -> Result<bool> {
-        Ok(self.store.get_historical_mapping_value(program_id, mapping_name, key.clone(), self.height)?.is_some())
+        self.store.contains_key_confirmed(program_id, mapping_name, key)
     }
 
     fn get_value_speculative(
@@ -93,10 +84,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinali
         mapping_name: Identifier<N>,
         key: &console::program::Plaintext<N>,
     ) -> Result<Option<Value<N>>> {
-        Ok(self
-            .store
-            .get_historical_mapping_value(program_id, mapping_name, key.clone(), self.height)?
-            .map(|cow| cow.into_owned()))
+        self.store.get_value_confirmed(program_id, mapping_name, key)
     }
 
     fn insert_key_value(
@@ -130,8 +118,8 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinali
 }
 
 /// Inner evaluation of a view. Generic over the store; the public path
-/// ([`evaluate_view_with_stack_at_height`]) wraps the underlying `FinalizeStore` in a
-/// [`HistoricFinalizeStore`] adapter that pins reads to a fixed height.
+/// ([`evaluate_view_with_stack`]) wraps the underlying `FinalizeStore` in a
+/// [`ConfirmedFinalizeStore`] adapter that pins reads to confirmed state.
 pub(crate) fn evaluate_view_inner<N: Network>(
     state: FinalizeGlobalState,
     store: &dyn FinalizeStoreTrait<N>,
@@ -232,10 +220,10 @@ pub(crate) fn evaluate_view_inner<N: Network>(
     Ok(outputs)
 }
 
-// All existing view tests exercise the external `evaluate_view_with_stack_at_height` path, which is
-// gated on `--features history`. Tests for the new in-block call path live at the v15 VM-tests
-// level (where deploying a program with a finalize-calling-view function is straightforward).
-#[cfg(all(test, feature = "history"))]
+// These tests exercise the external `evaluate_view_with_stack` path. Tests for the in-block call
+// path live at the v15 VM-tests level (where deploying a program with a finalize-calling-view
+// function is straightforward).
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::Process;
@@ -315,15 +303,13 @@ view total_balance:
             Value::Plaintext(Plaintext::from(Literal::U64(U64::new(2)))),
         )?;
 
-        // Evaluate the view at height 0 (the default `current_block_height` for the in-memory
-        // store; `update_key_value` records the historic entries at that height).
-        let outputs = evaluate_view_with_stack_at_height(
+        // Evaluate the view against the confirmed state.
+        let outputs = evaluate_view_with_stack(
             sample_finalize_state(0),
             &finalize_store,
             &stack,
             &Identifier::from_str("total_balance")?,
             vec![Value::Plaintext(address_key.clone())],
-            0,
         )?;
 
         // Expect a single u64 output equal to 42.
@@ -368,13 +354,12 @@ view fetch_balance:
         let address = console::account::Address::try_from(&private_key)?;
         let address_key = Plaintext::from(Literal::Address(address));
 
-        let outputs = evaluate_view_with_stack_at_height(
+        let outputs = evaluate_view_with_stack(
             sample_finalize_state(0),
             &finalize_store,
             &stack,
             &Identifier::from_str("fetch_balance")?,
             vec![Value::Plaintext(address_key)],
-            0,
         )?;
 
         assert_eq!(outputs.len(), 1);
@@ -419,13 +404,12 @@ view fetch_balance:
         let address = console::account::Address::try_from(&private_key)?;
         let address_key = Plaintext::from(Literal::Address(address));
 
-        let result = evaluate_view_with_stack_at_height(
+        let result = evaluate_view_with_stack(
             sample_finalize_state(0),
             &finalize_store,
             &stack,
             &Identifier::from_str("fetch_balance")?,
             vec![Value::Plaintext(address_key)],
-            0,
         );
 
         let err = result.expect_err("expected error when mapping is not initialized").to_string();
@@ -461,13 +445,12 @@ view echo:
         let future_value =
             Value::Future(console::program::Future::new(*program.id(), Identifier::from_str("noop")?, vec![]));
 
-        let result = evaluate_view_with_stack_at_height(
+        let result = evaluate_view_with_stack(
             sample_finalize_state(0),
             &finalize_store,
             &stack,
             &Identifier::from_str("echo")?,
             vec![future_value],
-            0,
         );
 
         let err = match result {
@@ -528,16 +511,14 @@ view lookup:
         )?;
         assert!(finalize_store.is_atomic_in_progress());
 
-        // View with the batch still open: the historic adapter reads from the per-height
-        // update map via `get_confirmed`, which skips pending atomic-batch writes. So the
-        // view sees the mapping's default (0), not the pending 99.
-        let outputs = evaluate_view_with_stack_at_height(
+        // View with the batch still open: the confirmed adapter skips pending atomic-batch
+        // writes, so the view sees the mapping's default (0), not the pending 99.
+        let outputs = evaluate_view_with_stack(
             sample_finalize_state(0),
             &finalize_store,
             &stack,
             &Identifier::from_str("lookup")?,
             vec![Value::Plaintext(address_key)],
-            0,
         )?;
 
         // Abort the batch (cleanup; the pending write was a fixture, not a real commit).
@@ -557,7 +538,7 @@ view lookup:
     #[test]
     fn test_view_can_read_block_timestamp() -> Result<()> {
         // Views get a real `FinalizeGlobalState` from the calling VM (built from the
-        // current/historic block), so `block.timestamp` is a valid operand inside a view body.
+        // current block), so `block.timestamp` is a valid operand inside a view body.
         // Drive it directly here at the process layer with a synthetic state.
         let program = Program::<CurrentNetwork>::from_str(
             r"
@@ -578,130 +559,14 @@ view reads_ts:
 
         // Build a state with a non-trivial timestamp, mimicking what a real VM would supply.
         let state = FinalizeGlobalState::from(1, 1, Some(1234567890), [0u8; 32], None, None);
-        let outputs = evaluate_view_with_stack_at_height(
-            state,
-            &finalize_store,
-            &stack,
-            &Identifier::from_str("reads_ts")?,
-            vec![],
-            1,
-        )?;
+        let outputs =
+            evaluate_view_with_stack(state, &finalize_store, &stack, &Identifier::from_str("reads_ts")?, vec![])?;
 
         assert_eq!(outputs.len(), 1);
         match &outputs[0] {
             Value::Plaintext(Plaintext::Literal(Literal::I64(v), _)) => assert_eq!(**v, 1234567890),
             other => panic!("expected i64 plaintext, got: {other}"),
         }
-        Ok(())
-    }
-
-    /// Drives a value through two updates at different block heights and asserts that
-    /// `evaluate_view_with_stack_at_height` returns the value applicable at each height.
-    #[test]
-    fn test_evaluate_view_at_height_returns_historic_value() -> Result<()> {
-        use std::sync::atomic::Ordering;
-
-        let program = Program::<CurrentNetwork>::from_str(
-            r"
-program vw_history.aleo;
-
-mapping balances:
-    key as address.public;
-    value as u64.public;
-
-function noop:
-    input r0 as u64.private;
-    output r0 as u64.private;
-
-view lookup:
-    input r0 as address.public;
-    get balances[r0] into r1;
-    output r1 as u64.public;",
-        )?;
-
-        let process = Process::<CurrentNetwork>::load()?;
-        let stack = Stack::new(&process, &program)?;
-        let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None))?;
-
-        let program_id = *program.id();
-        let mapping_name = Identifier::from_str("balances")?;
-        finalize_store.initialize_mapping(program_id, mapping_name)?;
-
-        let mut rng = console::prelude::TestRng::default();
-        let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng)?;
-        let address = console::account::Address::try_from(&private_key)?;
-        let address_key = Plaintext::from(Literal::Address(address));
-
-        // Write V1 at height 1, then V2 at height 5. The historic update map is populated
-        // automatically because the `--features history` build path is enabled.
-        finalize_store.current_block_height().store(1, Ordering::SeqCst);
-        finalize_store.update_key_value(
-            program_id,
-            mapping_name,
-            address_key.clone(),
-            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(11)))),
-        )?;
-        finalize_store.current_block_height().store(5, Ordering::SeqCst);
-        finalize_store.update_key_value(
-            program_id,
-            mapping_name,
-            address_key.clone(),
-            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(55)))),
-        )?;
-
-        // Helper to extract the u64 from a single-output Vec<Value<N>>.
-        let extract = |outputs: Vec<Value<CurrentNetwork>>| match &outputs[0] {
-            Value::Plaintext(Plaintext::Literal(Literal::U64(v), _)) => **v,
-            other => panic!("expected u64, got: {other}"),
-        };
-
-        // Sanity: viewing at the latest height (5) reflects the LAST write (V2 = 55). Historic
-        // views below must therefore return 11 (not 55) at heights ≤ 4, distinguishing the
-        // historic path from any accidental fall-through to current state.
-        let outputs = evaluate_view_with_stack_at_height(
-            sample_finalize_state(5),
-            &finalize_store,
-            &stack,
-            &Identifier::from_str("lookup")?,
-            vec![Value::Plaintext(address_key.clone())],
-            5,
-        )?;
-        assert_eq!(extract(outputs), 55, "current state should reflect the most recent write");
-
-        // View at height 1 → V1.
-        let outputs = evaluate_view_with_stack_at_height(
-            sample_finalize_state(1),
-            &finalize_store,
-            &stack,
-            &Identifier::from_str("lookup")?,
-            vec![Value::Plaintext(address_key.clone())],
-            1,
-        )?;
-        assert_eq!(extract(outputs), 11, "expected historic value at height 1");
-
-        // View at height 5 → V2.
-        let outputs = evaluate_view_with_stack_at_height(
-            sample_finalize_state(5),
-            &finalize_store,
-            &stack,
-            &Identifier::from_str("lookup")?,
-            vec![Value::Plaintext(address_key.clone())],
-            5,
-        )?;
-        assert_eq!(extract(outputs), 55, "expected historic value at height 5");
-
-        // View at height 3 (between the two updates) → V1, since the binary-search picks
-        // the most recent applicable height.
-        let outputs = evaluate_view_with_stack_at_height(
-            sample_finalize_state(3),
-            &finalize_store,
-            &stack,
-            &Identifier::from_str("lookup")?,
-            vec![Value::Plaintext(address_key)],
-            3,
-        )?;
-        assert_eq!(extract(outputs), 11, "expected applicable historic value at intermediate height 3");
-
         Ok(())
     }
 }
