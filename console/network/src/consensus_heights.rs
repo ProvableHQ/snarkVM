@@ -178,7 +178,7 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V17, 19_860_001),
     (ConsensusVersion::V18, 20_794_000),
     (ConsensusVersion::V19, 21_342_000),
-    (ConsensusVersion::V20, u32::MAX),
+    (ConsensusVersion::V20, 22_175_000),
     (ConsensusVersion::V21, u32::MAX),
 ];
 
