@@ -16,19 +16,43 @@
 use super::*;
 
 use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
+use snarkvm_ledger_puzzle::SolutionID;
 #[cfg(feature = "history-staking-rewards")]
 use snarkvm_ledger_store::helpers::Map;
-use snarkvm_synthesizer_error::{FinalizeError, IndexedFinalizeError, IntoIndexedFinalize, indexed_finalize_bail};
+use snarkvm_synthesizer_error::{
+    FinalizeError,
+    IndexedFinalizeError,
+    IntoIndexedFinalize,
+    VmCheckBlockContentError,
+    indexed_finalize_bail,
+};
 use snarkvm_utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
 
 /// Uniqueness tracking accumulated while assembling a candidate block's transactions.
 struct CandidateTransactionDetails<N: Network> {
+    /// The IDs of the transitions in this block.
     transition_ids: IndexSet<N::TransitionID>,
+    /// The IDs of the transition inputs in this block.
     input_ids: IndexSet<Field<N>>,
+    /// The IDs of the transition outputs in this block.
     output_ids: IndexSet<Field<N>>,
+    /// The serial numbers spent by record inputs in this block.
+    serial_numbers: IndexSet<Field<N>>,
+    /// The tags from record inputs in this block.
+    tags: IndexSet<Field<N>>,
+    /// The record output commitments in this block.
+    commitments: IndexSet<Field<N>>,
+    /// The record output nonces in this block.
+    nonces: IndexSet<Group<N>>,
+    /// The transition public keys (`tpk`) in this block.
     tpks: IndexSet<Group<N>>,
+    /// The transition commitments (`tcm`) in this block.
+    tcms: IndexSet<Field<N>>,
+    /// The public fee payers of the deployments in this block.
     deployment_payers: IndexSet<Address<N>>,
+    /// The IDs of the programs deployed or upgraded in this block.
     deployments: IndexSet<ProgramID<N>>,
+    /// The combined density (variables and constraints) of the deployments in this block.
     block_combined_density: u64,
 }
 
@@ -38,7 +62,12 @@ impl<N: Network> Default for CandidateTransactionDetails<N> {
             transition_ids: IndexSet::new(),
             input_ids: IndexSet::new(),
             output_ids: IndexSet::new(),
+            serial_numbers: IndexSet::new(),
+            tags: IndexSet::new(),
+            commitments: IndexSet::new(),
+            nonces: IndexSet::new(),
             tpks: IndexSet::new(),
+            tcms: IndexSet::new(),
             deployment_payers: IndexSet::new(),
             deployments: IndexSet::new(),
             block_combined_density: 0,
@@ -52,7 +81,12 @@ impl<N: Network> CandidateTransactionDetails<N> {
         self.transition_ids.extend(transaction.transition_ids());
         self.input_ids.extend(transaction.input_ids());
         self.output_ids.extend(transaction.output_ids());
+        self.serial_numbers.extend(transaction.serial_numbers().copied());
+        self.tags.extend(transaction.tags().copied());
+        self.commitments.extend(transaction.commitments().copied());
+        self.nonces.extend(transaction.nonces().copied());
         self.tpks.extend(transaction.transition_public_keys());
+        self.tcms.extend(transaction.transition_commitments().copied());
         if let Transaction::Deploy(_, _, _, deployment, fee) = transaction {
             fee.payer().map(|payer| self.deployment_payers.insert(payer));
             self.deployments.insert(*deployment.program_id());
@@ -224,6 +258,174 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Return the ratified finalize operations.
         Ok(ratified_finalize_operations)
+    }
+
+    /// Committee lookback for `block.round()` semantics matching `Ledger::get_committee_lookback_for_round`.
+    #[cfg(any(test, feature = "test"))]
+    fn committee_lookback_for_round(&self, round: u64) -> Result<Option<Committee<N>>> {
+        let previous_round = match round % 2 == 0 {
+            true => round.saturating_sub(1),
+            false => round.saturating_sub(2),
+        };
+        let committee_lookback_round = previous_round.saturating_sub(Committee::<N>::COMMITTEE_LOOKBACK_RANGE);
+        self.finalize_store().committee_store().get_committee_for_round(committee_lookback_round)
+    }
+
+    /// Epoch hash at `block_height`, matching `Ledger::get_epoch_hash`.
+    #[cfg(any(test, feature = "test"))]
+    fn epoch_hash_for_height(&self, block_height: u32) -> Result<N::BlockHash> {
+        let epoch_number = block_height.saturating_div(N::NUM_BLOCKS_PER_EPOCH);
+        let epoch_starting_height = epoch_number.saturating_mul(N::NUM_BLOCKS_PER_EPOCH);
+        if epoch_starting_height == 0 {
+            return Ok(N::BlockHash::default());
+        }
+        match self.block_store().get_previous_block_hash(epoch_starting_height)? {
+            Some(hash) => Ok(hash),
+            None => bail!("Missing previous block hash for epoch boundary height {epoch_starting_height}"),
+        }
+    }
+
+    /// Runs `check_speculate` and [`Block::verify`] for a candidate next block. Caller supplies
+    /// committee lookbacks and related ledger-derived inputs (see `Ledger::check_block_content_inner`).
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn check_block_content_inner<R: Rng + CryptoRng>(
+        &self,
+        block: &Block<N>,
+        latest_block: &Block<N>,
+        latest_block_timestamp: i64,
+        latest_state_root: N::StateRoot,
+        previous_committee_lookback: &Committee<N>,
+        committee_lookback: &Committee<N>,
+        puzzle: &Puzzle<N>,
+        latest_epoch_hash: N::BlockHash,
+        current_timestamp: i64,
+        rng: &mut R,
+    ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>), VmCheckBlockContentError> {
+        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
+            .then_some(block.timestamp());
+        // Determine the block's spend and synthesis limits.
+        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
+            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
+        } else {
+            (None, None)
+        };
+        let state = FinalizeGlobalState::new::<N>(
+            block.round(),
+            block.height(),
+            block_timestamp,
+            block.cumulative_weight(),
+            block.cumulative_proof_target(),
+            block.previous_hash(),
+            block_spend_limit,
+            block_synthesis_limit,
+        )
+        .map_err(VmCheckBlockContentError::Verification)?;
+
+        let time_since_last_block = block.timestamp().saturating_sub(latest_block_timestamp);
+        let ratified_finalize_operations = self
+            .check_speculate(
+                state,
+                time_since_last_block,
+                block.ratifications(),
+                block.solutions(),
+                block.transactions(),
+                rng,
+            )
+            .map_err(VmCheckBlockContentError::Speculation)?;
+
+        block
+            .verify(
+                latest_block,
+                latest_state_root,
+                previous_committee_lookback,
+                committee_lookback,
+                puzzle,
+                latest_epoch_hash,
+                current_timestamp,
+                ratified_finalize_operations,
+            )
+            .map_err(VmCheckBlockContentError::Verification)
+    }
+
+    /// Like [`Self::check_block_content_inner`], loading the block tip and committee lookbacks from this VM.
+    ///
+    /// Note: this duplicates the lookups that `Ledger` performs before calling
+    /// [`Self::check_block_content_inner`], so that a test holding only a [`VM`] can run the same
+    /// check. Production callers go through `Ledger::check_next_block`; if this is ever needed
+    /// outside of tests, the two copies should be unified rather than both being maintained.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
+    #[cfg(any(test, feature = "test"))]
+    #[inline]
+    pub fn check_block_content_from_tip<R: Rng + CryptoRng>(
+        &self,
+        block: &Block<N>,
+        rng: &mut R,
+    ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>), VmCheckBlockContentError> {
+        let max_height = self
+            .block_store()
+            .max_height()
+            .ok_or_else(|| VmCheckBlockContentError::Verification(anyhow!("empty block store")))?;
+        let latest_hash = self
+            .block_store()
+            .get_block_hash(max_height)
+            .map_err(VmCheckBlockContentError::Verification)?
+            .ok_or_else(|| VmCheckBlockContentError::Verification(anyhow!("missing tip block hash")))?;
+        let latest_block = self
+            .block_store()
+            .get_block(&latest_hash)
+            .map_err(VmCheckBlockContentError::Verification)?
+            .ok_or_else(|| VmCheckBlockContentError::Verification(anyhow!("missing tip block")))?;
+        let latest_block_timestamp = latest_block.timestamp();
+        let latest_state_root = self.block_store().current_state_root();
+
+        let committee_lookback = self
+            .committee_lookback_for_round(block.round())
+            .map_err(VmCheckBlockContentError::Verification)?
+            .ok_or_else(|| {
+                VmCheckBlockContentError::Verification(anyhow!(
+                    "missing committee lookback for block round {}",
+                    block.round()
+                ))
+            })?;
+        let previous_committee_lookback = self
+            .committee_lookback_for_round(block.round().saturating_sub(1))
+            .map_err(VmCheckBlockContentError::Verification)?
+            .ok_or_else(|| {
+                VmCheckBlockContentError::Verification(anyhow!(
+                    "missing previous committee lookback for block round {}",
+                    block.round()
+                ))
+            })?;
+
+        let latest_epoch_hash =
+            self.epoch_hash_for_height(latest_block.height()).map_err(VmCheckBlockContentError::Verification)?;
+
+        let current_timestamp = i64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| VmCheckBlockContentError::Verification(anyhow!(e)))?
+                .as_secs(),
+        )
+        .map_err(|e| VmCheckBlockContentError::Verification(anyhow!(e)))?;
+
+        self.check_block_content_inner(
+            block,
+            &latest_block,
+            latest_block_timestamp,
+            latest_state_root,
+            &previous_committee_lookback,
+            &committee_lookback,
+            self.puzzle(),
+            latest_epoch_hash,
+            current_timestamp,
+            rng,
+        )
     }
 
     /// Finalizes the given transactions into the VM.
@@ -1013,6 +1215,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// - The transaction is double-spending an input
     /// - The transaction is producing a duplicate output
     /// - The transaction is producing a duplicate transition public key
+    /// - The transaction is producing a duplicate serial number
+    /// - The transaction is producing a duplicate tag
+    /// - The transaction is producing a duplicate commitment
+    /// - The transaction is producing a duplicate nonce
+    /// - The transaction is producing a duplicate transition commitment
     /// - The transaction is another deployment in the block from the same public fee payer.
     /// - The transaction contains a transition that has been deployed or upgraded in this block.
     /// - The transaction surpasses the spend limits.
@@ -1035,9 +1242,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Ensure that:
         //  - the transaction is not producing a duplicate transition.
         //  - the programs in the component transitions haven't been deployed or upgraded in this block.
+        let mut transition_ids_in_transaction = IndexSet::new();
         for transition in transaction.transitions() {
             // Get the transition ID.
             let transition_id = transition.id();
+            // If the transition ID is duplicated within this transaction, abort the transaction.
+            if !transition_ids_in_transaction.insert(*transition_id) {
+                return ShouldAbortResult::Abort(format!("Duplicate transition {transition_id} in transaction"));
+            }
             // If the transition ID is already produced in this block or previous blocks, abort the transaction.
             if candidate_transaction_details.transition_ids.contains(transition_id)
                 || self.transition_store().contains_transition_id(transition_id).unwrap_or(true)
@@ -1054,7 +1266,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         // Ensure that the transaction is not double-spending an input.
+        let mut input_ids_in_transaction = IndexSet::new();
         for input_id in transaction.input_ids() {
+            // If the input ID is duplicated within this transaction, abort the transaction.
+            if !input_ids_in_transaction.insert(*input_id) {
+                return ShouldAbortResult::Abort(format!("Double-spending input {input_id} in transaction"));
+            }
             // If the input ID is already spent in this block or previous blocks, abort the transaction.
             if candidate_transaction_details.input_ids.contains(input_id)
                 || self.transition_store().contains_input_id(input_id).unwrap_or(true)
@@ -1064,7 +1281,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         // Ensure that the transaction is not producing a duplicate output.
+        let mut output_ids_in_transaction = IndexSet::new();
         for output_id in transaction.output_ids() {
+            // If the output ID is duplicated within this transaction, abort the transaction.
+            if !output_ids_in_transaction.insert(*output_id) {
+                return ShouldAbortResult::Abort(format!("Duplicate output {output_id} in transaction"));
+            }
             // If the output ID is already produced in this block or previous blocks, abort the transaction.
             if candidate_transaction_details.output_ids.contains(output_id)
                 || self.transition_store().contains_output_id(output_id).unwrap_or(true)
@@ -1073,14 +1295,80 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
         }
 
-        // Ensure that the transaction is not producing a duplicate transition public key.
-        // Note that the tpk and tcm are corresponding, so a uniqueness check for just the tpk is sufficient.
+        // Ensure that the record spends are unique within the transaction, the block, and the chain.
+        let mut serial_numbers_in_transaction = IndexSet::new();
+        for serial_number in transaction.serial_numbers() {
+            if !serial_numbers_in_transaction.insert(*serial_number) {
+                return ShouldAbortResult::Abort(format!("Duplicate serial number {serial_number} in transaction"));
+            }
+            if candidate_transaction_details.serial_numbers.contains(serial_number)
+                || self.transition_store().contains_serial_number(serial_number).unwrap_or(true)
+            {
+                return ShouldAbortResult::Abort(format!("Duplicate serial number {serial_number}"));
+            }
+        }
+
+        let mut tags_in_transaction = IndexSet::new();
+        for tag in transaction.tags() {
+            if !tags_in_transaction.insert(*tag) {
+                return ShouldAbortResult::Abort(format!("Duplicate tag {tag} in transaction"));
+            }
+            if candidate_transaction_details.tags.contains(tag)
+                || self.transition_store().contains_tag(tag).unwrap_or(true)
+            {
+                return ShouldAbortResult::Abort(format!("Duplicate tag {tag}"));
+            }
+        }
+
+        let mut commitments_in_transaction = IndexSet::new();
+        for commitment in transaction.commitments() {
+            if !commitments_in_transaction.insert(*commitment) {
+                return ShouldAbortResult::Abort(format!("Duplicate commitment {commitment} in transaction"));
+            }
+            if candidate_transaction_details.commitments.contains(commitment)
+                || self.transition_store().contains_commitment(commitment).unwrap_or(true)
+            {
+                return ShouldAbortResult::Abort(format!("Duplicate commitment {commitment}"));
+            }
+        }
+
+        let mut nonces_in_transaction = IndexSet::new();
+        for nonce in transaction.nonces() {
+            if !nonces_in_transaction.insert(*nonce) {
+                return ShouldAbortResult::Abort(format!("Duplicate nonce {nonce} in transaction"));
+            }
+            if candidate_transaction_details.nonces.contains(nonce)
+                || self.transition_store().contains_nonce(nonce).unwrap_or(true)
+            {
+                return ShouldAbortResult::Abort(format!("Duplicate nonce {nonce}"));
+            }
+        }
+
+        // Ensure the transition public keys and transition commitments are unique.
+        // Note that the tpk and tcm are not in a 1:1 correspondence, so both must be checked.
+        let mut tpks_in_transaction = IndexSet::new();
         for tpk in transaction.transition_public_keys() {
+            // If the transition public key is duplicated within this transaction, abort the transaction.
+            if !tpks_in_transaction.insert(*tpk) {
+                return ShouldAbortResult::Abort(format!("Duplicate transition public key {tpk} in transaction"));
+            }
             // If the transition public key is already produced in this block or previous blocks, abort the transaction.
             if candidate_transaction_details.tpks.contains(tpk)
                 || self.transition_store().contains_tpk(tpk).unwrap_or(true)
             {
                 return ShouldAbortResult::Abort(format!("Duplicate transition public key {tpk}"));
+            }
+        }
+
+        let mut tcms_in_transaction = IndexSet::new();
+        for tcm in transaction.transition_commitments() {
+            if !tcms_in_transaction.insert(*tcm) {
+                return ShouldAbortResult::Abort(format!("Duplicate transition commitment {tcm} in transaction"));
+            }
+            if candidate_transaction_details.tcms.contains(tcm)
+                || self.transition_store().contains_tcm(tcm).unwrap_or(true)
+            {
+                return ShouldAbortResult::Abort(format!("Duplicate transition commitment {tcm}"));
             }
         }
 

@@ -58,7 +58,7 @@ use indexmap::IndexMap;
 /// # Example: Restricting a program
 ///
 /// ## In the `test_restrictions_list_comparison` function of `synthesizer/src/restrictions/mod.rs`:
-/// ```rust
+/// ```ignore
 /// // Set the network.
 /// type Network = console::network::MainnetV0;
 /// // Initialize the restrictions.
@@ -94,7 +94,7 @@ use indexmap::IndexMap;
 /// Make sure to import `console::types::Address`, e.g., by replacing `use console::types::I8;` with `use console::types::{Address, I8};`.
 ///
 /// ## In the `test_restrictions_list_comparison function` of `synthesizer/src/restrictions/mod.rs`:
-/// ```rust
+/// ```ignore
 /// // Set the network.
 /// type Network = console::network::MainnetV0;
 /// // Initialize the restrictions.

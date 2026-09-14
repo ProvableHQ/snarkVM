@@ -15,7 +15,7 @@
 
 use super::*;
 
-use crate::{prelude::deployment_cost_v1, vm::test_helpers::*};
+use crate::prelude::deployment_cost_v1;
 
 use console::{account::ViewKey, network::ConsensusVersion, program::ProgramOwner};
 use snarkvm_ledger_block::{Deployment, Transaction};
