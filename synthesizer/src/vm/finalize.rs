@@ -545,13 +545,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             rejected_reasons.clear();
         }
 
-        // Update the block height used for the purposes of historical mapping accounting.
-        #[cfg(feature = "history")]
-        self.store
-            .finalize_store()
-            .current_block_height()
-            .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
-
         // Perform the finalize operation on the preset finalize mode.
         atomic_finalize!(self.finalize_store(), FinalizeMode::DryRun, {
             // Ensure the number of solutions does not exceed the maximum.
@@ -948,13 +941,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         self.ensure_sequential_processing();
 
         let timer = timer!("VM::atomic_finalize");
-
-        // Update the block height used for the purposes of historical mapping accounting.
-        #[cfg(feature = "history")]
-        self.store
-            .finalize_store()
-            .current_block_height()
-            .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
         // Signal to Slipstream plugins that canonical finalize is starting.
         #[cfg(feature = "slipstream-plugins")]

@@ -68,10 +68,6 @@ async = [
   "snarkvm-ledger-query/async",
   "snarkvm-synthesizer/async"
 ]
-history = [
-  "snarkvm-ledger-store/history",
-  "snarkvm-synthesizer/history",
-]
 history-staking-rewards = [
   "snarkvm-ledger-store/history-staking-rewards",
   "snarkvm-synthesizer/history-staking-rewards",

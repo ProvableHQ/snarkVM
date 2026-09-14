@@ -18,7 +18,6 @@ edition = "2024"
 
 [features]
 default = [ "indexmap/rayon" ]
-history = [ ]
 history-staking-rewards = [ ]
 slipstream-plugins = [ "dep:snarkvm-slipstream-plugin-manager" ]
 locktick = [ "dep:locktick", "snarkvm-ledger-puzzle/locktick" ]

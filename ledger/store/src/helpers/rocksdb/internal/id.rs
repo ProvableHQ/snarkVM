@@ -212,8 +212,6 @@ pub enum TransitionMap {
 pub enum ProgramMap {
     ProgramID = DataID::ProgramIDMap as u16,
     KeyValueID = DataID::KeyValueMap as u16,
-    MappingUpdate = DataID::MappingUpdateMap as u16,
-    MappingUpdateHeights = DataID::MappingUpdateHeightsMap as u16,
     StakingRewards = DataID::StakingRewardsMap as u16,
     RejectedReason = DataID::RejectedReasonMap as u16,
 }
@@ -317,11 +315,13 @@ enum DataID {
     IDEditionMap,
     // Track deployments that contain an optional checksum
     DeploymentChecksumMap,
-    // Historical mappings.
+    // Retired: the historical mapping updates of the removed `history` feature. The variants are
+    // kept so that later IDs keep their values; no map is opened on them.
+    #[allow(dead_code)]
     MappingUpdateMap,
-    // Historical mapping update heights.
+    #[allow(dead_code)]
     MappingUpdateHeightsMap,
-    /// Historical staking rewards.
+    // Historical staking rewards.
     StakingRewardsMap,
 
     // Track dynamic record inputs.
