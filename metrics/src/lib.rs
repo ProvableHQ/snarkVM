@@ -33,10 +33,180 @@ const GAUGE_NAMES: &[&str] = &[
     rocksdb::NUM_FILES_AT_LEVEL[4],
     rocksdb::NUM_FILES_AT_LEVEL[5],
     rocksdb::NUM_FILES_AT_LEVEL[6],
+    vm::CHECK_TRANSACTION_IN_FLIGHT,
+    vm::CHECK_TRANSACTION_DUPLICATE_IN_FLIGHT,
+    vm::PREPARE_FOR_SPECULATE_IN_FLIGHT,
+    vm::PREPARE_FOR_SPECULATE_TRANSACTIONS_IN_FLIGHT,
+    vm::ATOMIC_SPECULATE_IN_FLIGHT,
+    vm::SPECULATE_IN_FLIGHT,
 ];
 
 pub mod committee {
     pub const TOTAL_STAKE: &str = "snarkvm_ledger_committee_total_stake";
+}
+
+/// VM verification and speculation metrics.
+///
+/// Overlay `CHECK_TRANSACTION_DURATION_SECONDS{cache="hit"}` with host CPU and
+/// `PREPARE_FOR_SPECULATE_IN_FLIGHT` to test whether broadcast verification
+/// stalls during block construction. Compare `cache="hit"` vs `cache="miss"`
+/// to separate duplicate proof work from contention on the cheap path.
+pub mod vm {
+    use std::{
+        cell::Cell,
+        collections::HashMap,
+        sync::{LazyLock, Mutex},
+        time::Instant,
+    };
+
+    /// In-flight `check_transaction` cache-miss fingerprints (cache key hash → count).
+    static IN_FLIGHT_CACHE_KEYS: LazyLock<Mutex<HashMap<u64, usize>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    /// Concurrent `VM::check_transaction` calls.
+    pub const CHECK_TRANSACTION_IN_FLIGHT: &str = "snarkvm_vm_check_transaction_in_flight";
+    /// Wall time of `VM::check_transaction` in seconds, labeled by `cache`.
+    ///
+    /// Label values: `hit` (proof skipped), `miss` (proof verified), `pre_cache` (failed before the cache lookup).
+    pub const CHECK_TRANSACTION_DURATION_SECONDS: &str = "snarkvm_vm_check_transaction_duration_seconds";
+    /// `check_transaction` calls that skipped proof verification via the partial-verification cache.
+    pub const CHECK_TRANSACTION_CACHE_HIT_TOTAL: &str = "snarkvm_vm_check_transaction_cache_hit_total";
+    /// `check_transaction` calls that ran proof verification.
+    pub const CHECK_TRANSACTION_CACHE_MISS_TOTAL: &str = "snarkvm_vm_check_transaction_cache_miss_total";
+    /// Extra concurrent `check_transaction` calls for a cache key that is already being verified.
+    pub const CHECK_TRANSACTION_DUPLICATE_IN_FLIGHT: &str = "snarkvm_vm_check_transaction_duplicate_in_flight";
+    /// `partially_verified_transactions` writes whose key and checksum were already present.
+    pub const CHECK_TRANSACTION_CACHE_REDUNDANT_WRITE_TOTAL: &str =
+        "snarkvm_vm_check_transaction_cache_redundant_write_total";
+    /// Concurrent `VM::prepare_for_speculate` calls (block-template verification).
+    pub const PREPARE_FOR_SPECULATE_IN_FLIGHT: &str = "snarkvm_vm_prepare_for_speculate_in_flight";
+    /// Transactions currently inside `VM::prepare_for_speculate` verification.
+    pub const PREPARE_FOR_SPECULATE_TRANSACTIONS_IN_FLIGHT: &str =
+        "snarkvm_vm_prepare_for_speculate_transactions_in_flight";
+    /// Wall time of `VM::prepare_for_speculate` in seconds.
+    pub const PREPARE_FOR_SPECULATE_DURATION_SECONDS: &str = "snarkvm_vm_prepare_for_speculate_duration_seconds";
+    /// Transaction counts per `VM::prepare_for_speculate` call, labeled by `stage`.
+    ///
+    /// Label values: `candidates` (input), `verify` (passed abort filters), `accepted`, `aborted`.
+    pub const PREPARE_FOR_SPECULATE_TRANSACTIONS: &str = "snarkvm_vm_prepare_for_speculate_transactions";
+    /// Concurrent `VM::atomic_speculate_inner` calls (finalize dry-run).
+    pub const ATOMIC_SPECULATE_IN_FLIGHT: &str = "snarkvm_vm_atomic_speculate_in_flight";
+    /// Wall time of `VM::atomic_speculate_inner` in seconds.
+    pub const ATOMIC_SPECULATE_DURATION_SECONDS: &str = "snarkvm_vm_atomic_speculate_duration_seconds";
+    /// Concurrent `VM::speculate` calls (prepare_for_speculate + atomic_speculate).
+    pub const SPECULATE_IN_FLIGHT: &str = "snarkvm_vm_speculate_in_flight";
+    /// Wall time of `VM::speculate` in seconds.
+    pub const SPECULATE_DURATION_SECONDS: &str = "snarkvm_vm_speculate_duration_seconds";
+
+    /// Increments an in-flight gauge until dropped, then records elapsed seconds.
+    pub struct TimedInFlight {
+        gauge_name: &'static str,
+        histogram_name: &'static str,
+        start: Instant,
+    }
+
+    impl TimedInFlight {
+        /// Starts an in-flight measurement for the given gauge and histogram.
+        #[must_use]
+        pub fn enter(gauge_name: &'static str, histogram_name: &'static str) -> Self {
+            super::increment_gauge(gauge_name, 1.0);
+            Self { gauge_name, histogram_name, start: Instant::now() }
+        }
+    }
+
+    impl Drop for TimedInFlight {
+        fn drop(&mut self) {
+            super::decrement_gauge(self.gauge_name, 1.0);
+            super::histogram(self.histogram_name, self.start.elapsed().as_secs_f64());
+        }
+    }
+
+    /// Tracks `check_transaction` in-flight count, duration, and cache hit/miss.
+    pub struct TimedCheckTransaction {
+        start: Instant,
+        cache: Cell<&'static str>,
+    }
+
+    impl TimedCheckTransaction {
+        /// Starts a `check_transaction` measurement.
+        #[must_use]
+        pub fn enter() -> Self {
+            super::increment_gauge(CHECK_TRANSACTION_IN_FLIGHT, 1.0);
+            Self { start: Instant::now(), cache: Cell::new("pre_cache") }
+        }
+
+        /// Records whether this call skipped proof verification.
+        pub fn set_cache_hit(&self, hit: bool) {
+            self.cache.set(if hit { "hit" } else { "miss" });
+        }
+    }
+
+    impl Drop for TimedCheckTransaction {
+        fn drop(&mut self) {
+            super::decrement_gauge(CHECK_TRANSACTION_IN_FLIGHT, 1.0);
+            let label = self.cache.get();
+            super::histogram_label(
+                CHECK_TRANSACTION_DURATION_SECONDS,
+                "cache",
+                label.to_string(),
+                self.start.elapsed().as_secs_f64(),
+            );
+            match label {
+                "hit" => super::increment_counter(CHECK_TRANSACTION_CACHE_HIT_TOTAL),
+                "miss" => super::increment_counter(CHECK_TRANSACTION_CACHE_MISS_TOTAL),
+                _ => {}
+            }
+        }
+    }
+
+    fn in_flight_map() -> std::sync::MutexGuard<'static, HashMap<u64, usize>> {
+        // Recover from a poisoned lock so metrics cannot panic the verifier.
+        IN_FLIGHT_CACHE_KEYS.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Tracks concurrent cache-miss verifications of the same cache key.
+    pub struct DuplicateInFlight {
+        fingerprint: u64,
+    }
+
+    impl DuplicateInFlight {
+        /// Records a cache-miss verification for `fingerprint` until dropped.
+        #[must_use]
+        pub fn enter(fingerprint: u64) -> Self {
+            let mut in_flight = in_flight_map();
+            let count = in_flight.entry(fingerprint).or_insert(0);
+            *count += 1;
+            if *count >= 2 {
+                super::increment_gauge(CHECK_TRANSACTION_DUPLICATE_IN_FLIGHT, 1.0);
+            }
+            Self { fingerprint }
+        }
+    }
+
+    impl Drop for DuplicateInFlight {
+        fn drop(&mut self) {
+            let mut in_flight = in_flight_map();
+            let Some(count) = in_flight.get_mut(&self.fingerprint) else {
+                return;
+            };
+            *count -= 1;
+            if *count >= 1 {
+                super::decrement_gauge(CHECK_TRANSACTION_DUPLICATE_IN_FLIGHT, 1.0);
+            }
+            if *count == 0 {
+                in_flight.remove(&self.fingerprint);
+            }
+        }
+    }
+
+    /// Records that `partially_verified_transactions` already held this key and checksum.
+    pub fn record_redundant_cache_write() {
+        super::increment_counter(CHECK_TRANSACTION_CACHE_REDUNDANT_WRITE_TOTAL);
+    }
+
+    #[cfg(test)]
+    pub(super) fn in_flight_count(fingerprint: u64) -> usize {
+        in_flight_map().get(&fingerprint).copied().unwrap_or(0)
+    }
 }
 
 /// RocksDB internal database metrics.
@@ -156,4 +326,43 @@ pub fn histogram<V: Into<f64>>(name: &'static str, value: V) {
 
 pub fn histogram_label<V: Into<f64>>(name: &'static str, label_key: &'static str, label_value: String, value: V) {
     ::metrics::histogram!(name, label_key => label_value).record(value.into());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timed_in_flight_drop_does_not_panic() {
+        register_metrics();
+        let _guard = vm::TimedInFlight::enter(vm::SPECULATE_IN_FLIGHT, vm::SPECULATE_DURATION_SECONDS);
+    }
+
+    #[test]
+    fn timed_check_transaction_records_hit_and_miss() {
+        register_metrics();
+        {
+            let miss = vm::TimedCheckTransaction::enter();
+            miss.set_cache_hit(false);
+        }
+        {
+            let hit = vm::TimedCheckTransaction::enter();
+            hit.set_cache_hit(true);
+        }
+        let _pre_cache = vm::TimedCheckTransaction::enter();
+    }
+
+    #[test]
+    fn duplicate_in_flight_tracks_overlap() {
+        register_metrics();
+        let fingerprint = 42;
+        let first = vm::DuplicateInFlight::enter(fingerprint);
+        assert_eq!(vm::in_flight_count(fingerprint), 1);
+        let second = vm::DuplicateInFlight::enter(fingerprint);
+        assert_eq!(vm::in_flight_count(fingerprint), 2);
+        drop(second);
+        assert_eq!(vm::in_flight_count(fingerprint), 1);
+        drop(first);
+        assert_eq!(vm::in_flight_count(fingerprint), 0);
+    }
 }

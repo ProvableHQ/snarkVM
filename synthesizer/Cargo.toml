@@ -67,6 +67,7 @@ dev_skip_checks = [ "snarkvm-synthesizer-process/dev_skip_checks" ]
 snark-print = [ "snarkvm-algorithms/snark-print" ]
 test_consensus_heights = [ "snarkvm-synthesizer-process/test_consensus_heights" ]
 memory-intensive = [ ]
+metrics = [ "dep:snarkvm-metrics" ]
 
 [[bench]]
 name = "kary_merkle_tree"
@@ -132,6 +133,10 @@ workspace = true
 
 [dependencies.snarkvm-utilities]
 workspace = true
+
+[dependencies.snarkvm-metrics]
+workspace = true
+optional = true
 
 [dependencies.aleo-std]
 workspace = true
