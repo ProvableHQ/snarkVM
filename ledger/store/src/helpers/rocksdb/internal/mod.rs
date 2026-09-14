@@ -22,6 +22,9 @@ pub use map::*;
 mod nested_map;
 pub use nested_map::*;
 
+mod schema;
+pub use schema::{MigrationMode, STORAGE_VERSION};
+
 #[cfg(test)]
 mod tests;
 
@@ -142,22 +145,10 @@ impl Database for RocksDB {
         let database = if let Some(db) = databases.get(&db_path) {
             db.clone()
         } else {
-            // Customize database options.
-            let mut options = rocksdb::Options::default();
-            options.set_compression_type(rocksdb::DBCompressionType::Lz4);
+            let rocksdb = Arc::new(Self::open_rocksdb(&db_path)?);
 
-            // Register the prefix length.
-            let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN);
-            options.set_prefix_extractor(prefix_extractor);
-
-            let rocksdb = {
-                options.increase_parallelism(2);
-                options.set_max_background_jobs(4);
-                options.create_if_missing(true);
-                options.set_max_open_files(8192);
-
-                Arc::new(rocksdb::DB::open(&options, &db_path)?)
-            };
+            // Bring the schema up to date, and refuse one from the future, before anything reads it.
+            schema::migrate_storage(&rocksdb, network_id, MigrationMode::OnOpen)?;
 
             let db = RocksDB {
                 rocksdb,
@@ -248,6 +239,37 @@ impl Database for RocksDB {
 }
 
 impl RocksDB {
+    /// Opens the raw RocksDB database at the given path, with the options every use of it shares.
+    fn open_rocksdb(db_path: &std::path::Path) -> Result<rocksdb::DB> {
+        // Customize database options.
+        let mut options = rocksdb::Options::default();
+        options.set_compression_type(rocksdb::DBCompressionType::Lz4);
+
+        // Register the prefix length.
+        let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN);
+        options.set_prefix_extractor(prefix_extractor);
+
+        options.increase_parallelism(2);
+        options.set_max_background_jobs(4);
+        options.create_if_missing(true);
+        options.set_max_open_files(8192);
+
+        Ok(rocksdb::DB::open(&options, db_path)?)
+    }
+
+    /// Runs every pending storage migration on the database at the given storage location,
+    /// bringing it to [`STORAGE_VERSION`].
+    ///
+    /// This is the explicit counterpart of the check `open` performs: `open` refuses a database
+    /// whose migration would change existing data, and directs the operator here. The database
+    /// must not be open elsewhere in this process.
+    pub fn migrate<S: Into<StorageMode>>(network_id: u16, storage: S) -> Result<()> {
+        let db_path = aleo_std_storage::aleo_ledger_dir(network_id, &storage.into());
+        ensure!(!DATABASES.lock().contains_key(&db_path), "The database at {} is already open", db_path.display());
+        let rocksdb = Self::open_rocksdb(&db_path)?;
+        schema::migrate_storage(&rocksdb, network_id, MigrationMode::Explicit)
+    }
+
     /// Pause the execution of atomic writes for the entire database.
     fn pause_atomic_writes(&self) -> Result<()> {
         // This operation is only intended to be performed before or after
