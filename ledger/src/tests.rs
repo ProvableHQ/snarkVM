@@ -31,12 +31,9 @@ use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{Block, ConfirmedTransaction, Execution, Ratify, Rejected, Transaction};
 use snarkvm_ledger_committee::{Committee, MIN_VALIDATOR_STAKE};
 use snarkvm_ledger_narwhal::{BatchHeader, Data, Subdag, Transmission, TransmissionID};
-use snarkvm_ledger_store::ConsensusStore;
-#[cfg(feature = "history-staking-rewards")]
-use snarkvm_ledger_store::helpers::MapRead;
-#[cfg(feature = "history-staking-rewards")]
-use snarkvm_synthesizer::bonded_map_into_stakers;
+use snarkvm_ledger_store::{ConsensusStore, helpers::MapRead};
 use snarkvm_synthesizer::{
+    bonded_map_into_stakers,
     program::Program,
     vm::{TransactionCacheKey, VM},
 };
@@ -610,6 +607,8 @@ fn test_bond_and_unbond_validator() {
 
     // Initialize the test environment.
     let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
+    // Record the staking rewards of every block, to check them after the (un)bonding operations.
+    ledger.vm().finalize_store().set_record_staking_rewards(true);
 
     // Sample new account for the new committee member.
     let new_member_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -734,8 +733,7 @@ fn test_bond_and_unbond_validator() {
     // Add the bond public block to the ledger.
     ledger.advance_to_next_block(&unbond_public_block).unwrap();
 
-    // Check the historical rewards after the (un)bonding operations.
-    #[cfg(feature = "history-staking-rewards")]
+    // Check the recorded rewards after the (un)bonding operations.
     {
         let store = ledger.vm().finalize_store();
         let program_id = ProgramID::from_str("credits.aleo").unwrap();
@@ -756,6 +754,15 @@ fn test_bond_and_unbond_validator() {
                 assert_eq!(initial_stake + cumulative_reward, new_stake);
             }
         }
+
+        // The new member bonded in block 2 and unbonded in block 3: it has a row for the one block
+        // it was staked in, and none before or after.
+        assert!(store.staking_rewards_map().get_confirmed(&(new_member_address, 1)).unwrap().is_none());
+        let (validator, reward, new_stake) =
+            store.staking_rewards_map().get_confirmed(&(new_member_address, 2)).unwrap().unwrap().into_owned();
+        assert_eq!(validator, new_member_address);
+        assert_eq!(new_stake, bond_amount + reward);
+        assert!(store.staking_rewards_map().get_confirmed(&(new_member_address, 3)).unwrap().is_none());
     }
 
     // Check that the committee does not include the new member.

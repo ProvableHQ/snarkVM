@@ -21,12 +21,10 @@ use crate::{
     FinalizeStorage,
     helpers::rocksdb::{self, CommitteeMap, DataMap, Database, MapID, NestedDataMap, ProgramMap},
 };
-#[cfg(feature = "history-staking-rewards")]
-use console::types::Address;
 use console::{
     prelude::*,
     program::{Identifier, Plaintext, ProgramID, Value},
-    types::Field,
+    types::{Address, Field},
 };
 use snarkvm_ledger_block::RejectedReason;
 use snarkvm_ledger_committee::Committee;
@@ -46,7 +44,6 @@ pub struct FinalizeDB<N: Network> {
     /// The rejection reason map.
     rejected_reason_map: DataMap<Field<N>, RejectedReason<N>>,
     /// The historical staking rewards map.
-    #[cfg(feature = "history-staking-rewards")]
     staking_rewards_map: DataMap<(Address<N>, u32), (Address<N>, u64, u64)>,
     /// The storage mode.
     storage_mode: StorageMode,
@@ -58,7 +55,6 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     type ProgramIDMap = DataMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedDataMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
     type RejectedReasonMap = DataMap<Field<N>, RejectedReason<N>>;
-    #[cfg(feature = "history-staking-rewards")]
     type StakingRewardsMap = DataMap<(Address<N>, u32), (Address<N>, u64, u64)>;
 
     /// Initializes the finalize storage.
@@ -72,7 +68,6 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
             program_id_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::ProgramID))?,
             key_value_map: rocksdb::RocksDB::open_nested_map(N::ID, storage.clone(), MapID::Program(ProgramMap::KeyValueID))?,
             rejected_reason_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::RejectedReason))?,
-            #[cfg(feature = "history-staking-rewards")]
             staking_rewards_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::StakingRewards))?,
             storage_mode: storage,
         })
@@ -99,7 +94,6 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     }
 
     /// Returns the historical staking rewards map.
-    #[cfg(feature = "history-staking-rewards")]
     fn staking_rewards_map(&self) -> &Self::StakingRewardsMap {
         &self.staking_rewards_map
     }

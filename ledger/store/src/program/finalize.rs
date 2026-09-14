@@ -18,12 +18,10 @@ use crate::{
     helpers::{Map, MapRead, NestedMap, NestedMapRead},
     program::{CommitteeStorage, CommitteeStore},
 };
-#[cfg(any(feature = "history-staking-rewards", feature = "slipstream-plugins"))]
-use console::types::Address;
 use console::{
     network::prelude::*,
     program::{Identifier, Plaintext, ProgramID, Value},
-    types::Field,
+    types::{Address, Field},
 };
 use snarkvm_ledger_block::RejectedReason;
 use snarkvm_synthesizer_program::{FinalizeOperation, FinalizeStoreTrait};
@@ -38,11 +36,10 @@ use locktick::parking_lot::RwLock;
 use parking_lot::RwLock;
 #[cfg(feature = "slipstream-plugins")]
 use snarkvm_slipstream_plugin_manager::{BroadcastEvent, BroadcastEventKind, SlipstreamPluginManager};
-#[cfg(feature = "slipstream-plugins")]
-use std::sync::atomic::AtomicBool;
-#[cfg(feature = "slipstream-plugins")]
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, atomic::AtomicU32};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU32, Ordering},
+};
 
 /// Serialized form of a mapping replacement, captured before storage consumes the entries.
 #[cfg(feature = "slipstream-plugins")]
@@ -101,7 +98,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// The mapping of `transaction ID` to `rejection reason`.
     type RejectedReasonMap: for<'a> Map<'a, Field<N>, RejectedReason<N>>;
     /// The mapping of `(staker address, height)` to `(validator address, block reward, new stake)`.
-    #[cfg(feature = "history-staking-rewards")]
     type StakingRewardsMap: for<'a> Map<'a, (Address<N>, u32), (Address<N>, u64, u64)>;
 
     /// Initializes the program state storage.
@@ -116,7 +112,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Returns the rejection reason map.
     fn rejected_reason_map(&self) -> &Self::RejectedReasonMap;
     /// Returns the historical staking rewards map.
-    #[cfg(feature = "history-staking-rewards")]
     fn staking_rewards_map(&self) -> &Self::StakingRewardsMap;
 
     /// Returns the storage mode.
@@ -128,20 +123,16 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.program_id_map().start_atomic();
         self.key_value_map().start_atomic();
         self.rejected_reason_map().start_atomic();
-        #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().start_atomic();
     }
 
     /// Checks if an atomic batch is in progress.
     fn is_atomic_in_progress(&self) -> bool {
-        let ret = self.committee_store().is_atomic_in_progress()
+        self.committee_store().is_atomic_in_progress()
             || self.program_id_map().is_atomic_in_progress()
             || self.key_value_map().is_atomic_in_progress()
-            || self.rejected_reason_map().is_atomic_in_progress();
-        #[cfg(feature = "history-staking-rewards")]
-        let ret = ret || self.staking_rewards_map().is_atomic_in_progress();
-
-        ret
+            || self.rejected_reason_map().is_atomic_in_progress()
+            || self.staking_rewards_map().is_atomic_in_progress()
     }
 
     /// Checkpoints the atomic batch.
@@ -150,7 +141,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.program_id_map().atomic_checkpoint();
         self.key_value_map().atomic_checkpoint();
         self.rejected_reason_map().atomic_checkpoint();
-        #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().atomic_checkpoint();
     }
 
@@ -160,7 +150,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.program_id_map().clear_latest_checkpoint();
         self.key_value_map().clear_latest_checkpoint();
         self.rejected_reason_map().clear_latest_checkpoint();
-        #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().clear_latest_checkpoint();
     }
 
@@ -170,7 +159,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.program_id_map().atomic_rewind();
         self.key_value_map().atomic_rewind();
         self.rejected_reason_map().atomic_rewind();
-        #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().atomic_rewind();
     }
 
@@ -180,7 +168,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.program_id_map().abort_atomic();
         self.key_value_map().abort_atomic();
         self.rejected_reason_map().abort_atomic();
-        #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().abort_atomic();
     }
 
@@ -190,7 +177,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.program_id_map().finish_atomic()?;
         self.key_value_map().finish_atomic()?;
         self.rejected_reason_map().finish_atomic()?;
-        #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().finish_atomic()?;
         Ok(())
     }
@@ -578,6 +564,12 @@ pub struct FinalizeStore<N: Network, P: FinalizeStorage<N>> {
     /// Tracks the current block height.
     /// Updated by the VM at the start of each canonical finalize
     block_height: Arc<AtomicU32>,
+    /// Whether each block's staking rewards are recorded in the staking rewards map.
+    ///
+    /// A runtime setting rather than a cargo feature: the map exists in every build, so a tool
+    /// that opens the database sees the same set of tables however it was compiled. Off by
+    /// default; a node that serves historical staking rewards turns it on at startup.
+    record_staking_rewards: Arc<AtomicBool>,
     /// Optional plugin manager for streaming canonical mapping and staking updates.
     /// Wrapped in `Arc` so that all clones of `FinalizeStore` share the same instance;
     /// the `RwLock` allows installation from a shared reference after construction.
@@ -600,6 +592,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             #[cfg(feature = "slipstream-plugins")]
             is_finalize_mode: Arc::new(AtomicBool::new(false)),
             block_height: Arc::new(AtomicU32::new(0)),
+            record_staking_rewards: Arc::new(AtomicBool::new(false)),
             #[cfg(feature = "slipstream-plugins")]
             slipstream_plugin_manager: Arc::new(RwLock::new(None)),
         })
@@ -664,6 +657,19 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         &self.block_height
     }
 
+    /// Sets whether each block's staking rewards are recorded in the staking rewards map.
+    ///
+    /// Shared by every clone of this store. Recording only covers blocks finalized while the
+    /// setting is on; earlier heights have no rows, and turning it off leaves a gap.
+    pub fn set_record_staking_rewards(&self, record: bool) {
+        self.record_staking_rewards.store(record, Ordering::SeqCst);
+    }
+
+    /// Returns whether each block's staking rewards are recorded in the staking rewards map.
+    pub fn records_staking_rewards(&self) -> bool {
+        self.record_staking_rewards.load(Ordering::SeqCst)
+    }
+
     /// Installs a Slipstream plugin manager to receive canonical mapping and staking updates.
     ///
     /// May be called from a shared reference. Logs a warning if called more than once.
@@ -720,7 +726,6 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     }
 
     /// Returns the historical staking rewards map.
-    #[cfg(feature = "history-staking-rewards")]
     pub fn staking_rewards_map(&self) -> &P::StakingRewardsMap {
         self.storage.staking_rewards_map()
     }
