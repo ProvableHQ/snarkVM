@@ -74,7 +74,7 @@ fn execution_cost_given_size<N: Network>(
     consensus_version: ConsensusVersion,
 ) -> Result<(MinimumCost, ExecuteCostDetails)> {
     if consensus_version >= ConsensusVersion::V10 {
-        execution_cost_v3(process, execution, execution_size, consensus_version)
+        execution_cost_v3(process, execution, execution_size, Some(consensus_version))
     } else if consensus_version >= ConsensusVersion::V2 {
         execution_cost_v2(process, execution, execution_size)
     } else {
@@ -479,12 +479,12 @@ pub fn deployment_cost_v1<N: Network>(
     let stack = Stack::new(process, deployment.program())?;
 
     // Compute the constructor cost in microcredits.
-    let constructor_cost = constructor_cost_in_microcredits_v1(&stack, None)?;
+    let constructor_cost = constructor_cost_in_microcredits_v1(&stack)?;
 
     // Check that the functions are valid.
     for function in deployment.program().functions().values() {
         // Get the finalize cost.
-        let finalize_cost = minimum_cost_in_microcredits_v2(&stack, function.name(), None)?;
+        let finalize_cost = minimum_cost_in_microcredits_v2(&stack, function.name())?;
         // Check that the finalize cost does not exceed the maximum.
         ensure!(
             finalize_cost <= N::TRANSACTION_SPEND_LIMIT[0].1,
@@ -516,14 +516,14 @@ fn execution_cost_v3<N: Network>(
     process: &Process<N>,
     execution: &Execution<N>,
     execution_size: u64,
-    consensus_version: ConsensusVersion,
+    consensus_version: Option<ConsensusVersion>,
 ) -> Result<(MinimumCost, ExecuteCostDetails)> {
     // Compute the storage cost in microcredits.
     let storage_cost = execution_storage_cost::<N>(execution_size);
 
     // Compute the finalize cost by iterating over all concrete transitions.
     // This handles dynamic futures correctly because we know the actual functions called.
-    let finalize_cost = execution_finalize_cost(process, execution, ConsensusFeeVersion::V3, Some(consensus_version))?;
+    let finalize_cost = execution_finalize_cost(process, execution, ConsensusFeeVersion::V3, consensus_version)?;
 
     // Compute the total cost in microcredits.
     let total_cost = storage_cost
@@ -1134,7 +1134,7 @@ pub fn cost_per_command<N: Network>(
             cost_in_size(stack, finalize_types, [command.key_operand()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
         Command::RandChaCha(command) => {
-            if matches!(consensus_version, Some(version) if version >= ConsensusVersion::V19) {
+            if consensus_version.is_some_and(|version| version >= ConsensusVersion::V21) {
                 let seed_component = {
                     let mut bhp_operands = command.operands().to_vec();
                     for _ in 0..3 {
@@ -1199,10 +1199,7 @@ pub fn constructor_cost_in_microcredits_v2<N: Network>(
 
 /// Returns the minimum number of microcredits required to run the constructor in the given stack.
 /// If a constructor does not exist, no cost is incurred.
-pub fn constructor_cost_in_microcredits_v1<N: Network>(
-    stack: &Stack<N>,
-    consensus_version: Option<ConsensusVersion>,
-) -> Result<u64> {
+pub fn constructor_cost_in_microcredits_v1<N: Network>(stack: &Stack<N>) -> Result<u64> {
     match stack.program().constructor() {
         Some(constructor) => {
             // Get the constructor types.
@@ -1211,9 +1208,7 @@ pub fn constructor_cost_in_microcredits_v1<N: Network>(
             let base_cost = constructor
                 .commands()
                 .iter()
-                .map(|command| {
-                    cost_per_command(stack, &constructor_types, command, ConsensusFeeVersion::V2, consensus_version)
-                })
+                .map(|command| cost_per_command(stack, &constructor_types, command, ConsensusFeeVersion::V2, None))
                 .try_fold(0u64, |acc, res| {
                     res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Constructor cost overflowed")))
                 })?;
@@ -1332,23 +1327,15 @@ pub(crate) fn execution_finalize_cost<N: Network>(
 /// Returns the minimum number of microcredits required to run the finalize.
 /// Note: For dynamic futures, this only provides a lower bound on the cost because the target functions
 /// cannot be statically determined. For exact execution cost, use `execution_finalize_cost`.
-pub fn minimum_cost_in_microcredits_v2<N: Network>(
-    stack: &Stack<N>,
-    function_name: &Identifier<N>,
-    consensus_version: Option<ConsensusVersion>,
-) -> Result<u64> {
-    minimum_cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V2, consensus_version)
+pub fn minimum_cost_in_microcredits_v2<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
+    minimum_cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V2, None)
 }
 
 /// Returns the minimum number of microcredits required to run the finalize (deprecated).
 /// Note: For dynamic futures, this only provides a lower bound on the cost because the target functions
 /// cannot be statically determined. For exact execution cost, use `execution_finalize_cost`.
-pub fn minimum_cost_in_microcredits_v1<N: Network>(
-    stack: &Stack<N>,
-    function_name: &Identifier<N>,
-    consensus_version: Option<ConsensusVersion>,
-) -> Result<u64> {
-    minimum_cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V1, consensus_version)
+pub fn minimum_cost_in_microcredits_v1<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
+    minimum_cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V1, None)
 }
 
 // A helper function to compute the minimum cost in microcredits for a given function.
@@ -1495,6 +1482,11 @@ function over_five_thousand:
         // Test the storage cost of an execution.
         let threshold = MainnetV0::EXECUTION_STORAGE_PENALTY_THRESHOLD;
 
+        // We ensure the check pases in the latest consensus version. Change either this or the 3 in
+        // execution_cost_v3 below if new execution_cost versions are introduced which break the
+        // test.
+        let latest_consensus_version = ConsensusVersion::latest();
+
         // Test the cost of an execution.
         let mut process = Process::load().unwrap();
 
@@ -1508,13 +1500,18 @@ function over_five_thousand:
         // Get execution and cost data.
         let execution_under_5000 = get_execution(&mut process, &program, &under_5000, ["2group"].into_iter());
         let execution_size_under_5000 = execution_under_5000.size_in_bytes().unwrap();
-        let (_, (storage_cost_under_5000, _)) =
-            execution_cost_v3(&process, &execution_under_5000, execution_size_under_5000, ConsensusVersion::V10)
-                .unwrap();
+        let (_, (storage_cost_under_5000, _)) = execution_cost_v3(
+            &process,
+            &execution_under_5000,
+            execution_size_under_5000,
+            Some(latest_consensus_version),
+        )
+        .unwrap();
         let execution_over_5000 = get_execution(&mut process, &program, &over_5000, ["2group"].into_iter());
         let execution_size_over_5000 = execution_over_5000.size_in_bytes().unwrap();
         let (_, (storage_cost_over_5000, _)) =
-            execution_cost_v3(&process, &execution_over_5000, execution_size_over_5000, ConsensusVersion::V10).unwrap();
+            execution_cost_v3(&process, &execution_over_5000, execution_size_over_5000, Some(latest_consensus_version))
+                .unwrap();
 
         // Ensure the sizes are below and above the threshold respectively.
         assert!(execution_size_under_5000 < threshold);
@@ -1911,31 +1908,31 @@ finalize increment:
 
         // Calculate costs using both methods for all fee versions
         // V1
-        let static_cost_v1 =
-            minimum_cost_in_microcredits_v1(&stack, &function_name, Some(ConsensusVersion::V1)).unwrap();
-        let runtime_cost_v1 =
-            execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V1, Some(ConsensusVersion::V1)).unwrap();
+        let static_cost_v1 = minimum_cost_in_microcredits_v1(&stack, &function_name).unwrap();
+        let runtime_cost_v1 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V1, None).unwrap();
         assert_eq!(
             static_cost_v1, runtime_cost_v1,
             "V1: Static and runtime costs should match: static={static_cost_v1}, runtime={runtime_cost_v1}"
         );
 
         // V2
-        let static_cost_v2 =
-            minimum_cost_in_microcredits_v2(&stack, &function_name, Some(ConsensusVersion::V10)).unwrap();
-        let runtime_cost_v2 =
-            execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V2, Some(ConsensusVersion::V10))
-                .unwrap();
+        let static_cost_v2 = minimum_cost_in_microcredits_v2(&stack, &function_name).unwrap();
+        let runtime_cost_v2 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V2, None).unwrap();
         assert_eq!(
             static_cost_v2, runtime_cost_v2,
             "V2: Static and runtime costs should match: static={static_cost_v2}, runtime={runtime_cost_v2}"
         );
 
         // V3
+
+        // As this is the latest ConsensusFeeVersion, we ensure the check pases in the latest
+        // consensus version. Change this if future ConsensusFeeVersion or ConsensusVersion changes
+        // break the test.
+        let latest_consensus_version = ConsensusVersion::latest();
         let static_cost_v3 =
-            minimum_cost_in_microcredits_v3(&stack, &function_name, Some(ConsensusVersion::V16)).unwrap();
+            minimum_cost_in_microcredits_v3(&stack, &function_name, Some(latest_consensus_version)).unwrap();
         let runtime_cost_v3 =
-            execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V3, Some(ConsensusVersion::V16))
+            execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V3, Some(latest_consensus_version))
                 .unwrap();
         assert_eq!(
             static_cost_v3, runtime_cost_v3,
@@ -2020,11 +2017,14 @@ finalize call_child:
         // Get the stack for static cost calculation
         let stack = process.get_stack(caller_program.id()).unwrap();
 
-        // Calculate costs using both methods
+        // Calculate costs using both methods. Since V3 is the latest ConsensusFeeVersion, we ensure
+        // the check pases in the latest consensus version. Change this if future
+        // ConsensusFeeVersion or ConsensusVersion changes break the test.
+        let latest_consensus_version = ConsensusVersion::latest();
         let static_cost_v3 =
-            minimum_cost_in_microcredits_v3(&stack, &function_name, Some(ConsensusVersion::V18)).unwrap();
+            minimum_cost_in_microcredits_v3(&stack, &function_name, Some(latest_consensus_version)).unwrap();
         let runtime_cost_v3 =
-            execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V3, Some(ConsensusVersion::V18))
+            execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V3, Some(latest_consensus_version))
                 .unwrap();
 
         println!("Nested calls - Static cost V3: {static_cost_v3}");
@@ -2036,20 +2036,17 @@ finalize call_child:
             "V3: Static and runtime costs should match for nested calls: static={static_cost_v3}, runtime={runtime_cost_v3}"
         );
 
-        // Also verify V1 and V2
-        let static_cost_v1 =
-            minimum_cost_in_microcredits_v1(&stack, &function_name, Some(ConsensusVersion::V1)).unwrap();
-        let runtime_cost_v1 =
-            execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V1, Some(ConsensusVersion::V1)).unwrap();
+        // Also verify V1 and V2 (where the specific ConsensusVersion is not relevant to the cost
+        // function in question)
+        let static_cost_v1 = minimum_cost_in_microcredits_v1(&stack, &function_name).unwrap();
+        let runtime_cost_v1 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V1, None).unwrap();
         assert_eq!(
             static_cost_v1, runtime_cost_v1,
             "V1: Static and runtime costs should match for nested calls: static={static_cost_v1}, runtime={runtime_cost_v1}"
         );
 
-        let static_cost_v2 =
-            minimum_cost_in_microcredits_v2(&stack, &function_name, Some(ConsensusVersion::V1)).unwrap();
-        let runtime_cost_v2 =
-            execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V2, Some(ConsensusVersion::V1)).unwrap();
+        let static_cost_v2 = minimum_cost_in_microcredits_v2(&stack, &function_name).unwrap();
+        let runtime_cost_v2 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V2, None).unwrap();
         assert_eq!(
             static_cost_v2, runtime_cost_v2,
             "V2: Static and runtime costs should match for nested calls: static={static_cost_v2}, runtime={runtime_cost_v2}"
@@ -2204,11 +2201,14 @@ finalize main:
         // Get the stack for static cost calculation
         let stack = process.get_stack(root_program.id()).unwrap();
 
-        // Calculate costs using both methods
+        // Calculate costs using both methods Since V3 is the latest ConsensusFeeVersion, we ensure
+        // the check pases in the latest consensus version. Change this if future
+        // ConsensusFeeVersion or ConsensusVersion changes break the test.
+        let latest_consensus_version = ConsensusVersion::latest();
         let static_cost_v3 =
-            minimum_cost_in_microcredits_v3(&stack, &function_name, Some(ConsensusVersion::V18)).unwrap();
+            minimum_cost_in_microcredits_v3(&stack, &function_name, Some(latest_consensus_version)).unwrap();
         let runtime_cost_v3 =
-            execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V3, Some(ConsensusVersion::V18))
+            execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V3, Some(latest_consensus_version))
                 .unwrap();
 
         println!("Complex call graph - Static cost V3: {static_cost_v3}");
@@ -2219,17 +2219,14 @@ finalize main:
             "V3: Static and runtime costs should match for complex call graph: static={static_cost_v3}, runtime={runtime_cost_v3}"
         );
 
-        // Also verify V1 and V2
-        let static_cost_v1 =
-            minimum_cost_in_microcredits_v1(&stack, &function_name, Some(ConsensusVersion::V1)).unwrap();
-        let runtime_cost_v1 =
-            execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V1, Some(ConsensusVersion::V1)).unwrap();
+        // Also verify V1 and V2 (where the specific ConsensusVersion is not relevant to the cost
+        // function in question)
+        let static_cost_v1 = minimum_cost_in_microcredits_v1(&stack, &function_name).unwrap();
+        let runtime_cost_v1 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V1, None).unwrap();
         assert_eq!(static_cost_v1, runtime_cost_v1, "V1: Static and runtime costs should match for complex call graph");
 
-        let static_cost_v2 =
-            minimum_cost_in_microcredits_v2(&stack, &function_name, Some(ConsensusVersion::V1)).unwrap();
-        let runtime_cost_v2 =
-            execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V2, Some(ConsensusVersion::V1)).unwrap();
+        let static_cost_v2 = minimum_cost_in_microcredits_v2(&stack, &function_name).unwrap();
+        let runtime_cost_v2 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V2, None).unwrap();
         assert_eq!(static_cost_v2, runtime_cost_v2, "V2: Static and runtime costs should match for complex call graph");
 
         // Verify costs are meaningful

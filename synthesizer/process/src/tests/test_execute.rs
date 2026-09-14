@@ -2152,8 +2152,7 @@ finalize a:
     // Total V2 cost: 10100 + 10700 + 10700 = 31500... but actual is 31600
     // The extra 100 comes from the finalize command base costs
     let stack = process.get_stack(program2.id()).unwrap();
-    let static_finalize_cost =
-        crate::cost::minimum_cost_in_microcredits_v2(&stack, &function_name, Some(ConsensusVersion::V10)).unwrap();
+    let static_finalize_cost = crate::cost::minimum_cost_in_microcredits_v2(&stack, &function_name).unwrap();
     let runtime_finalize_cost = crate::cost::execution_finalize_cost(
         &process,
         &execution,
@@ -2441,8 +2440,7 @@ fn test_complex_execution_order() {
     //   four.aleo/a (1x): 3 inputs (300) + 2 awaits (1000) + set (10000) = 11300
     // Total V2 cost: 30300 + 30300 + 22600 + 11900 + 11300 = 106400 + 100 (base) = 106500
     let stack = process.get_stack(program4.id()).unwrap();
-    let static_finalize_cost =
-        crate::cost::minimum_cost_in_microcredits_v2(&stack, &function_name, Some(ConsensusVersion::V10)).unwrap();
+    let static_finalize_cost = crate::cost::minimum_cost_in_microcredits_v2(&stack, &function_name).unwrap();
     let runtime_finalize_cost = crate::cost::execution_finalize_cost(
         &process,
         &execution,
