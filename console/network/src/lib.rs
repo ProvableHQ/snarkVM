@@ -245,8 +245,8 @@ pub trait Network:
         (ConsensusVersion::V14, 512_000),   // 512 kB
         (ConsensusVersion::V16, 2_048_000), // 2048 kB
     ];
-    /// The maximum number of mappings in a program.
-    const MAX_MAPPINGS: usize = 31;
+    /// A list of consensus versions and their corresponding maximum number of mappings in a program.
+    const MAX_MAPPINGS: [(ConsensusVersion, usize); 2] = [(ConsensusVersion::V1, 31), (ConsensusVersion::V21, 128)];
     /// The maximum number of functions in a program.
     const MAX_FUNCTIONS: usize = 31;
     /// The maximum number of structs in a program.
@@ -379,6 +379,12 @@ pub trait Network:
     #[allow(non_snake_case)]
     fn LATEST_MAX_CERTIFICATES() -> u16 {
         Self::MAX_CERTIFICATES.last().expect("MAX_CERTIFICATES must have at least one entry").1
+    }
+
+    /// Returns the last `MAX_MAPPINGS` value.
+    #[allow(non_snake_case)]
+    fn LATEST_MAX_MAPPINGS() -> usize {
+        Self::MAX_MAPPINGS.last().expect("MAX_MAPPINGS must have at least one entry").1
     }
 
     /// Returns the last `MAX_PROGRAM_SIZE` value.
