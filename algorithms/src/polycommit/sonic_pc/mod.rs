@@ -368,7 +368,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             labels.1.insert(label);
         }
 
-        assert_eq!(proof.0.len(), query_to_labels_map.len());
+        ensure!(query_to_labels_map.len() == proof.0.len());
 
         let mut private_sponge = fs_rng.clone();
         for proof in &proof.0 {
@@ -381,7 +381,6 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         let mut combined_witness = E::G1Projective::zero();
         let mut combined_adjusted_witness = E::G1Projective::zero();
 
-        ensure!(query_to_labels_map.len() == proof.0.len());
         for ((_query_name, (query, labels)), p) in query_to_labels_map.into_iter().zip_eq(&proof.0) {
             let mut comms_to_combine: Vec<&'_ LabeledCommitment<_>> = Vec::new();
             let mut values_to_combine = Vec::new();

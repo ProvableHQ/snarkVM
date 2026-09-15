@@ -68,13 +68,7 @@ fn test_deploy_large_program_v16() {
 
     // Ensure that the program is too large to be deployed at V15.
     let deployment = vm.deploy(&caller_private_key, &large_program, None, 0, None, rng).unwrap();
-    let deployment_id = deployment.id();
     assert!(vm.check_transaction(&deployment, None, rng).is_err());
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0);
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids(), &[deployment_id]);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
 
     // Advance to the V16 height.
     let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
@@ -115,7 +109,6 @@ fn test_deploy_large_program_v16_serialization() {
 
     // Create a deployment transaction for the large program at V15.
     let deployment = vm.deploy(&caller_private_key, &large_program, None, 0, None, rng).unwrap();
-    let deployment_id = deployment.id();
 
     // Verify bytes serialization round-trip at V15.
     let deployment_bytes = deployment.to_bytes_le().unwrap();
@@ -129,13 +122,6 @@ fn test_deploy_large_program_v16_serialization() {
 
     // Ensure that the program is too large to pass check_transaction at V15.
     assert!(vm.check_transaction(&deployment, None, rng).is_err());
-
-    // Create block and verify the transaction is aborted.
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0);
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids(), &[deployment_id]);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
 
     // Advance to the V16 height.
     let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();

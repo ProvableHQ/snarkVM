@@ -80,6 +80,11 @@ impl<N: Network> Trace<N> {
         &self.transitions
     }
 
+    /// Returns the transition proving tasks (proving key + assignments), keyed by locator.
+    pub fn transition_tasks(&self) -> &HashMap<Locator<N>, (ProvingKey<N>, Vec<Assignment<N::Field>>)> {
+        &self.transition_tasks
+    }
+
     /// Returns the call metrics.
     pub fn call_metrics(&self) -> &[CallMetrics<N>] {
         &self.call_metrics
@@ -364,7 +369,7 @@ impl<N: Network> Trace<N> {
 
 impl<N: Network> Trace<N> {
     /// Returns the global state root and proof for the given assignments.
-    fn prove_batch<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+    pub fn prove_batch<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         locator: &str,
         varuna_version: VarunaVersion,
         mut proving_tasks: Vec<(ProvingKey<N>, Vec<Assignment<N::Field>>)>,

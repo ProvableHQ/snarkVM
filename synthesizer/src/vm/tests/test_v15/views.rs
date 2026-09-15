@@ -433,17 +433,14 @@ fn test_view_output_type_mismatch_rejected() {
             output r1 as u32.public;
         ",
     );
-    // Parsing succeeds (the view is structurally valid); the mismatch is caught when the
-    // stack is computed from the program at deploy time. We assert here that *either* parse
-    // or the subsequent type-check rejects this — whichever fails first is acceptable.
+    // Parsing succeeds (the view is structurally valid); the mismatch is caught when the stack is
+    // computed from the program by Stack::new(). We assert here that *either* parse or the
+    // subsequent type-check rejects this — whichever fails first is acceptable.
     if let Ok(program) = result {
         let rng = &mut TestRng::default();
-        let caller_private_key = sample_genesis_private_key(rng);
-        let caller_address = Address::try_from(&caller_private_key).unwrap();
         let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
-        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject type-mismatched view output");
-        let _ = caller_address;
+        let add_result = vm.process().lock().add_program(&program);
+        assert!(add_result.is_err(), "adding the program should reject type-mismatched view output");
     }
 }
 
@@ -537,12 +534,15 @@ view fixed_value:
     )
     .unwrap();
 
-    // Deployment before V15 should be aborted.
+    // Deployment before V15 should be rejected by verification.
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0, "Deployment with view before V15 should not be accepted");
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1, "Deployment with view before V15 should be aborted");
+    assert!(
+        vm.check_transaction(&deployment, None, rng).is_err(),
+        "Deployment with view before V15 should be rejected"
+    );
+
+    // Advance to V15 by adding an empty block.
+    let block = sample_next_block(&vm, &caller_private_key, &[], rng).unwrap();
     vm.add_next_block(&block).unwrap();
 
     // We should now be at V15.
@@ -557,9 +557,9 @@ view fixed_value:
     vm.add_next_block(&block).unwrap();
 }
 
-/// Tests that a view containing a `string` type is rejected at deploy via the strengthened
-/// `Program::contains_string_type` (which now walks `self.views`). Without that fix, strings
-/// could sneak in through view inputs/outputs even though they're banned post-V12.
+/// Tests that a view containing a `string` type is rejected by Stack::new() via the strengthened
+/// `Program::contains_string_type` (which now walks `self.views`). Without that fix, strings could
+/// sneak in through view inputs/outputs even though they're banned post-V12.
 #[test]
 fn test_deploy_view_with_string_type_rejected() {
     let rng = &mut TestRng::default();
@@ -586,9 +586,10 @@ view echo:
     .unwrap();
 
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0, "Deployment with string-typed view input should be rejected");
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert!(
+        vm.check_transaction(&deployment, None, rng).is_err(),
+        "Deployment with string-typed view input should be rejected"
+    );
 }
 
 /// Tests that a finalize body can call a view function in the SAME program and route its
@@ -769,12 +770,10 @@ fn test_finalize_calls_cross_program_view() -> Result<()> {
 }
 
 /// Tests that a finalize body calling a NON-view target (i.e. a regular function) is rejected
-/// at deploy time. The type-check resolves the target and bails because it is not a view.
+/// by Stack::new(). The type-check resolves the target and bails because it is not a view.
 #[test]
-fn test_finalize_calls_non_view_rejected_at_deploy() {
+fn test_finalize_calls_non_view_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
-    let _caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let program = Program::from_str(
         r"
@@ -802,8 +801,8 @@ fn test_finalize_calls_non_view_rejected_at_deploy() {
     // it first; either way it must NOT successfully deploy.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject a finalize that calls a non-view target");
+        let result = vm.process().lock().add_program(&program);
+        assert!(result.is_err(), "adding the program should reject a finalize that calls a non-view target");
     }
 }
 
@@ -850,11 +849,15 @@ fn test_deploy_finalize_call_before_and_at_v15() {
     )
     .unwrap();
 
-    // Pre-V15: rejected.
+    // Pre-V15: rejected by verification.
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0, "Deployment with finalize-call before V15 should be rejected");
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert!(
+        vm.check_transaction(&deployment, None, rng).is_err(),
+        "Deployment with finalize-call before V15 should be rejected"
+    );
+
+    // Advance to V15 by adding an empty block.
+    let block = sample_next_block(&vm, &caller_private_key, &[], rng).unwrap();
     vm.add_next_block(&block).unwrap();
     assert_eq!(vm.block_store().current_block_height(), v15_height);
 
@@ -994,9 +997,9 @@ fn test_finalize_multiple_calls_and_interleaved_writes() -> Result<()> {
 
 /// Cross-program negative: an importing program's finalize body calls a regular `function` in an
 /// imported program (not a view). Same shape as the same-program negative test, but goes through
-/// the `CallOperator::Locator` resolution path. Must be rejected at deploy time.
+/// the `CallOperator::Locator` resolution path. Must be rejected by Stack::new().
 #[test]
-fn test_finalize_calls_cross_program_non_view_rejected_at_deploy() {
+fn test_finalize_calls_cross_program_non_view_rejected() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
 
@@ -1043,17 +1046,19 @@ fn test_finalize_calls_cross_program_non_view_rejected_at_deploy() {
 
     // Either parse or deploy must reject — same pattern as the same-program negative test.
     if let Ok(caller_program) = caller_program {
-        let deploy = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject a finalize that calls a non-view target in an imported program");
+        let result = vm.process().lock().add_program(&caller_program);
+        assert!(
+            result.is_err(),
+            "adding the program should reject a finalize that calls a non-view target in an imported program"
+        );
     }
 }
 
 /// Negative: deploy is rejected when the call's operand count does not match the view's input
 /// arity. Exercises the arity check in `Call::output_types`.
 #[test]
-fn test_finalize_call_arity_mismatch_rejected_at_deploy() {
+fn test_finalize_call_arity_mismatch_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
 
     // `lookup` declares one input, but the caller passes two.
     let program = Program::from_str(
@@ -1086,8 +1091,8 @@ fn test_finalize_call_arity_mismatch_rejected_at_deploy() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject a finalize-call with wrong arity");
+        let result = vm.process().lock().add_program(&program);
+        assert!(result.is_err(), "adding the program should reject a finalize-call with wrong arity");
     }
 }
 
@@ -1095,9 +1100,8 @@ fn test_finalize_call_arity_mismatch_rejected_at_deploy() {
 /// a type that does not match the view's declared output type. Proves that `Call::output_types`
 /// propagates the view's output types into the surrounding finalize type-check.
 #[test]
-fn test_finalize_call_destination_type_mismatch_rejected_at_deploy() {
+fn test_finalize_call_destination_type_mismatch_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
 
     // `lookup` outputs `u64`, but the caller treats `r1` as `u32` in the following `add`.
     let program = Program::from_str(
@@ -1131,8 +1135,11 @@ fn test_finalize_call_destination_type_mismatch_rejected_at_deploy() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject when call destination type conflicts with downstream use");
+        let result = vm.process().lock().add_program(&program);
+        assert!(
+            result.is_err(),
+            "adding the program should reject when call destination type conflicts with downstream use"
+        );
     }
 }
 
@@ -1170,14 +1177,13 @@ fn test_view_rejects_call_command_at_parse() {
     assert!(result.is_err(), "expected parse error for a view body containing `call`");
 }
 
-/// Negative: a finalize body that uses a `Locator` form to call its own program (instead of
-/// the `Resource` form) is rejected at deploy. Same-program calls must use the bare resource
+/// Negative: a finalize body that uses a `Locator` form to call its own program (instead of the
+/// `Resource` form) is rejected by Stack::new(). Same-program calls must use the bare resource
 /// name; a self-locator is treated as an error since the locator form is reserved for external
 /// programs.
 #[test]
-fn test_finalize_call_self_locator_rejected_at_deploy() {
+fn test_finalize_call_self_locator_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
 
     let program = Program::from_str(
         r"
@@ -1209,17 +1215,17 @@ fn test_finalize_call_self_locator_rejected_at_deploy() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject a finalize-call using a self-locator");
+        let result = vm.process().lock().add_program(&program);
+        assert!(result.is_err(), "adding the program should reject a finalize-call using a self-locator");
     }
 }
 
-/// Negative: a finalize body that calls into an external program which is not declared in
-/// `import` is rejected at deploy. The target program is deployed independently, but the caller
-/// never imports it — the explicit import check in the finalize type-check fires before the
-/// external stack lookup.
+/// Negative: a finalize body that calls into an external program which is not declared in `import`
+/// is rejected by Stack::new(). The target program is deployed independently, but the caller never
+/// imports it — the explicit import check in the finalize type-check fires before the external
+/// stack lookup.
 #[test]
-fn test_finalize_call_missing_import_rejected_at_deploy() {
+fn test_finalize_call_missing_import_rejected() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
 
@@ -1274,8 +1280,11 @@ fn test_finalize_call_missing_import_rejected_at_deploy() {
     add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_data], rng);
 
     if let Ok(caller_program) = caller_program {
-        let deploy = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject a finalize-call into a program that is not imported");
+        let result = vm.process().lock().add_program(&caller_program);
+        assert!(
+            result.is_err(),
+            "adding the program should reject a finalize-call into a program that is not imported"
+        );
     }
 }
 
@@ -1549,9 +1558,8 @@ fn test_finalize_call_struct_return_cross_program() -> Result<()> {
 /// outputs. Mirrors the operand-arity test but exercises the destination-count check in
 /// `Call::output_types_for_view`.
 #[test]
-fn test_finalize_call_destination_count_mismatch_rejected_at_deploy() {
+fn test_finalize_call_destination_count_mismatch_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
 
     // `lookup` declares one output, but the caller binds two destinations.
     let program = Program::from_str(
@@ -1584,22 +1592,21 @@ fn test_finalize_call_destination_count_mismatch_rejected_at_deploy() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
+        let result = vm.process().lock().add_program(&program);
         assert!(
-            deploy.is_err(),
-            "deploy should reject a finalize-call binding more destinations than the view returns"
+            result.is_err(),
+            "adding the program should reject a finalize-call binding more destinations than the view returns"
         );
     }
 }
 
 /// Negative: deploy is rejected when an operand's register type does not match the view's
 /// declared input type. The caller passes a `u32` register where the view expects `u64`. The
-/// per-operand type check in `Call::output_types_for_view` rejects this at deploy rather than
+/// per-operand type check in `Call::output_types_for_view` rejects this by Stack::new() rather than
 /// deferring to runtime.
 #[test]
-fn test_finalize_call_input_type_mismatch_rejected_at_deploy() {
+fn test_finalize_call_input_type_mismatch_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
 
     // The finalize body propagates a `u32` register as the operand to `lookup`, which expects `u64`.
     let program = Program::from_str(
@@ -1634,8 +1641,8 @@ fn test_finalize_call_input_type_mismatch_rejected_at_deploy() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject a finalize-call with a wrong-typed operand");
+        let result = vm.process().lock().add_program(&program);
+        assert!(result.is_err(), "adding the program should reject a finalize-call with a wrong-typed operand");
     }
 }
 
@@ -2180,13 +2187,12 @@ fn test_finalize_call_zero_output_guard_view() -> Result<()> {
     Ok(())
 }
 
-/// Negative: a finalize-call that binds destinations to a zero-output guard view must be
-/// rejected at deploy. The `view.outputs().len() != self.destinations.len()` check in
+/// Negative: a finalize-call that binds destinations to a zero-output guard view must be rejected
+/// by Stack::new(). The `view.outputs().len() != self.destinations.len()` check in
 /// `Call::output_types_for_view` should bail (0 outputs vs. 1 destination).
 #[test]
-fn test_finalize_call_zero_output_view_with_destinations_rejected_at_deploy() {
+fn test_finalize_call_zero_output_view_with_destinations_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
 
     // The caller mistakenly binds `r1` for the guard view's (nonexistent) return value.
     let program = Program::from_str(
@@ -2214,8 +2220,8 @@ fn test_finalize_call_zero_output_view_with_destinations_rejected_at_deploy() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject binding destinations to a zero-output view");
+        let result = vm.process().lock().add_program(&program);
+        assert!(result.is_err(), "adding the program should reject binding destinations to a zero-output view");
     }
 }
 

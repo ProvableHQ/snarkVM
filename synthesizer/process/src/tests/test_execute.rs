@@ -408,7 +408,7 @@ output r4 as field.private;",
     let trace = Arc::new(RwLock::new(Trace::new()));
     let translations = Arc::new(RwLock::new(Vec::new()));
     let call_stack = CallStack::execute(authorization, trace, translations).unwrap();
-    let response = stack.execute_function::<CurrentAleo, _>(call_stack, None, None, rng).unwrap();
+    let response = stack.execute_function::<CurrentAleo, _>(call_stack, None, None, rng).unwrap().unwrap();
     let candidate = response.outputs();
     assert_eq!(3, candidate.len());
     assert_eq!(r2, candidate[0]);

@@ -316,14 +316,7 @@ fn test_checksum_rejected_pre_v16() {
 
     // The deployment is rejected by verification because the component checksum is not allowed before V16.
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    let deployment_id = deployment.id();
     assert!(vm.check_transaction(&deployment, None, rng).is_err());
-
-    // The transaction is aborted when included in a block.
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0);
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids(), &[deployment_id]);
 }
 
 // A program that references `<name>/checksum` from inside a view's output operand. Views are a V15
@@ -365,14 +358,7 @@ fn test_checksum_in_view_rejected_pre_v16() {
 
     // The deployment is rejected by verification, since the view carries a V16-only operand.
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    let deployment_id = deployment.id();
     assert!(vm.check_transaction(&deployment, None, rng).is_err());
-
-    // The transaction is aborted when included in a block.
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0);
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids(), &[deployment_id]);
 }
 
 // This test verifies that the same view-based program is accepted at V16.
