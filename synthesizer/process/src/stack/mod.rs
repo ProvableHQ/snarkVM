@@ -440,7 +440,7 @@ impl<N: Network> Stack<N> {
         }
 
         // Type-check every view function and cache the result. The cached types are read by
-        // both the external view path (`evaluate_view_at_height`) and the in-block call path
+        // both the external view path (`evaluate_view_with_stack`) and the in-block call path
         // when finalize calls a view, so we avoid recomputing them on every invocation.
         for view in self.program.views().values() {
             let name = view.name();
