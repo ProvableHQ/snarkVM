@@ -411,7 +411,7 @@ mod tests {
 
     use std::{
         io::{Read, Write},
-        net::TcpListener,
+        net::{TcpListener, TcpStream},
         str::FromStr,
         sync::{
             Arc,
@@ -423,25 +423,42 @@ mod tests {
     type CurrentNetwork = TestnetV0;
     type CurrentQuery = Query<CurrentNetwork, BlockMemory<CurrentNetwork>>;
 
-    /// Serves `reply` on the first connection, then holds the socket open.
+    /// Listens on a loopback port and hands each accepted connection to
+    /// `serve` on its own thread, counting the connections as they arrive.
     ///
-    /// Returns the base URL. An empty `reply` is a node that accepts the request
-    /// and answers nothing, which is distinct from a refused connection: that
-    /// returns on its own, while this is indistinguishable from a slow node.
-    fn stalling_node(reply: &'static [u8]) -> String {
+    /// Returns the base URL and the count.
+    fn node(serve: impl Fn(TcpStream) + Clone + Send + 'static) -> (String, Arc<AtomicUsize>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
         let url = format!("http://{}", listener.local_addr().expect("the bound address"));
+        let connections = Arc::new(AtomicUsize::new(0));
+
+        let seen = connections.clone();
         std::thread::spawn(move || {
-            if let Ok((mut stream, _)) = listener.accept() {
-                let mut buffer = [0u8; 1024];
-                let _: Result<usize, _> = stream.read(&mut buffer);
-                let _: Result<(), _> = stream.write_all(reply);
-                let _: Result<(), _> = stream.flush();
-                // Held, not finished, until the client gives up and closes.
-                let _: Result<usize, _> = stream.read(&mut buffer);
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else { break };
+                seen.fetch_add(1, Ordering::SeqCst);
+                let serve = serve.clone();
+                std::thread::spawn(move || serve(stream));
             }
         });
-        url
+        (url, connections)
+    }
+
+    /// Serves `reply` on each connection, then holds the socket open until the
+    /// client gives up and closes.
+    ///
+    /// An empty `reply` is a node that accepts the request and answers nothing,
+    /// which is distinct from a refused connection: that returns on its own,
+    /// while this is indistinguishable from a slow node.
+    fn stalling_node(reply: &'static [u8]) -> (String, Arc<AtomicUsize>) {
+        node(move |mut stream| {
+            let mut buffer = [0u8; 1024];
+            let _ = stream.read(&mut buffer);
+            let _ = stream.write_all(reply);
+            let _ = stream.flush();
+            // Held, not finished: read and discard until the close.
+            while matches!(stream.read(&mut buffer), Ok(read) if read > 0) {}
+        })
     }
 
     fn bounded_query(url: &str, stall: Duration, total: Duration) -> RestQuery<CurrentNetwork> {
@@ -452,45 +469,43 @@ mod tests {
         )
     }
 
-    /// Answers every request on a connection, counting the connections it is
-    /// asked to accept.
-    fn counting_node() -> (String, Arc<AtomicUsize>) {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
-        let url = format!("http://{}", listener.local_addr().expect("the bound address"));
-        let connections = Arc::new(AtomicUsize::new(0));
+    /// A complete, correctly framed height, so the connection returns to the
+    /// pool rather than closing.
+    const HEIGHT: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 3\r\n\r\n123";
 
-        let seen = connections.clone();
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(mut stream) = stream else { break };
-                seen.fetch_add(1, Ordering::SeqCst);
-                std::thread::spawn(move || {
-                    let mut chunk = [0u8; 1024];
-                    let mut pending: Vec<u8> = Vec::new();
-                    loop {
-                        match stream.read(&mut chunk) {
-                            Ok(0) | Err(_) => break,
-                            Ok(read) => pending.extend_from_slice(&chunk[..read]),
-                        }
-                        // One answer per request, found by its header
-                        // terminator rather than per read: a request split
-                        // across segments would otherwise be answered twice,
-                        // and the spare answer would be served from the pool to
-                        // the next query, which is what this test is measuring.
-                        while let Some(end) = pending.windows(4).position(|w| w == b"\r\n\r\n") {
-                            pending.drain(..end + 4);
-                            // Complete and correctly framed, so the connection
-                            // returns to the pool rather than closing.
-                            let _: Result<(), _> = stream.write_all(
-                                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 3\r\n\r\n123",
-                            );
-                            let _: Result<(), _> = stream.flush();
-                        }
-                    }
-                });
+    /// Answers the first `answers` requests on a connection with `HEIGHT`, and
+    /// abandons the connection on the one after.
+    ///
+    /// One answer per request, found by its header terminator rather than per
+    /// read: a request split across segments would otherwise be answered
+    /// twice, and the spare answer would be served from the pool to the next
+    /// query, which is what the reuse test is measuring.
+    fn answer_requests(mut stream: TcpStream, answers: usize) {
+        let mut chunk = [0u8; 1024];
+        let mut pending: Vec<u8> = Vec::new();
+        let mut answered = 0;
+        loop {
+            match stream.read(&mut chunk) {
+                Ok(0) | Err(_) => return,
+                Ok(read) => pending.extend_from_slice(&chunk[..read]),
             }
-        });
-        (url, connections)
+            while let Some(end) = pending.windows(4).position(|w| w == b"\r\n\r\n") {
+                pending.drain(..end + 4);
+                if answered == answers {
+                    // Gone without answering: the client sent this on a
+                    // connection the pool believed was good.
+                    return;
+                }
+                let _ = stream.write_all(HEIGHT);
+                let _ = stream.flush();
+                answered += 1;
+            }
+        }
+    }
+
+    /// Answers every request on every connection.
+    fn counting_node() -> (String, Arc<AtomicUsize>) {
+        node(|stream| answer_requests(stream, usize::MAX))
     }
 
     /// Answers the first request on a connection and abandons the second.
@@ -499,72 +514,14 @@ mod tests {
     /// to a client still holding it: the socket is open when the request goes
     /// out, and no answer comes back.
     fn abandoning_node() -> (String, Arc<AtomicUsize>) {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
-        let url = format!("http://{}", listener.local_addr().expect("the bound address"));
-        let connections = Arc::new(AtomicUsize::new(0));
-
-        let seen = connections.clone();
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(mut stream) = stream else { break };
-                seen.fetch_add(1, Ordering::SeqCst);
-                std::thread::spawn(move || {
-                    let mut chunk = [0u8; 1024];
-                    let mut pending: Vec<u8> = Vec::new();
-                    let mut answered = false;
-                    loop {
-                        match stream.read(&mut chunk) {
-                            Ok(0) | Err(_) => break,
-                            Ok(read) => pending.extend_from_slice(&chunk[..read]),
-                        }
-                        while let Some(end) = pending.windows(4).position(|w| w == b"\r\n\r\n") {
-                            pending.drain(..end + 4);
-                            if answered {
-                                // Gone without answering, which is the case
-                                // under test: the client sent this on a
-                                // connection the pool believed was good.
-                                return;
-                            }
-                            let _: Result<(), _> = stream.write_all(
-                                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 3\r\n\r\n123",
-                            );
-                            let _: Result<(), _> = stream.flush();
-                            answered = true;
-                        }
-                    }
-                });
-            }
-        });
-        (url, connections)
-    }
-
-    /// Accepts every connection and answers none, counting what it is given.
-    fn silent_node() -> (String, Arc<AtomicUsize>) {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
-        let url = format!("http://{}", listener.local_addr().expect("the bound address"));
-        let connections = Arc::new(AtomicUsize::new(0));
-
-        let seen = connections.clone();
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(mut stream) = stream else { break };
-                seen.fetch_add(1, Ordering::SeqCst);
-                std::thread::spawn(move || {
-                    // Read and hold, so the client waits out its bound rather
-                    // than being released by a close.
-                    let mut chunk = [0u8; 1024];
-                    while matches!(stream.read(&mut chunk), Ok(read) if read > 0) {}
-                });
-            }
-        });
-        (url, connections)
+        node(|stream| answer_requests(stream, 1))
     }
 
     /// A timeout is not a lost request, so it is not asked again: the bounds
     /// `with_timeouts` sets are what they say only if they are spent once.
     #[test]
     fn a_query_that_times_out_is_not_asked_again() {
-        let (url, connections) = silent_node();
+        let (url, connections) = stalling_node(b"");
         let query = bounded_query(&url, Duration::from_secs(30), Duration::from_millis(500));
 
         let started = Instant::now();
@@ -612,7 +569,7 @@ mod tests {
     /// the total bound can end the wait.
     #[test]
     fn a_node_that_never_answers_does_not_block_for_ever() {
-        let url = stalling_node(b"");
+        let (url, _) = stalling_node(b"");
         let query = bounded_query(&url, Duration::from_secs(30), Duration::from_millis(500));
 
         let started = Instant::now();
@@ -627,7 +584,7 @@ mod tests {
     /// well before the total one it would otherwise wait out.
     #[test]
     fn a_node_that_stops_mid_answer_does_not_block_for_ever() {
-        let url = stalling_node(b"HTTP/1.1 200 OK\r\nContent-Length: 4096\r\n\r\npartial");
+        let (url, _) = stalling_node(b"HTTP/1.1 200 OK\r\nContent-Length: 4096\r\n\r\npartial");
         let query = bounded_query(&url, Duration::from_millis(500), Duration::from_secs(120));
 
         let started = Instant::now();
