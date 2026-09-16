@@ -98,10 +98,10 @@ impl<N: Network> RestQuery<N> {
             return Ok(client);
         }
         let builder = reqwest::Client::builder();
-        // Bounds are set off wasm only. reqwest's wasm `ClientBuilder` has no
-        // timeout methods to call -- the browser owns the request and its
-        // deadlines -- so naming one there does not compile. A wasm build keeps
-        // the shared client and carries no bounds of its own.
+        // The connect and stall bounds are set off wasm only. reqwest's wasm
+        // `ClientBuilder` has neither method -- the browser owns the connection
+        // -- so naming one there does not compile. The total bound is set per
+        // request in `get_request_async`, which both backends support.
         #[cfg(not(target_arch = "wasm32"))]
         let builder = {
             let timeouts = self.agent.config().timeouts();
@@ -111,9 +111,6 @@ impl<N: Network> RestQuery<N> {
             }
             if let Some(stall) = timeouts.recv_body {
                 builder = builder.read_timeout(stall);
-            }
-            if let Some(total) = timeouts.global {
-                builder = builder.timeout(total);
             }
             builder
         };
@@ -363,8 +360,17 @@ impl<N: Network> RestQuery<N> {
     #[cfg(feature = "async")]
     async fn get_request_async<T: DeserializeOwned>(&self, route: &str) -> Result<T> {
         let endpoint = self.build_endpoint(route)?;
-        let response =
-            self.client()?.get(&endpoint).send().await.with_context(|| format!("Failed to fetch from {endpoint}"))?;
+        let mut request = self.client()?.get(&endpoint);
+        // The total bound goes on the request rather than the client, since
+        // that is the one place reqwest's wasm backend accepts it: there it
+        // aborts the browser fetch, so a wasm build is bounded too.
+        if let Some(total) = self.agent.config().timeouts().global {
+            request = request.timeout(total);
+        }
+        // No retry here to mirror the sync path's: hyper-util already retries
+        // a request cancelled unstarted on a reused connection
+        // (`retry_canceled_requests` defaults to true).
+        let response = request.send().await.with_context(|| format!("Failed to fetch from {endpoint}"))?;
 
         if response.status().is_success() {
             response.json().await.with_context(|| format!("Failed to parse JSON response from {endpoint}"))
