@@ -237,11 +237,7 @@ impl<N: Network> QueryTrait<N> for RestQuery<N> {
     /// Returns a list of state paths for the given list of `commitment`s.
     #[cfg(feature = "async")]
     async fn get_state_paths_for_commitments_async(&self, commitments: &[Field<N>]) -> Result<Vec<StatePath<N>>> {
-        // Zero commitments means zero state paths, so there is nothing to ask for.
-        // An execution with no record inputs -- any public transfer -- reaches
-        // here with an empty slice, and issuing the request anyway is both a
-        // needless round trip and, on some nodes, a failure: an empty
-        // `?commitments=` is answered with a 502 rather than an empty list.
+        // See `get_state_paths_for_commitments`.
         if commitments.is_empty() {
             return Ok(Vec::new());
         }
