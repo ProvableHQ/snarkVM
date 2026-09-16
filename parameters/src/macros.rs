@@ -84,8 +84,15 @@ macro_rules! impl_store_and_remote_fetch {
             const HEADERS: Option<Duration> = Some(Duration::from_secs(30));
             const STALL: Option<Duration> = Some(Duration::from_secs(60));
 
-            // One agent, so the download reuses the probe's connection.
-            let agent: ureq::Agent = ureq::Agent::config_builder().max_redirects(10).timeout_connect(CONNECT).build().into();
+            // One agent, so the download reuses the probe's connection. `CONNECT` also bounds the DNS
+            // lookup and the request send, where ureq (3.3) completes the TLS handshake.
+            let agent: ureq::Agent = ureq::Agent::config_builder()
+                .max_redirects(10)
+                .timeout_resolve(CONNECT)
+                .timeout_connect(CONNECT)
+                .timeout_send_request(CONNECT)
+                .build()
+                .into();
 
             // `timeout_recv_response` goes on the HEAD probe, not the GET, because ureq (3.3) keeps that
             // deadline through the body read; `timeout_recv_body` resets per read, so it ends a stalled
