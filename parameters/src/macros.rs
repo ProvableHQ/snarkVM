@@ -79,80 +79,49 @@ macro_rules! impl_store_and_remote_fetch {
                 println!("{}", output.dimmed());
             }
 
+            use std::time::Duration;
+            const CONNECT: Option<Duration> = Some(Duration::from_secs(10));
+            const HEADERS: Option<Duration> = Some(Duration::from_secs(30));
+            const STALL: Option<Duration> = Some(Duration::from_secs(60));
+
+            // One agent for the probe and the download, so the download reuses
+            // the probe's connection rather than paying a second handshake.
+            let agent: ureq::Agent = ureq::Agent::config_builder().max_redirects(10).timeout_connect(CONNECT).build().into();
+
+            // Bounds are set per request, and the two requests take different
+            // ones. Both are described against ureq 3.3.0's timeout semantics;
+            // check `timings.rs` before bumping it.
+            //
+            // `timeout_recv_response` cannot go on the download: ureq keeps
+            // checking that deadline through the body read, anchored at the
+            // moment the headers landed, so on a GET it caps the whole
+            // download rather than the wait for its headers. A HEAD has no
+            // body for it to cap, so the wait for a peer to start answering
+            // is bounded there instead. Any answer counts, an error status
+            // included: the probe asks whether the peer is there, not whether
+            // it serves HEAD. A peer that answers the probe and then sends no
+            // headers on the GET is still waited on for ever; this narrows
+            // that window rather than closing it.
+            //
+            // `timeout_recv_body` resets on each successful read, so it ends
+            // a download that has stopped moving without capping how long a
+            // file of hundreds of megabytes may take over a slow link.
+            let fetch_once = |buffer: &mut Vec<u8>| -> Result<(), ureq::Error> {
+                agent.head(url).config().http_status_as_error(false).timeout_recv_response(HEADERS).build().call()?;
+                let mut response = agent.get(url).config().timeout_recv_body(STALL).build().call()?;
+                // Read here, inside the retried unit, so that a stall partway
+                // through the body reaches the retry arms below; a retry after
+                // a partial read starts from an empty buffer.
+                buffer.clear();
+                response.body_mut().as_reader().read_to_end(buffer)?;
+                Ok(())
+            };
+
             // Retry up to 3 times on transient errors (5xx, 429, IO, timeout).
             let mut attempts = 3u32;
             loop {
-                // Whether the peer is answering at all, asked before
-                // committing to the download.
-                //
-                // Nothing bounds the wait for the download's first response
-                // byte. ureq checks a phase against one level of preceding
-                // phase, and `RecvResponse` is preceded by `SendRequest` and
-                // `SendBody`, so `timeout_connect` does not carry into it; with
-                // the rest unset, a peer that completes the handshake, takes
-                // the request and then sends nothing is waited on for ever.
-                //
-                // `timeout_recv_response` is the bound for that, and it cannot
-                // go on the download itself: during `RecvBody` ureq still
-                // checks the `RecvResponse` deadline, anchored at the moment
-                // the headers landed, so there it caps how long a download may
-                // take rather than how long its headers may take to arrive. A
-                // HEAD has no body for it to cap, which is what makes the two
-                // separable.
-                //
-                // Any answer counts, an error status included: this asks
-                // whether the peer is there, not whether it serves HEAD. Only a
-                // timeout or an I/O failure says nobody is, and both reach the
-                // retry arms below.
-                //
-                // This narrows the window rather than closing it. A peer that
-                // answers here and then goes silent on the GET is still waited
-                // on for ever.
-                let probe = ureq::head(url)
-                    .config()
-                    .max_redirects(10)
-                    .http_status_as_error(false)
-                    .timeout_connect(Some(std::time::Duration::from_secs(10)))
-                    .timeout_recv_response(Some(std::time::Duration::from_secs(30)))
-                    .build()
-                    .call()
-                    .map(|_| ());
-
-                // Progress is what is bounded on the download, not duration.
-                // These files are hundreds of megabytes, so any cap on the whole
-                // download is either short enough to break an honest one over a
-                // slow link or too long to catch anything; `timeout_recv_body`
-                // resets on each successful read, so it ends a download that has
-                // stopped moving without limiting how large one may be.
-                //
-                // A download that finishes late is still worth finishing. The
-                // caller that was waiting on it may already have given up, but
-                // the file lands on disk, and the attempt after it finds it
-                // there rather than starting again.
-                let outcome = probe.and_then(|()| {
-                    ureq::get(url)
-                        .config()
-                        .max_redirects(10)
-                        .timeout_connect(Some(std::time::Duration::from_secs(10)))
-                        .timeout_recv_body(Some(std::time::Duration::from_secs(60)))
-                        .build()
-                        .call()
-                        .and_then(|mut response| {
-                            // Read inside the retriable expression, so that a
-                            // stall partway through the body reaches the arms
-                            // below. Read after the `match`, it would leave by
-                            // `?` on the first attempt, which is the case the
-                            // timeout exists for.
-                            buffer.clear();
-                            response.body_mut().as_reader().read_to_end(buffer)?;
-                            Ok(())
-                        })
-                });
-
-                match outcome {
-                    Ok(()) => {
-                        break;
-                    }
+                match fetch_once(buffer) {
+                    Ok(()) => break,
                     Err(ureq::Error::StatusCode(code)) if attempts > 0 && (code >= 500 || code == 429) => {
                         attempts -= 1;
                     }
