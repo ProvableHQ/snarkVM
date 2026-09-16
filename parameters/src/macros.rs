@@ -84,34 +84,16 @@ macro_rules! impl_store_and_remote_fetch {
             const HEADERS: Option<Duration> = Some(Duration::from_secs(30));
             const STALL: Option<Duration> = Some(Duration::from_secs(60));
 
-            // One agent for the probe and the download, so the download reuses
-            // the probe's connection rather than paying a second handshake.
+            // One agent, so the download reuses the probe's connection.
             let agent: ureq::Agent = ureq::Agent::config_builder().max_redirects(10).timeout_connect(CONNECT).build().into();
 
-            // Bounds are set per request, and the two requests take different
-            // ones. Both are described against ureq 3.3.0's timeout semantics;
-            // check `timings.rs` before bumping it.
-            //
-            // `timeout_recv_response` cannot go on the download: ureq keeps
-            // checking that deadline through the body read, anchored at the
-            // moment the headers landed, so on a GET it caps the whole
-            // download rather than the wait for its headers. A HEAD has no
-            // body for it to cap, so the wait for a peer to start answering
-            // is bounded there instead. Any answer counts, an error status
-            // included: the probe asks whether the peer is there, not whether
-            // it serves HEAD. A peer that answers the probe and then sends no
-            // headers on the GET is still waited on for ever; this narrows
-            // that window rather than closing it.
-            //
-            // `timeout_recv_body` resets on each successful read, so it ends
-            // a download that has stopped moving without capping how long a
-            // file of hundreds of megabytes may take over a slow link.
+            // `timeout_recv_response` goes on the HEAD probe, not the GET, because ureq (3.3) keeps that
+            // deadline through the body read; `timeout_recv_body` resets per read, so it ends a stalled
+            // download without capping a long one.
             let fetch_once = |buffer: &mut Vec<u8>| -> Result<(), ureq::Error> {
                 agent.head(url).config().http_status_as_error(false).timeout_recv_response(HEADERS).build().call()?;
                 let mut response = agent.get(url).config().timeout_recv_body(STALL).build().call()?;
-                // Read here, inside the retried unit, so that a stall partway
-                // through the body reaches the retry arms below; a retry after
-                // a partial read starts from an empty buffer.
+                // Read inside the retried unit, so a mid-body stall reaches the retry arms below.
                 buffer.clear();
                 response.body_mut().as_reader().read_to_end(buffer)?;
                 Ok(())
