@@ -32,17 +32,12 @@ use std::{str::FromStr, time::Duration};
 /// How long to wait for a connection to be established.
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// How long a response may go without delivering more of itself.
-///
-/// Resets on every successful read, so it bounds a peer that stops mid-answer
-/// without capping how large an answer may be.
+/// How long a response may go without delivering more of itself; resets on every read, so it
+/// bounds a peer that stops mid-answer without capping how large an answer may be.
 const DEFAULT_STALL_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// How long a whole request may take.
-///
-/// The only bound that covers a peer which accepts the connection, takes the
-/// request and then sends nothing at all: the stall bound above measures gaps
-/// between reads, and a response that never starts has none.
+/// How long a whole request may take: the only bound that covers a peer which takes the request
+/// and never starts answering, since a response that never starts has no gaps between reads.
 const DEFAULT_TOTAL_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Queries that use a node's REST API as their source of information.
@@ -52,12 +47,10 @@ const DEFAULT_TOTAL_TIMEOUT: Duration = Duration::from_secs(300);
 #[derive(Clone)]
 pub struct RestQuery<N: Network> {
     base_url: http::Uri,
-    /// Carries the bounds as well as the connection pool, and is the one place
-    /// they are held: the async client is configured from these on first use.
+    /// Carries the bounds as well as the connection pool; the async client is configured from these.
     agent: ureq::Agent,
-    /// Built on first use and shared by every clone, so that repeated queries
-    /// reuse a connection. Deferred because building one can fail and this type
-    /// is constructed infallibly; the error surfaces on the request instead.
+    /// Built on first use, since building one can fail and this type is constructed infallibly;
+    /// shared by every clone, so that repeated queries reuse a connection.
     #[cfg(feature = "async")]
     client: std::sync::Arc<std::sync::OnceLock<reqwest::Client>>,
     _marker: std::marker::PhantomData<N>,
@@ -88,20 +81,16 @@ impl<N: Network> From<http::Uri> for RestQuery<N> {
 }
 
 impl<N: Network> RestQuery<N> {
-    /// The client shared by every request this query makes, built on first use.
-    ///
-    /// A racing caller may build a second one, which is dropped; both carry the
-    /// same configuration, so which survives does not matter.
+    /// The client shared by every request this query makes, built on first use. Racing callers
+    /// may build two with identical configuration; the loser is dropped.
     #[cfg(feature = "async")]
     fn client(&self) -> Result<&reqwest::Client> {
         if let Some(client) = self.client.get() {
             return Ok(client);
         }
         let builder = reqwest::Client::builder();
-        // The connect and stall bounds are set off wasm only. reqwest's wasm
-        // `ClientBuilder` has neither method -- the browser owns the connection
-        // -- so naming one there does not compile. The total bound is set per
-        // request in `get_request_async`, which both backends support.
+        // reqwest's wasm `ClientBuilder` has neither method (the browser owns the connection);
+        // the total bound is set per request, which both backends support.
         #[cfg(not(target_arch = "wasm32"))]
         let builder = {
             let timeouts = self.agent.config().timeouts();
@@ -118,12 +107,8 @@ impl<N: Network> RestQuery<N> {
         Ok(self.client.get_or_init(|| built))
     }
 
-    /// Sets how long each request to the node may take.
-    ///
-    /// `connect` bounds establishing the connection, `stall` the gap between successive reads of
-    /// the answer, and `total` the request as a whole. On the async path `stall` also bounds the
-    /// wait for the first byte; on the sync path only `total` does, since ureq's body bound starts
-    /// with the body.
+    /// Sets how long each request may take: `connect` to establish the connection, `stall` between
+    /// successive reads of the answer (and, on the async path only, before its first byte), `total` overall.
     pub fn with_timeouts(mut self, connect: Duration, stall: Duration, total: Duration) -> Self {
         self.agent = agent(connect, stall, total);
         #[cfg(feature = "async")]
@@ -220,11 +205,8 @@ impl<N: Network> QueryTrait<N> for RestQuery<N> {
 
     /// Returns a list of state paths for the given list of `commitment`s.
     fn get_state_paths_for_commitments(&self, commitments: &[Field<N>]) -> Result<Vec<StatePath<N>>> {
-        // Zero commitments means zero state paths, so there is nothing to ask for.
-        // An execution with no record inputs -- any public transfer -- reaches
-        // here with an empty slice, and issuing the request anyway is both a
-        // needless round trip and, on some nodes, a failure: an empty
-        // `?commitments=` is answered with a 502 rather than an empty list.
+        // Zero commitments means zero state paths; some nodes answer an empty `?commitments=`
+        // with a 502, and every execution without record inputs reaches here with an empty slice.
         if commitments.is_empty() {
             return Ok(Vec::new());
         }
@@ -300,12 +282,8 @@ impl<N: Network> RestQuery<N> {
         Ok(path)
     }
 
-    /// Calls `endpoint`, asking once more if the request was lost on a pooled connection.
-    ///
-    /// ureq has no retry of its own, and a peer may close a pooled connection between two
-    /// queries without the pool noticing until the next request fails on it. Only the call is
-    /// retried, never the body read, and not on `Error::Timeout`: the second attempt gets what is
-    /// left of the total bound, so the bound is paid once either way.
+    /// Calls `endpoint`, asking once more if the request was lost on a pooled connection the peer
+    /// had closed; the second attempt gets only what is left of the total bound.
     #[cfg(not(target_arch = "wasm32"))]
     fn call(&self, endpoint: &str) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
         let started = std::time::Instant::now();
@@ -373,11 +351,8 @@ impl<N: Network> RestQuery<N> {
         Ok(request)
     }
 
-    /// Async counterpart of [`Self::call`]: one more attempt, within what is left of the total
-    /// bound, for a request that failed on a pooled connection the peer had already closed.
-    ///
-    /// hyper-util retries only a request it never began writing; one written to a socket that
-    /// looks open and is not surfaces as a request error, and is not a timeout or a connect failure.
+    /// Async counterpart of [`Self::call`]. hyper-util retries only a request it never began
+    /// writing; one written to a closed pooled socket surfaces as a plain request error.
     #[cfg(all(feature = "async", not(target_arch = "wasm32")))]
     async fn send(&self, endpoint: &str) -> Result<reqwest::Response> {
         let total = self.agent.config().timeouts().global;
@@ -457,9 +432,7 @@ mod tests {
     type CurrentNetwork = TestnetV0;
     type CurrentQuery = Query<CurrentNetwork, BlockMemory<CurrentNetwork>>;
 
-    /// Listens on a loopback port and hands each accepted connection to
-    /// `serve` on its own thread, counting the connections as they arrive.
-    ///
+    /// Listens on a loopback port, serving each connection on its own thread and counting them.
     /// Returns the base URL and the count.
     fn node(serve: impl Fn(TcpStream) + Clone + Send + 'static) -> (String, Arc<AtomicUsize>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
@@ -478,12 +451,8 @@ mod tests {
         (url, connections)
     }
 
-    /// Serves `reply` on each connection, then holds the socket open until the
-    /// client gives up and closes.
-    ///
-    /// An empty `reply` is a node that accepts the request and answers nothing,
-    /// which is distinct from a refused connection: that returns on its own,
-    /// while this is indistinguishable from a slow node.
+    /// Serves `reply` on each connection, then holds the socket open until the client closes.
+    /// An empty `reply` is a node that accepts the request and answers nothing.
     fn stalling_node(reply: &'static [u8]) -> (String, Arc<AtomicUsize>) {
         node(move |mut stream| {
             let mut buffer = [0u8; 1024];
@@ -507,13 +476,8 @@ mod tests {
     /// pool rather than closing.
     const HEIGHT: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 3\r\n\r\n123";
 
-    /// Answers the first `answers` requests on a connection with `HEIGHT`, and
-    /// abandons the connection on the one after.
-    ///
-    /// One answer per request, found by its header terminator rather than per
-    /// read: a request split across segments would otherwise be answered
-    /// twice, and the spare answer would be served from the pool to the next
-    /// query, which is what the reuse test is measuring.
+    /// Answers the first `answers` requests on a connection with `HEIGHT` and abandons the next.
+    /// One answer per header terminator, not per read, so a split request is not answered twice.
     fn answer_requests(mut stream: TcpStream, answers: usize) {
         let mut chunk = [0u8; 1024];
         let mut pending: Vec<u8> = Vec::new();
@@ -542,11 +506,8 @@ mod tests {
         node(|stream| answer_requests(stream, usize::MAX))
     }
 
-    /// Answers the first request on a connection and abandons the second.
-    ///
-    /// This is what a peer that has given up on a pooled connection looks like
-    /// to a client still holding it: the socket is open when the request goes
-    /// out, and no answer comes back.
+    /// Answers the first request on a connection and abandons the second: what a peer that has
+    /// given up on a pooled connection looks like to a client still holding it.
     fn abandoning_node() -> (String, Arc<AtomicUsize>) {
         node(|stream| answer_requests(stream, 1))
     }
@@ -590,9 +551,8 @@ mod tests {
         assert!(waited < Duration::from_millis(1400), "the total bound was paid twice, it waited {waited:?}");
     }
 
-    /// ureq has no retry of its own, so a request lost on a pooled connection
-    /// the peer has since abandoned reaches the caller as an error. The second
-    /// query here goes out on the connection the first left in the pool.
+    /// The second query goes out on the connection the first left in the pool, which the peer
+    /// has since abandoned; ureq has no retry of its own.
     #[test]
     fn a_query_lost_on_a_pooled_connection_is_asked_again() {
         let (url, connections) = abandoning_node();
@@ -604,9 +564,8 @@ mod tests {
         assert_eq!(connections.load(Ordering::SeqCst), 2, "the request was not asked again on a fresh connection");
     }
 
-    /// The point of holding the agent rather than building one per call: a
-    /// caller reading the chain per transaction should not pay a handshake each
-    /// time.
+    /// The point of holding the agent: a caller reading the chain per transaction should not pay
+    /// a handshake each time.
     #[test]
     fn repeated_queries_share_a_connection() {
         let (url, connections) = counting_node();
@@ -614,9 +573,8 @@ mod tests {
         // otherwise hold this for the default five minutes rather than fail.
         let query = bounded_query(&url, Duration::from_secs(5), Duration::from_secs(10));
 
-        // A height, because the body has to deserialize: a reader abandoned
-        // part way leaves the connection unusable, so a failed parse would not
-        // exercise pooling at all.
+        // A height, because the body has to deserialize: a reader abandoned part way leaves the
+        // connection unusable, so a failed parse would not exercise pooling at all.
         query.current_block_height().expect("the node answers a height");
         query.current_block_height().expect("the node answers a height");
 
