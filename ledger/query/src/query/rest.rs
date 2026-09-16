@@ -120,8 +120,10 @@ impl<N: Network> RestQuery<N> {
 
     /// Sets how long each request to the node may take.
     ///
-    /// `connect` bounds establishing the connection, `stall` the gap between
-    /// successive reads of the answer, and `total` the request as a whole.
+    /// `connect` bounds establishing the connection, `stall` the gap between successive reads of
+    /// the answer, and `total` the request as a whole. On the async path `stall` also bounds the
+    /// wait for the first byte; on the sync path only `total` does, since ureq's body bound starts
+    /// with the body.
     pub fn with_timeouts(mut self, connect: Duration, stall: Duration, total: Duration) -> Self {
         self.agent = agent(connect, stall, total);
         #[cfg(feature = "async")]
@@ -298,31 +300,38 @@ impl<N: Network> RestQuery<N> {
         Ok(path)
     }
 
+    /// Calls `endpoint`, asking once more if the request was lost on a pooled connection.
+    ///
+    /// ureq has no retry of its own, and a peer may close a pooled connection between two
+    /// queries without the pool noticing until the next request fails on it. Only the call is
+    /// retried, never the body read, and not on `Error::Timeout`: the second attempt gets what is
+    /// left of the total bound, so the bound is paid once either way.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn call(&self, endpoint: &str) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
+        let started = std::time::Instant::now();
+        match self.agent.get(endpoint).call() {
+            Err(ureq::Error::Io(_)) => {
+                let remaining =
+                    self.agent.config().timeouts().global.map(|total| total.saturating_sub(started.elapsed()));
+                self.agent.get(endpoint).config().timeout_global(remaining).build().call()
+            }
+            first => first,
+        }
+    }
+
+    /// On wasm there is no clock to budget a retry with, and no connection pool to lose one on.
+    #[cfg(target_arch = "wasm32")]
+    fn call(&self, endpoint: &str) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
+        self.agent.get(endpoint).call()
+    }
+
     /// Performs a GET request to the given URL and deserializes the returned JSON.
     ///
     /// # Arguments
     ///  - `route`: the specific API route to use, e.g., `stateRoot/latest`
     fn get_request<T: DeserializeOwned>(&self, route: &str) -> Result<T> {
         let endpoint = self.build_endpoint(route)?;
-        // A connection taken from the pool may have been closed by the peer
-        // since it was returned, and ureq has no retry of its own.
-        // `ConnectionPool::reuse` catches only a close that has already landed,
-        // so the request goes out on a socket that looks open and is not, and
-        // the loss reaches the caller as an error it cannot tell from a node
-        // being down. These GETs are idempotent, so it is asked again.
-        //
-        // Only the call is retried, never the body read below, so a second
-        // attempt happens only when no part of an answer had arrived.
-        //
-        // Deliberately not on `Error::Timeout`. That has already spent the
-        // bound `with_timeouts` sets, and a bound that can be paid twice is not
-        // the bound the caller asked for.
-        let mut response = match self.agent.get(&endpoint).call() {
-            Err(ureq::Error::Io(_)) => self.agent.get(&endpoint).call(),
-            first => first,
-        }
-        // This handles I/O errors.
-        .with_context(|| format!("Failed to fetch from {endpoint}"))?;
+        let mut response = self.call(&endpoint).with_context(|| format!("Failed to fetch from {endpoint}"))?;
 
         if response.status().is_success() {
             response.body_mut().read_json().with_context(|| format!("Failed to parse JSON response from {endpoint}"))
@@ -353,6 +362,41 @@ impl<N: Network> RestQuery<N> {
         }
     }
 
+    /// Sends a GET to `endpoint` under the total bound, which goes on the request rather than the
+    /// client because that is where reqwest's wasm backend accepts it.
+    #[cfg(feature = "async")]
+    fn request(&self, endpoint: &str, total: Option<Duration>) -> Result<reqwest::RequestBuilder> {
+        let mut request = self.client()?.get(endpoint);
+        if let Some(total) = total {
+            request = request.timeout(total);
+        }
+        Ok(request)
+    }
+
+    /// Async counterpart of [`Self::call`]: one more attempt, within what is left of the total
+    /// bound, for a request that failed on a pooled connection the peer had already closed.
+    ///
+    /// hyper-util retries only a request it never began writing; one written to a socket that
+    /// looks open and is not surfaces as a request error, and is not a timeout or a connect failure.
+    #[cfg(all(feature = "async", not(target_arch = "wasm32")))]
+    async fn send(&self, endpoint: &str) -> Result<reqwest::Response> {
+        let total = self.agent.config().timeouts().global;
+        let started = std::time::Instant::now();
+        match self.request(endpoint, total)?.send().await {
+            Err(error) if error.is_request() && !error.is_timeout() && !error.is_connect() => {
+                let remaining = total.map(|total| total.saturating_sub(started.elapsed()));
+                Ok(self.request(endpoint, remaining)?.send().await?)
+            }
+            first => Ok(first?),
+        }
+    }
+
+    /// On wasm the browser owns the connection, and there is no clock to budget a retry with.
+    #[cfg(all(feature = "async", target_arch = "wasm32"))]
+    async fn send(&self, endpoint: &str) -> Result<reqwest::Response> {
+        Ok(self.request(endpoint, self.agent.config().timeouts().global)?.send().await?)
+    }
+
     /// Async version of [`Self::get_request`]. Performs a GET request to the given URL and deserializes the returned JSON.
     ///
     /// # Arguments
@@ -360,17 +404,7 @@ impl<N: Network> RestQuery<N> {
     #[cfg(feature = "async")]
     async fn get_request_async<T: DeserializeOwned>(&self, route: &str) -> Result<T> {
         let endpoint = self.build_endpoint(route)?;
-        let mut request = self.client()?.get(&endpoint);
-        // The total bound goes on the request rather than the client, since
-        // that is the one place reqwest's wasm backend accepts it: there it
-        // aborts the browser fetch, so a wasm build is bounded too.
-        if let Some(total) = self.agent.config().timeouts().global {
-            request = request.timeout(total);
-        }
-        // No retry here to mirror the sync path's: hyper-util already retries
-        // a request cancelled unstarted on a reused connection
-        // (`retry_canceled_requests` defaults to true).
-        let response = request.send().await.with_context(|| format!("Failed to fetch from {endpoint}"))?;
+        let response = self.send(&endpoint).await.with_context(|| format!("Failed to fetch from {endpoint}"))?;
 
         if response.status().is_success() {
             response.json().await.with_context(|| format!("Failed to parse JSON response from {endpoint}"))
@@ -530,6 +564,30 @@ mod tests {
 
         assert_eq!(connections.load(Ordering::SeqCst), 1, "the request was asked again and the bound paid twice");
         assert!(waited < Duration::from_secs(5), "the bound was not spent once, it waited {waited:?}");
+    }
+
+    /// Accepts, reads the request, waits `hold`, then closes without answering.
+    fn closing_node(hold: Duration) -> (String, Arc<AtomicUsize>) {
+        node(move |mut stream| {
+            let mut buffer = [0u8; 1024];
+            let _ = stream.read(&mut buffer);
+            std::thread::sleep(hold);
+        })
+    }
+
+    /// A request lost late in the total bound is asked again, but with only what is left of that
+    /// bound: the second attempt is not a second budget.
+    #[test]
+    fn a_lost_request_is_asked_again_within_the_total_bound() {
+        let (url, connections) = closing_node(Duration::from_millis(800));
+        let query = bounded_query(&url, Duration::from_secs(30), Duration::from_secs(1));
+
+        let started = Instant::now();
+        assert!(query.current_block_height().is_err(), "a node that closes without answering cannot produce a height");
+        let waited = started.elapsed();
+
+        assert_eq!(connections.load(Ordering::SeqCst), 2, "the lost request was not asked again");
+        assert!(waited < Duration::from_millis(1400), "the total bound was paid twice, it waited {waited:?}");
     }
 
     /// ureq has no retry of its own, so a request lost on a pooled connection
