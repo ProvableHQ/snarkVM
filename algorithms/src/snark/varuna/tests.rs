@@ -864,13 +864,13 @@ mod varuna_test_vectors {
     // Test Varuna against test vectors for a specific circuit.
     fn test_circuit_with_test_vectors(create_test_vectors: bool, circuit: &str) {
         // Initialize the parts of the witness used in the multiplicative constraints.
-        let witness_path = format!("src/snark/varuna/resources/{circuit}/witness.input");
+        let witness_path = resources_path(false).join(circuit).join("witness.input");
         let instance_file = fs::read_to_string(witness_path).expect("Could not read the file");
         let witness: Vec<u128> = serde_json::from_str(instance_file.lines().next().unwrap()).unwrap();
         let (a, b) = (witness[0], witness[1]);
 
         // Initialize challenges from file.
-        let challenges_path = format!("src/snark/varuna/resources/{circuit}/challenges.input");
+        let challenges_path = resources_path(false).join(circuit).join("challenges.input");
         let challenges_file = fs::read_to_string(challenges_path).expect("Could not read the file");
         let mut challenges = Vec::new();
         for line in challenges_file.lines() {
