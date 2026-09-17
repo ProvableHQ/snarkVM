@@ -15,28 +15,22 @@
 
 #![allow(clippy::type_complexity)]
 
-#[cfg(feature = "history")]
-use crate::program::HeightBytes;
 use crate::{
     CommitteeStorage,
     CommitteeStore,
     FinalizeStorage,
     helpers::memory::{MemoryMap, NestedMemoryMap},
 };
-#[cfg(feature = "history-staking-rewards")]
-use console::types::Address;
 use console::{
     prelude::*,
     program::{Identifier, Plaintext, ProgramID, Value},
-    types::Field,
+    types::{Address, Field},
 };
 use snarkvm_ledger_block::RejectedReason;
 use snarkvm_ledger_committee::Committee;
 
 use aleo_std_storage::StorageMode;
 use indexmap::IndexSet;
-#[cfg(feature = "history")]
-use std::sync::{Arc, atomic::AtomicU32};
 
 /// An in-memory finalize storage.
 #[derive(Clone)]
@@ -49,17 +43,7 @@ pub struct FinalizeMemory<N: Network> {
     key_value_map: NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>,
     /// The rejection reason map.
     rejected_reason_map: MemoryMap<Field<N>, RejectedReason<N>>,
-    /// The historical mapping value map (keyed by big-endian block height).
-    #[cfg(feature = "history")]
-    mapping_update_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>,
-    /// The legacy heights index; present only for keys written before the BE schema change.
-    #[cfg(feature = "history")]
-    mapping_update_heights_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>,
-    /// The current block height.
-    #[cfg(feature = "history")]
-    block_height: Arc<AtomicU32>,
     /// The historical staking rewards map.
-    #[cfg(feature = "history-staking-rewards")]
     staking_rewards_map: MemoryMap<(Address<N>, u32), (Address<N>, u64, u64)>,
     /// The storage mode.
     storage_mode: StorageMode,
@@ -71,11 +55,6 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     type ProgramIDMap = MemoryMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
     type RejectedReasonMap = MemoryMap<Field<N>, RejectedReason<N>>;
-    #[cfg(feature = "history")]
-    type MappingUpdateMap = MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>;
-    #[cfg(feature = "history")]
-    type MappingUpdateHeightsMap = MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>;
-    #[cfg(feature = "history-staking-rewards")]
     type StakingRewardsMap = MemoryMap<(Address<N>, u32), (Address<N>, u64, u64)>;
 
     /// Initializes the finalize storage.
@@ -85,21 +64,12 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
         let committee_store = CommitteeStore::<N, CommitteeMemory<N>>::open(storage.clone())?;
         // Seed the history height guard from the last committed block height.
         // Returns 0 for a fresh database that has no committee data yet.
-        #[cfg(feature = "history")]
-        let initial_height = committee_store.current_height().unwrap_or(0);
         // Return the finalize store.
         Ok(Self {
             committee_store,
             program_id_map: MemoryMap::default(),
             key_value_map: NestedMemoryMap::default(),
             rejected_reason_map: MemoryMap::default(),
-            #[cfg(feature = "history")]
-            mapping_update_map: MemoryMap::default(),
-            #[cfg(feature = "history")]
-            mapping_update_heights_map: MemoryMap::default(),
-            #[cfg(feature = "history")]
-            block_height: Arc::new(AtomicU32::new(initial_height)),
-            #[cfg(feature = "history-staking-rewards")]
             staking_rewards_map: MemoryMap::default(),
             storage_mode: storage,
         })
@@ -125,19 +95,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
         &self.rejected_reason_map
     }
 
-    /// Returns the historical value map.
-    #[cfg(feature = "history")]
-    fn mapping_update_map(&self) -> &Self::MappingUpdateMap {
-        &self.mapping_update_map
-    }
-
-    #[cfg(feature = "history")]
-    fn mapping_update_heights_map(&self) -> &Self::MappingUpdateHeightsMap {
-        &self.mapping_update_heights_map
-    }
-
     /// Returns the historical staking rewards map.
-    #[cfg(feature = "history-staking-rewards")]
     fn staking_rewards_map(&self) -> &Self::StakingRewardsMap {
         &self.staking_rewards_map
     }
@@ -145,12 +103,6 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode {
         &self.storage_mode
-    }
-
-    /// Returns the current block height.
-    #[cfg(feature = "history")]
-    fn current_block_height(&self) -> &AtomicU32 {
-        &self.block_height
     }
 }
 

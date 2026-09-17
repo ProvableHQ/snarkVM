@@ -29,6 +29,8 @@ pub enum MapID {
     TransitionInput(TransitionInputMap),
     TransitionOutput(TransitionOutputMap),
     Program(ProgramMap),
+    Metadata(MetadataMap),
+    Retired(RetiredMap),
     #[cfg(test)]
     Test(TestMap),
 }
@@ -47,6 +49,8 @@ impl From<MapID> for u16 {
             MapID::TransitionInput(id) => id as u16,
             MapID::TransitionOutput(id) => id as u16,
             MapID::Program(id) => id as u16,
+            MapID::Metadata(id) => id as u16,
+            MapID::Retired(id) => id as u16,
             #[cfg(test)]
             MapID::Test(id) => id as u16,
         }
@@ -212,10 +216,32 @@ pub enum TransitionMap {
 pub enum ProgramMap {
     ProgramID = DataID::ProgramIDMap as u16,
     KeyValueID = DataID::KeyValueMap as u16,
-    MappingUpdate = DataID::MappingUpdateMap as u16,
-    MappingUpdateHeights = DataID::MappingUpdateHeightsMap as u16,
     StakingRewards = DataID::StakingRewardsMap as u16,
     RejectedReason = DataID::RejectedReasonMap as u16,
+}
+
+/// The RocksDB map prefix for storage metadata.
+///
+/// A single map holding a handful of well-known keys rather than one map per item, so that future
+/// metadata needs no further `DataID` variants (which can never be removed once written).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u16)]
+pub enum MetadataMap {
+    Metadata = DataID::StorageMetadataMap as u16,
+}
+
+/// The RocksDB map prefixes of tables that are no longer written or read.
+///
+/// No typed map is opened on these; they exist so that a storage migration can name the prefix
+/// it clears. A retired prefix must never be reused for a new table, as an old database may
+/// still hold data under it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u16)]
+pub enum RetiredMap {
+    /// The historical mapping updates of the removed `history` feature.
+    MappingUpdate = DataID::MappingUpdateMap as u16,
+    /// The per-key update heights of the removed `history` feature.
+    MappingUpdateHeights = DataID::MappingUpdateHeightsMap as u16,
 }
 
 /// The RocksDB map prefix for test-related entries.
@@ -317,11 +343,10 @@ enum DataID {
     IDEditionMap,
     // Track deployments that contain an optional checksum
     DeploymentChecksumMap,
-    // Historical mappings.
+    // Retired (see `RetiredMap`): the historical mapping updates of the removed `history` feature.
     MappingUpdateMap,
-    // Historical mapping update heights.
     MappingUpdateHeightsMap,
-    /// Historical staking rewards.
+    // Historical staking rewards.
     StakingRewardsMap,
 
     // Track dynamic record inputs.
@@ -344,6 +369,9 @@ enum DataID {
 
     // Track rejection reasons for rejected transactions
     RejectedReasonMap,
+
+    // Storage metadata: the schema version.
+    StorageMetadataMap,
 
     // Testing
     #[cfg(test)]

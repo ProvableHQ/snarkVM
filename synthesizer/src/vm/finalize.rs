@@ -17,7 +17,6 @@ use super::*;
 
 use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
 use snarkvm_ledger_puzzle::SolutionID;
-#[cfg(feature = "history-staking-rewards")]
 use snarkvm_ledger_store::helpers::Map;
 use snarkvm_synthesizer_error::{
     FinalizeError,
@@ -545,13 +544,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             rejected_reasons.clear();
         }
 
-        // Update the block height used for the purposes of historical mapping accounting.
-        #[cfg(feature = "history")]
-        self.store
-            .finalize_store()
-            .current_block_height()
-            .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
-
         // Perform the finalize operation on the preset finalize mode.
         atomic_finalize!(self.finalize_store(), FinalizeMode::DryRun, {
             // Ensure the number of solutions does not exceed the maximum.
@@ -948,13 +940,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         self.ensure_sequential_processing();
 
         let timer = timer!("VM::atomic_finalize");
-
-        // Update the block height used for the purposes of historical mapping accounting.
-        #[cfg(feature = "history")]
-        self.store
-            .finalize_store()
-            .current_block_height()
-            .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
         // Signal to Slipstream plugins that canonical finalize is starting.
         #[cfg(feature = "slipstream-plugins")]
@@ -1850,31 +1835,28 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Compute the updated stakers, using the committee and block reward.
                     let next_stakers = staking_rewards(&current_stakers, &current_committee, *block_reward);
 
-                    #[cfg(feature = "history-staking-rewards")]
-                    {
+                    // Record each staker's reward, if the store is configured to, and notify
+                    // Slipstream plugins of it, if in canonical finalize mode.
+                    let record_staking_rewards = store.records_staking_rewards();
+                    #[cfg(feature = "slipstream-plugins")]
+                    let notify_staking_rewards = IS_FINALIZE;
+                    #[cfg(not(feature = "slipstream-plugins"))]
+                    let notify_staking_rewards = false;
+                    if record_staking_rewards || notify_staking_rewards {
                         let height = state.block_height();
                         for (curr_stake, (staker, (validator, new_stake))) in
                             current_stakers.values().map(|(_, current_stake)| current_stake).zip(&next_stakers)
                         {
                             let reward = new_stake - curr_stake;
-                            store.staking_rewards_map().insert((*staker, height), (*validator, reward, *new_stake))?;
-                            // Notify Slipstream plugins of the staking reward, if in canonical finalize mode.
+                            if record_staking_rewards {
+                                store
+                                    .staking_rewards_map()
+                                    .insert((*staker, height), (*validator, reward, *new_stake))?;
+                            }
                             #[cfg(feature = "slipstream-plugins")]
-                            if IS_FINALIZE {
+                            if notify_staking_rewards {
                                 store.notify_staking_reward(staker, validator, reward, *new_stake, height);
                             }
-                        }
-                    }
-
-                    // When history-staking-rewards is disabled, notify Slipstream plugins directly.
-                    #[cfg(all(feature = "slipstream-plugins", not(feature = "history-staking-rewards")))]
-                    if IS_FINALIZE {
-                        let height = state.block_height();
-                        for (curr_stake, (staker, (validator, new_stake))) in
-                            current_stakers.values().map(|(_, current_stake)| current_stake).zip(&next_stakers)
-                        {
-                            let reward = new_stake - curr_stake;
-                            store.notify_staking_reward(staker, validator, reward, *new_stake, height);
                         }
                     }
 

@@ -307,15 +307,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         self.store.transaction_store()
     }
 
-    /// Builds a `FinalizeGlobalState` from the block at the given `height`.
+    /// Builds a `FinalizeGlobalState` from the latest block.
     ///
-    /// Returns an error if no block exists at `height`. Views reuse the same shape that
-    /// the consensus path uses in `add_next_block_inner`, populating round, timestamp, the
-    /// cumulative weights, and the previous-block hash from the actual block — so any
-    /// operand or opcode that reads from `FinalizeGlobalState` (block.height,
-    /// block.timestamp, random_seed via rand.chacha, etc.) sees real values.
-    #[cfg(feature = "history")]
-    fn finalize_state_for_block(&self, height: u32) -> Result<FinalizeGlobalState> {
+    /// Views reuse the same shape that the consensus path uses in `add_next_block_inner`,
+    /// populating round, timestamp, the cumulative weights, and the previous-block hash from the
+    /// actual block — so any operand or opcode that reads from `FinalizeGlobalState`
+    /// (block.height, block.timestamp, random_seed via rand.chacha, etc.) sees real values.
+    fn finalize_state_for_latest_block(&self) -> Result<FinalizeGlobalState> {
+        let height = self.block_store().current_block_height();
         let block_hash =
             self.block_store().get_block_hash(height)?.ok_or_else(|| anyhow!("No block exists at height {height}"))?;
         let block = self
@@ -342,83 +341,23 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         )
     }
 
-    /// Evaluates a view function against finalize-store state at the given block `height`.
+    /// Evaluates a view function against the latest confirmed finalize-store state.
     /// Returns the typed outputs.
     ///
-    /// Mapping reads are pinned to `height` via the per-key historical update map, and the
-    /// `FinalizeGlobalState` is reconstructed from the block at `height`. Available only with
-    /// `--features history`.
-    ///
-    /// snarkOS calls this with `current_block_height()` for "latest", or any earlier height
-    /// for historic views. `height` must satisfy `height <= current_block_height()`.
-    ///
-    /// The view body is taken from the program edition live at `height`.
-    #[cfg(feature = "history")]
+    /// The `FinalizeGlobalState` is reconstructed from the latest block, and the view body is
+    /// taken from the program's current edition.
     #[inline]
-    pub fn evaluate_view_at_height(
+    pub fn evaluate_view(
         &self,
         program_id: impl TryInto<ProgramID<N>>,
         view_name: impl TryInto<Identifier<N>>,
         inputs: Vec<Value<N>>,
-        height: u32,
     ) -> Result<Vec<Value<N>>> {
         let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
         let view_name = view_name.try_into().map_err(|_| anyhow!("Invalid view function name"))?;
-        let state = self.finalize_state_for_block(height)?;
-        let edition = self.resolve_program_edition_at_height(&program_id, height)?;
-        let latest_stack = self.process.get_stack(program_id)?;
-        let stack = if *latest_stack.program_edition() == edition {
-            // The historic edition is already the loaded one.
-            latest_stack
-        } else {
-            // Build a one-off stack for the historic edition. `new_raw` skips upgrade validation, as the
-            // process holds a newer edition; views can't `call`, so the live (latest) imports resolve
-            // identically (struct, record, and mapping types are frozen across upgrades).
-            let program = self
-                .transaction_store()
-                .deployment_store()
-                .get_program_for_edition(&program_id, edition)?
-                .ok_or_else(|| anyhow!("Program '{program_id}' (edition {edition}) was not found in storage"))?;
-            let stack = Stack::new_raw(&self.process, &program, edition)?;
-            stack.initialize_and_check(&self.process)?;
-            Arc::new(stack)
-        };
-        snarkvm_synthesizer_process::evaluate_view_with_stack_at_height(
-            state,
-            self.finalize_store(),
-            &stack,
-            &view_name,
-            inputs,
-            height,
-        )
-    }
-
-    /// Returns the program edition live at block `height`: the newest edition whose original
-    /// deployment was confirmed at or before `height`. Editions deploy in increasing block order.
-    #[cfg(feature = "history")]
-    fn resolve_program_edition_at_height(&self, program_id: &ProgramID<N>, height: u32) -> Result<u16> {
-        let deployment_store = self.transaction_store().deployment_store();
-        let block_store = self.block_store();
-        let latest_edition = deployment_store
-            .get_latest_edition_for_program(program_id)?
-            .ok_or_else(|| anyhow!("Program '{program_id}' has not been deployed"))?;
-        for edition in (0..=latest_edition).rev() {
-            let Some(transaction_id) =
-                deployment_store.find_original_transaction_id_from_program_id_and_edition(program_id, edition)?
-            else {
-                continue;
-            };
-            let Some(block_hash) = block_store.find_block_hash(&transaction_id)? else {
-                continue;
-            };
-            let Some(deployment_height) = block_store.get_block_height(&block_hash)? else {
-                continue;
-            };
-            if deployment_height <= height {
-                return Ok(edition);
-            }
-        }
-        bail!("Program '{program_id}' was not deployed at or before height {height}")
+        let state = self.finalize_state_for_latest_block()?;
+        let stack = self.process.get_stack(program_id)?;
+        snarkvm_synthesizer_process::evaluate_view_with_stack(state, self.finalize_store(), &stack, &view_name, inputs)
     }
 
     /// Returns the transition store.
