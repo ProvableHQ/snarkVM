@@ -68,7 +68,7 @@ dev_skip_state_root_check = []
 snark-print = [ "snarkvm-algorithms/snark-print" ]
 test_consensus_heights = [ "snarkvm-synthesizer-process/test_consensus_heights" ]
 memory-intensive = [ ]
-metrics = [ "dep:snarkvm-metrics" ]
+metrics = [ "dep:snarkvm-metrics", "snarkvm-ledger-store/metrics" ]
 
 [[bench]]
 name = "kary_merkle_tree"

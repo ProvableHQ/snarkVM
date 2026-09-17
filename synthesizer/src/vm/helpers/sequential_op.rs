@@ -31,7 +31,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         thread::spawn(move || {
             // Sequentially process incoming operations.
             while let Ok(request) = request_rx.recv() {
-                let SequentialOperationRequest { op, response_tx } = request;
+                let SequentialOperationRequest { op, response_tx, queued_at } = request;
+                #[cfg(feature = "metrics")]
+                snarkvm_metrics::histogram(
+                    snarkvm_metrics::vm::SEQUENTIAL_OP_QUEUE_WAIT_SECONDS,
+                    queued_at.elapsed().as_secs_f64(),
+                );
+                let _ = queued_at;
                 trace!("Sequentially processing operation '{op}'");
 
                 // Perform the queued operation.
@@ -58,7 +64,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Prepare a oneshot channel to obtain the result of the queued operation.
         let (response_tx, response_rx) = oneshot::channel();
-        let request = SequentialOperationRequest { op, response_tx };
+        let request = SequentialOperationRequest { op, response_tx, queued_at: std::time::Instant::now() };
 
         // This pattern match is infallible unless already shutting down the thread.
         if let Some(tx) = &*self.sequential_ops_tx.read() {
@@ -108,6 +114,7 @@ impl<N: Network> fmt::Display for SequentialOperation<N> {
 pub struct SequentialOperationRequest<N: Network> {
     op: SequentialOperation<N>,
     response_tx: oneshot::Sender<SequentialOperationResult<N>>,
+    queued_at: std::time::Instant,
 }
 
 /// Represents the results of all the sequential operations.

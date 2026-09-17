@@ -96,6 +96,8 @@ pub mod vm {
     pub const SPECULATE_IN_FLIGHT: &str = "snarkvm_vm_speculate_in_flight";
     /// Wall time of `VM::speculate` in seconds.
     pub const SPECULATE_DURATION_SECONDS: &str = "snarkvm_vm_speculate_duration_seconds";
+    /// Time from enqueueing a sequential operation until the sequential thread starts it.
+    pub const SEQUENTIAL_OP_QUEUE_WAIT_SECONDS: &str = "snarkvm_vm_sequential_op_queue_wait_seconds";
 
     /// Increments an in-flight gauge until dropped, then records elapsed seconds.
     pub struct TimedInFlight {
@@ -207,6 +209,20 @@ pub mod vm {
     pub(super) fn in_flight_count(fingerprint: u64) -> usize {
         in_flight_map().get(&fingerprint).copied().unwrap_or(0)
     }
+}
+
+/// Per-map atomic-batch contention.
+///
+/// Overlay `ATOMIC_BATCH_LOCK_WAIT_SECONDS` with `ATOMIC_SPECULATE_DURATION_SECONDS` and
+/// `ATOMIC_BATCH_OFF_THREAD_SPECULATIVE_READ_TOTAL` to detect off-thread speculative
+/// readers stalling the sequential dry-run thread.
+pub mod store {
+    /// Wall time spent waiting to acquire a per-map atomic-batch mutex, in seconds.
+    /// Recorded only for waits of at least 1ms.
+    pub const ATOMIC_BATCH_LOCK_WAIT_SECONDS: &str = "snarkvm_store_atomic_batch_lock_wait_seconds";
+    /// Speculative reads that skipped the pending batch because they ran off the owner thread.
+    pub const ATOMIC_BATCH_OFF_THREAD_SPECULATIVE_READ_TOTAL: &str =
+        "snarkvm_store_atomic_batch_off_thread_speculative_read_total";
 }
 
 /// RocksDB internal database metrics.
