@@ -79,14 +79,38 @@ macro_rules! impl_store_and_remote_fetch {
                 println!("{}", output.dimmed());
             }
 
+            use std::time::Duration;
+            const CONNECT: Option<Duration> = Some(Duration::from_secs(10));
+            const HEADERS: Option<Duration> = Some(Duration::from_secs(30));
+            const STALL: Option<Duration> = Some(Duration::from_secs(60));
+
+            // One agent, so the download reuses the probe's connection. `CONNECT` also bounds the DNS
+            // lookup and the request send, where ureq (3.3) completes the TLS handshake.
+            let agent: ureq::Agent = ureq::Agent::config_builder()
+                .max_redirects(10)
+                .timeout_resolve(CONNECT)
+                .timeout_connect(CONNECT)
+                .timeout_send_request(CONNECT)
+                .build()
+                .into();
+
+            // `timeout_recv_response` goes on the HEAD probe, not the GET, because ureq (3.3) keeps that
+            // deadline through the body read; `timeout_recv_body` resets per read, so it ends a stalled
+            // download without capping a long one.
+            let fetch_once = |buffer: &mut Vec<u8>| -> Result<(), ureq::Error> {
+                agent.head(url).config().http_status_as_error(false).timeout_recv_response(HEADERS).build().call()?;
+                let mut response = agent.get(url).config().timeout_recv_body(STALL).build().call()?;
+                // Read inside the retried unit, so a mid-body stall reaches the retry arms below.
+                buffer.clear();
+                response.body_mut().as_reader().read_to_end(buffer)?;
+                Ok(())
+            };
+
             // Retry up to 3 times on transient errors (5xx, 429, IO, timeout).
             let mut attempts = 3u32;
             loop {
-                match ureq::get(url).config().max_redirects(10).build().call() {
-                    Ok(mut response) => {
-                        response.body_mut().as_reader().read_to_end(buffer)?;
-                        break;
-                    }
+                match fetch_once(buffer) {
+                    Ok(()) => break,
                     Err(ureq::Error::StatusCode(code)) if attempts > 0 && (code >= 500 || code == 429) => {
                         attempts -= 1;
                     }
