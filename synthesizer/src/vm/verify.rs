@@ -967,7 +967,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // TODO (howardwu): This check is technically insufficient. Consider moving this upstream
         //  to the speculation layer.
-        // If the fee is public, speculatively check the account balance.
+        // If the fee is public, check the confirmed account balance.
         if fee.is_fee_public() {
             // Retrieve the payer.
             let Some(payer) = fee.payer() else {
@@ -975,7 +975,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             };
             // Retrieve the account balance of the payer.
             let Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) =
-                self.finalize_store().get_value_speculative(
+                self.finalize_store().get_value_confirmed(
                     ProgramID::from_str("credits.aleo")?,
                     Identifier::from_str("account")?,
                     &Plaintext::from(Literal::Address(payer)),

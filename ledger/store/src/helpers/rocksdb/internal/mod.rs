@@ -42,7 +42,7 @@ use std::{
     sync::{
         Arc,
         LazyLock,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
 };
 
@@ -212,6 +212,7 @@ impl Database for RocksDB {
             database,
             context,
             batch_in_progress: Default::default(),
+            atomic_owner: Default::default(),
             atomic_batch: Default::default(),
             checkpoints: Default::default(),
         })))
@@ -241,6 +242,7 @@ impl Database for RocksDB {
             database,
             context,
             batch_in_progress: Default::default(),
+            atomic_owner: Default::default(),
             atomic_batch: Default::default(),
             checkpoints: Default::default(),
         })

@@ -4191,4 +4191,90 @@ finalize compute:
         let rejection_reason = vm.finalize_store().get_rejected_reason(&tx_id).unwrap();
         assert!(rejection_reason.is_some(), "Rejection reason should be stored");
     }
+
+    #[test]
+    fn test_pregenerated_public_fee_checks_do_not_stall_atomic_speculate() {
+        use aleo_std::StorageMode;
+        use console::network::TestnetV0;
+        use std::{
+            process::Command,
+            sync::{
+                Arc,
+                atomic::{AtomicBool, Ordering},
+            },
+            time::{Duration, Instant},
+        };
+
+        let zip = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+            "../snarkos-stress-testing/pregenerated_transactions/transactions-testnet-40val-10-22-9349107e39bb93a84f9a539602ae3cca1372557e_test_network-6000-20.zip",
+        );
+        if !zip.exists() {
+            eprintln!("skipping: pregenerated executions not found at {}", zip.display());
+            return;
+        }
+
+        let mut transactions = Vec::with_capacity(64);
+        for i in 0..64 {
+            let name = format!("transaction_files/executions-testnet-40val-22-{i}.txt");
+            let output = Command::new("unzip").args(["-p"]).arg(&zip).arg(&name).output().unwrap();
+            assert!(output.status.success(), "failed to extract {name}");
+            let raw = String::from_utf8(output.stdout).unwrap();
+            let transaction: Transaction<TestnetV0> = serde_json::from_str(&raw).unwrap();
+            transactions.push(transaction);
+        }
+
+        #[cfg(not(feature = "rocks"))]
+        type TestnetLedger = snarkvm_ledger_store::helpers::memory::ConsensusMemory<TestnetV0>;
+        #[cfg(feature = "rocks")]
+        type TestnetLedger = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<TestnetV0>;
+
+        let vm =
+            VM::<TestnetV0, TestnetLedger>::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap();
+
+        let program_id = ProgramID::from_str("credits.aleo").unwrap();
+        let account = Identifier::from_str("account").unwrap();
+        let payers: Vec<_> = transactions
+            .iter()
+            .filter_map(|transaction| transaction.fee_transition()?.payer())
+            .map(|payer| Plaintext::from(Literal::Address(payer)))
+            .collect();
+        assert!(!payers.is_empty(), "expected public-fee payers in the pregenerated executions");
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let readers: Vec<_> = (0..8)
+            .map(|i| {
+                let vm = vm.clone();
+                let payers = payers.clone();
+                let stop = stop.clone();
+                std::thread::spawn(move || {
+                    while !stop.load(Ordering::Relaxed) {
+                        let payer = &payers[i % payers.len()];
+                        let _ = vm.finalize_store().get_value_speculative(program_id, account, payer);
+                    }
+                })
+            })
+            .collect();
+
+        let start = Instant::now();
+        let result = vm.atomic_speculate(
+            sample_finalize_state(1),
+            TestnetV0::BLOCK_TIME as i64,
+            None,
+            vec![],
+            None.into(),
+            transactions,
+        );
+        let elapsed = start.elapsed();
+
+        stop.store(true, Ordering::Relaxed);
+        for reader in readers {
+            reader.join().unwrap();
+        }
+
+        assert!(result.is_ok(), "atomic_speculate should complete: {result:?}");
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "atomic_speculate stalled for {elapsed:?} under concurrent speculative fee-balance reads"
+        );
+    }
 }
