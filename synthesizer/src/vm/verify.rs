@@ -917,14 +917,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         };
         lap!(timer, "Verify the execution");
 
-        // Ensure the global state root exists in the block store.
+        // Ensure the global state root exists in the block store, unless `dev_skip_state_root_check` is enabled.
         let result = match verification {
-            // Ensure the global state root exists in the block store.
-            Ok(()) => match self.block_store().contains_state_root(&execution.global_state_root()) {
-                Ok(true) => Ok(()),
-                Ok(false) => bail!("Execution verification failed - global state root does not exist (yet)"),
-                Err(error) => bail!("Execution verification failed - {error}"),
-            },
+            Ok(()) => {
+                #[cfg(not(feature = "dev_skip_state_root_check"))]
+                match self.block_store().contains_state_root(&execution.global_state_root()) {
+                    Ok(true) => Ok(()),
+                    Ok(false) => bail!("Execution verification failed - global state root does not exist (yet)"),
+                    Err(error) => bail!("Execution verification failed - {error}"),
+                }
+                #[cfg(feature = "dev_skip_state_root_check")]
+                Ok(())
+            }
             Err(error) => bail!("Execution verification failed - {error}"),
         };
         finish!(timer, "Check the global state root");
@@ -1003,13 +1007,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             ensure!(balance >= fee_amount, "Fee verification failed: insufficient balance");
         }
 
-        // Ensure the global state root exists in the block store.
+        // Ensure the global state root exists in the block store, unless `dev_skip_state_root_check` is enabled.
         let result = match verification {
-            Ok(()) => match self.block_store().contains_state_root(&fee.global_state_root()) {
-                Ok(true) => Ok(()),
-                Ok(false) => bail!("Fee verification failed - State root {} not found", fee.global_state_root()),
-                Err(error) => bail!("Fee verification failed - Storage error - {error}"),
-            },
+            Ok(()) => {
+                #[cfg(not(feature = "dev_skip_state_root_check"))]
+                match self.block_store().contains_state_root(&fee.global_state_root()) {
+                    Ok(true) => Ok(()),
+                    Ok(false) => bail!("Fee verification failed - State root {} not found", fee.global_state_root()),
+                    Err(error) => bail!("Fee verification failed - Storage error - {error}"),
+                }
+                #[cfg(feature = "dev_skip_state_root_check")]
+                Ok(())
+            }
             Err(error) => bail!("Fee verification failed - {error}"),
         };
         finish!(timer, "Check the global state root");
@@ -1181,6 +1190,37 @@ mod tests {
                 }
                 _ => panic!("Expected an execution with a fee"),
             }
+        }
+    }
+
+    #[test]
+    fn test_check_transaction_unknown_global_state_root() {
+        let rng = &mut TestRng::default();
+        // Use a VM with no blocks so the sampled transactions' genesis state root is unknown.
+        let vm = crate::vm::test_helpers::sample_vm();
+
+        let execution_transaction = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
+        let deployment_transaction = crate::vm::test_helpers::sample_deployment_transaction(rng);
+
+        let execution = execution_transaction.execution().unwrap();
+        let execution_fee = execution_transaction.fee_transition().unwrap();
+        let deployment_fee = deployment_transaction.fee_transition().unwrap();
+        assert!(!vm.block_store().contains_state_root(&execution.global_state_root()).unwrap());
+        assert!(!vm.block_store().contains_state_root(&execution_fee.global_state_root()).unwrap());
+        assert!(!vm.block_store().contains_state_root(&deployment_fee.global_state_root()).unwrap());
+
+        let execution_result = vm.check_transaction(&execution_transaction, None, rng);
+        let deployment_result = vm.check_transaction(&deployment_transaction, None, rng);
+
+        #[cfg(feature = "dev_skip_state_root_check")]
+        {
+            execution_result.expect("execution with an unknown global state root should pass");
+            deployment_result.expect("deployment with an unknown global state root should pass");
+        }
+        #[cfg(not(feature = "dev_skip_state_root_check"))]
+        {
+            assert!(execution_result.is_err());
+            assert!(deployment_result.is_err());
         }
     }
 
