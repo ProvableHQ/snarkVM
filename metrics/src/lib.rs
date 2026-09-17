@@ -39,6 +39,19 @@ pub mod committee {
     pub const TOTAL_STAKE: &str = "snarkvm_ledger_committee_total_stake";
 }
 
+/// Per-map atomic-batch contention.
+///
+/// Overlay `ATOMIC_BATCH_LOCK_WAIT_SECONDS` with `ATOMIC_BATCH_OFF_THREAD_SPECULATIVE_READ_TOTAL`
+/// to detect off-thread speculative readers stalling the sequential dry-run thread.
+pub mod store {
+    /// Wall time spent waiting to acquire a per-map atomic-batch mutex, in seconds.
+    /// Recorded only for waits of at least 1ms.
+    pub const ATOMIC_BATCH_LOCK_WAIT_SECONDS: &str = "snarkvm_store_atomic_batch_lock_wait_seconds";
+    /// Speculative reads that skipped the pending batch because they ran off the owner thread.
+    pub const ATOMIC_BATCH_OFF_THREAD_SPECULATIVE_READ_TOTAL: &str =
+        "snarkvm_store_atomic_batch_off_thread_speculative_read_total";
+}
+
 /// RocksDB internal database metrics.
 ///
 /// Polled and published by calling `BlockStore::export_rocksdb_metrics()` from an existing
