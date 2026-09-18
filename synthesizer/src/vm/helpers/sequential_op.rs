@@ -13,11 +13,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::vm::*;
+use crate::{Stack, vm::*};
 use console::network::prelude::Network;
 
-use std::{fmt, thread};
+use indexmap::IndexMap;
+use std::{fmt, sync::Arc, thread};
 use tokio::sync::oneshot;
+
+/// State retained after a successful construct-path speculate, so check can skip a second dry-run
+/// and add can finish the pending finalize batch instead of replaying it.
+pub(crate) struct SelfConstructed<N: Network> {
+    /// Set after the candidate block is built.
+    pub hash: Option<N::BlockHash>,
+    /// Finalize operations from the construct-path speculate, used by `Block::verify`.
+    pub finalize_operations: Vec<FinalizeOperation<N>>,
+    /// Staged stacks parked off `Process` so the mempool does not observe uncommitted programs.
+    pub parked_stacks: IndexMap<ProgramID<N>, Arc<Stack<N>>>,
+    /// When `true`, the finalize-store atomic batch is still open and must be finished or aborted.
+    pub batch_kept: bool,
+}
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Launches a thread dedicated to the sequential processing of storage-related
@@ -31,7 +45,31 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         thread::spawn(move || {
             // Sequentially process incoming operations.
             while let Ok(request) = request_rx.recv() {
-                let SequentialOperationRequest { op, response_tx } = request;
+                let SequentialOperationRequest { op, response_tx, queued_at } = request;
+                let op_label = match &op {
+                    SequentialOperation::AddNextBlock(_) => "add_next_block",
+                    SequentialOperation::AtomicSpeculate { .. } => "atomic_speculate",
+                    SequentialOperation::DiscardKeptSpeculation => "discard_kept_speculation",
+                };
+                let queue_wait = queued_at.elapsed().as_secs_f64();
+                #[cfg(feature = "metrics")]
+                {
+                    snarkvm_metrics::histogram_label(
+                        snarkvm_metrics::vm::SEQUENTIAL_OP_QUEUE_WAIT_SECONDS,
+                        "op",
+                        op_label.to_string(),
+                        queue_wait,
+                    );
+                    if matches!(op, SequentialOperation::AtomicSpeculate { .. }) {
+                        snarkvm_metrics::histogram_label(
+                            snarkvm_metrics::vm::SPECULATE_STAGE_DURATION_SECONDS,
+                            "stage",
+                            "queue".to_string(),
+                            queue_wait,
+                        );
+                    }
+                }
+                let _ = (queued_at, op_label, queue_wait);
                 trace!("Sequentially processing operation '{op}'");
 
                 // Perform the queued operation.
@@ -40,9 +78,29 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         let ret = vm.add_next_block_inner(block);
                         SequentialOperationResult::AddNextBlock(ret)
                     }
-                    SequentialOperation::AtomicSpeculate(a, b, c, d, e, f) => {
-                        let ret = vm.atomic_speculate_inner(a, b, c, d, e, f);
+                    SequentialOperation::AtomicSpeculate {
+                        state,
+                        time_since_last_block,
+                        coinbase_reward,
+                        ratifications,
+                        solutions,
+                        transactions,
+                        keep,
+                    } => {
+                        let ret = vm.atomic_speculate_inner(
+                            state,
+                            time_since_last_block,
+                            coinbase_reward,
+                            ratifications,
+                            solutions,
+                            transactions,
+                            keep,
+                        );
                         SequentialOperationResult::AtomicSpeculate(ret)
+                    }
+                    SequentialOperation::DiscardKeptSpeculation => {
+                        vm.discard_kept_speculation_inner();
+                        SequentialOperationResult::DiscardKeptSpeculation
                     }
                 };
 
@@ -58,7 +116,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Prepare a oneshot channel to obtain the result of the queued operation.
         let (response_tx, response_rx) = oneshot::channel();
-        let request = SequentialOperationRequest { op, response_tx };
+        let request = SequentialOperationRequest { op, response_tx, queued_at: std::time::Instant::now() };
 
         // This pattern match is infallible unless already shutting down the thread.
         if let Some(tx) = &*self.sequential_ops_tx.read() {
@@ -83,12 +141,80 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     pub fn ensure_sequential_processing(&self) {
         assert_eq!(thread::current().id(), self.sequential_ops_thread.lock().as_ref().unwrap().thread().id());
     }
+
+    /// Returns `true` when the caller is the sequential operations thread.
+    fn is_on_sequential_thread(&self) -> bool {
+        self.sequential_ops_thread.lock().as_ref().is_some_and(|handle| handle.thread().id() == thread::current().id())
+    }
+
+    /// Records construct-path speculate outputs for skip-check and optional keep-batch commit.
+    pub(crate) fn store_self_constructed(
+        &self,
+        finalize_operations: Vec<FinalizeOperation<N>>,
+        parked_stacks: IndexMap<ProgramID<N>, Arc<Stack<N>>>,
+        batch_kept: bool,
+    ) {
+        *self.self_constructed.lock() =
+            Some(SelfConstructed { hash: None, finalize_operations, parked_stacks, batch_kept });
+    }
+
+    /// Associates a constructed block hash with the last construct-path speculate.
+    pub fn bind_self_constructed_hash(&self, hash: N::BlockHash) {
+        if let Some(constructed) = self.self_constructed.lock().as_mut() {
+            constructed.hash = Some(hash);
+        }
+    }
+
+    /// Returns finalize operations from construct-path speculate when `hash` matches.
+    pub(crate) fn self_constructed_ops_for(&self, hash: N::BlockHash) -> Option<Vec<FinalizeOperation<N>>> {
+        self.self_constructed
+            .lock()
+            .as_ref()
+            .and_then(|constructed| (constructed.hash == Some(hash)).then(|| constructed.finalize_operations.clone()))
+    }
+
+    /// Takes a kept finalize batch when it belongs to `hash`.
+    pub(crate) fn take_kept_matching(&self, hash: N::BlockHash) -> Option<SelfConstructed<N>> {
+        let mut constructed = self.self_constructed.lock();
+        match constructed.as_ref() {
+            Some(entry) if entry.hash == Some(hash) && entry.batch_kept => constructed.take(),
+            _ => None,
+        }
+    }
+
+    /// Aborts a kept finalize batch and drops parked stacks. Safe to call when nothing is kept.
+    pub fn discard_kept_speculation(&self) {
+        if self.is_on_sequential_thread() {
+            self.discard_kept_speculation_inner();
+            return;
+        }
+        let _ = self.run_sequential_operation(SequentialOperation::DiscardKeptSpeculation);
+    }
+
+    /// Aborts a kept finalize batch. Must run on the sequential operations thread.
+    pub(crate) fn discard_kept_speculation_inner(&self) {
+        if let Some(kept) = self.self_constructed.lock().take()
+            && kept.batch_kept
+            && self.finalize_store().is_atomic_in_progress()
+        {
+            self.finalize_store().abort_atomic();
+        }
+    }
 }
 
 /// An operation intended to be executed only in a sequential fashion.
 pub enum SequentialOperation<N: Network> {
     AddNextBlock(Block<N>),
-    AtomicSpeculate(FinalizeGlobalState, i64, Option<u64>, Vec<Ratify<N>>, Solutions<N>, Vec<Transaction<N>>),
+    AtomicSpeculate {
+        state: FinalizeGlobalState,
+        time_since_last_block: i64,
+        coinbase_reward: Option<u64>,
+        ratifications: Vec<Ratify<N>>,
+        solutions: Solutions<N>,
+        transactions: Vec<Transaction<N>>,
+        keep: bool,
+    },
+    DiscardKeptSpeculation,
 }
 
 impl<N: Network> fmt::Display for SequentialOperation<N> {
@@ -97,8 +223,11 @@ impl<N: Network> fmt::Display for SequentialOperation<N> {
             SequentialOperation::AddNextBlock(block) => {
                 write!(f, "add block ({})", block.hash())
             }
-            SequentialOperation::AtomicSpeculate(state, ..) => {
+            SequentialOperation::AtomicSpeculate { state, .. } => {
                 write!(f, "atomic speculate (height {}, round {})", state.block_height(), state.block_round())
+            }
+            SequentialOperation::DiscardKeptSpeculation => {
+                write!(f, "discard kept speculation")
             }
         }
     }
@@ -108,6 +237,7 @@ impl<N: Network> fmt::Display for SequentialOperation<N> {
 pub struct SequentialOperationRequest<N: Network> {
     op: SequentialOperation<N>,
     response_tx: oneshot::Sender<SequentialOperationResult<N>>,
+    queued_at: std::time::Instant,
 }
 
 /// Represents the results of all the sequential operations.
@@ -121,4 +251,5 @@ pub enum SequentialOperationResult<N: Network> {
             Vec<FinalizeOperation<N>>,
         )>,
     ),
+    DiscardKeptSpeculation,
 }
