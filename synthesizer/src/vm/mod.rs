@@ -96,7 +96,7 @@ use snarkvm_synthesizer_program::{
     Program,
     StackTrait as _,
 };
-use snarkvm_utilities::try_vm_runtime;
+use snarkvm_utilities::{Defer, try_vm_runtime};
 
 use aleo_std::prelude::{finish, lap, timer};
 use anyhow::Context;
@@ -641,6 +641,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // instead of pausing and replaying RealRun.
         let kept = self.take_kept_matching(block.hash());
         let using_kept_batch = kept.is_some();
+        let mut kept_guard = using_kept_batch.then(|| {
+            Defer::new(|| {
+                if self.finalize_store().is_atomic_in_progress() {
+                    self.finalize_store().abort_atomic();
+                }
+            })
+        });
         if !using_kept_batch {
             self.discard_kept_speculation_inner();
             #[cfg(feature = "rocks")]
@@ -649,9 +656,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // First, insert the block.
         if let Err(insert_error) = self.block_store().insert(&block) {
-            if using_kept_batch {
-                self.finalize_store().abort_atomic();
-            } else if cfg!(feature = "rocks") {
+            if !using_kept_batch && cfg!(feature = "rocks") {
                 // Clear all pending atomic operations so that unpausing the atomic writes
                 // doesn't execute any of the queued storage operations.
                 self.block_store().abort_atomic();
@@ -668,6 +673,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let finish = (|| {
                 self.finalize_store().block_height().store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
                 self.finalize_store().finish_atomic()?;
+                if let Some(guard) = kept_guard.take() {
+                    guard.disarm();
+                }
                 let process = self.process.lock();
                 process.restore_staged_stacks(kept.parked_stacks);
                 process.commit_stacks();
