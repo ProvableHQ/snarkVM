@@ -387,19 +387,25 @@ impl<
             return self.get_map_confirmed(map);
         }
 
-        let start = Instant::now();
-        let pending = self.pending.lock();
-        crate::helpers::atomic_owner::record_lock_wait(start);
+        let (map_deleted, overlay) = {
+            let start = Instant::now();
+            let pending = self.pending.lock();
+            crate::helpers::atomic_owner::record_lock_wait(start);
+            (
+                pending.map_is_deleted(map),
+                pending.entries_for_map(map).map(|(k, v)| (k.clone(), v.clone())).collect::<Vec<_>>(),
+            )
+        };
 
-        let mut key_values = if pending.map_is_deleted(map) { Vec::new() } else { self.get_map_confirmed(map)? };
+        let mut key_values = if map_deleted { Vec::new() } else { self.get_map_confirmed(map)? };
 
-        for (k, v) in pending.entries_for_map(map) {
+        for (k, v) in overlay {
             match v {
-                Some(v) => match key_values.iter_mut().find(|(key, _)| key == k) {
-                    Some((_, value)) => *value = v.clone(),
-                    None => key_values.push((k.clone(), v.clone())),
+                Some(v) => match key_values.iter_mut().find(|(key, _)| key == &k) {
+                    Some((_, value)) => *value = v,
+                    None => key_values.push((k, v)),
                 },
-                None => key_values.retain(|(key, _)| key != k),
+                None => key_values.retain(|(key, _)| key != &k),
             }
         }
 
