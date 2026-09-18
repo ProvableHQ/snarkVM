@@ -20,6 +20,9 @@
 #[cfg(all(feature = "dev_skip_checks", not(feature = "test_consensus_heights")))]
 compile_error!("feature \"dev_skip_checks\" requires feature \"test_consensus_heights\".");
 
+#[cfg(all(feature = "dev_skip_state_root_check", not(feature = "test_consensus_heights")))]
+compile_error!("feature \"dev_skip_state_root_check\" requires feature \"test_consensus_heights\".");
+
 #[cfg(feature = "account")]
 pub use snarkvm_console_account as account;
 
