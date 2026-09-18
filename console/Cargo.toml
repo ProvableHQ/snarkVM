@@ -65,3 +65,4 @@ dev-print = [
   "snarkvm-console-program?/dev-print"
 ]
 dev_skip_checks = [ ]
+dev_skip_state_root_check = [ ]
