@@ -14,6 +14,7 @@
 // limitations under the License.
 
 mod helpers;
+use helpers::SelfConstructed;
 pub use helpers::*;
 
 mod authorize;
@@ -95,7 +96,7 @@ use snarkvm_synthesizer_program::{
     Program,
     StackTrait as _,
 };
-use snarkvm_utilities::try_vm_runtime;
+use snarkvm_utilities::{Defer, try_vm_runtime};
 
 use aleo_std::prelude::{finish, lap, timer};
 use anyhow::Context;
@@ -110,7 +111,7 @@ use rand::{SeedableRng, rngs::StdRng};
 use std::{
     collections::{HashMap, HashSet},
     num::NonZeroUsize,
-    sync::{Arc, mpsc},
+    sync::{Arc, atomic::AtomicU64, mpsc},
     thread,
 };
 
@@ -141,6 +142,10 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     sequential_ops_tx: Arc<RwLock<Option<mpsc::Sender<SequentialOperationRequest<N>>>>>,
     /// The handle to the thread which processes operations sequentially.
     sequential_ops_thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
+    /// Construct-path speculate output used to skip a second dry-run and optionally keep the batch.
+    self_constructed: Arc<Mutex<Option<SelfConstructed<N>>>>,
+    /// Monotonic ids for construct-path speculations, shared across `VM` clones.
+    next_speculation_id: Arc<AtomicU64>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -241,6 +246,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             sequential_ops_tx: Default::default(),
             pending_rejected_reasons: Default::default(),
             sequential_ops_thread: Default::default(),
+            self_constructed: Default::default(),
+            next_speculation_id: Default::default(),
         };
 
         // Spawn a thread for sequential operations.
@@ -630,13 +637,26 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             block_synthesis_limit,
         )?;
 
-        // Pause the atomic writes, so that both the insertion and finalization belong to a single batch.
-        #[cfg(feature = "rocks")]
-        self.block_store().pause_atomic_writes()?;
+        // When a construct-path speculate left its finalize batch open, finish that batch after insert
+        // instead of pausing and replaying RealRun.
+        let kept = self.take_kept_matching(block.hash());
+        let using_kept_batch = kept.is_some();
+        let mut kept_guard = using_kept_batch.then(|| {
+            Defer::new(|| {
+                if self.finalize_store().is_atomic_in_progress() {
+                    self.finalize_store().abort_atomic();
+                }
+            })
+        });
+        if !using_kept_batch {
+            self.discard_kept_speculation_inner();
+            #[cfg(feature = "rocks")]
+            self.block_store().pause_atomic_writes()?;
+        }
 
         // First, insert the block.
         if let Err(insert_error) = self.block_store().insert(&block) {
-            if cfg!(feature = "rocks") {
+            if !using_kept_batch && cfg!(feature = "rocks") {
                 // Clear all pending atomic operations so that unpausing the atomic writes
                 // doesn't execute any of the queued storage operations.
                 self.block_store().abort_atomic();
@@ -648,16 +668,35 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             return Err(insert_error);
         };
 
-        // Next, finalize the transactions.
-        match self.finalize(state, block.ratifications(), block.solutions(), block.transactions()) {
+        // Next, finalize the transactions — or finish a kept construct-path batch.
+        let finalize_result = if let Some(kept) = kept {
+            let finish = (|| {
+                self.finalize_store().block_height().store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
+                self.finalize_store().finish_atomic()?;
+                if let Some(guard) = kept_guard.take() {
+                    guard.disarm();
+                }
+                let process = self.process.lock();
+                process.restore_staged_stacks(kept.parked_stacks);
+                process.commit_stacks();
+                Ok::<_, anyhow::Error>(())
+            })();
+            finish.map(|_| Vec::new())
+        } else {
+            self.finalize(state, block.ratifications(), block.solutions(), block.transactions())
+        };
+
+        match finalize_result {
             Ok(_ratified_finalize_operations) => {
                 // If the block advances to `ConsensusVersion::V8`, updated the VKs used for the credits program.
                 if N::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap_or_default() == block.height() {
                     self.process.lock().update_credits_verifying_keys()?;
                 }
                 // Unpause the atomic writes, executing the ones queued from block insertion and finalization.
-                #[cfg(feature = "rocks")]
-                self.block_store().unpause_atomic_writes::<false>()?;
+                if !using_kept_batch {
+                    #[cfg(feature = "rocks")]
+                    self.block_store().unpause_atomic_writes::<false>()?;
+                }
                 // If the block advances to a new consensus version, clear the partial verification cache.
                 if N::CONSENSUS_VERSION_HEIGHTS().iter().rev().any(|(_, height)| {
                     if block.height() < *height {
@@ -671,23 +710,38 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 Ok(())
             }
             Err(finalize_error) => {
-                if cfg!(feature = "rocks") {
-                    // Clear all pending atomic operations so that unpausing the atomic writes
-                    // doesn't execute any of the queued storage operations.
+                if !using_kept_batch {
+                    if cfg!(feature = "rocks") {
+                        // Clear all pending atomic operations so that unpausing the atomic writes
+                        // doesn't execute any of the queued storage operations.
+                        self.block_store().abort_atomic();
+                        self.finalize_store().abort_atomic();
+                        // Disable the atomic batch override.
+                        // Note: This call is guaranteed to succeed (without error), because `DISCARD_BATCH == true`.
+                        self.block_store().unpause_atomic_writes::<true>()?;
+                        // Rollback the Merkle tree.
+                        self.block_store().remove_last_n_from_tree_only(1).inspect_err(|_| {
+                            // Log the finalize error.
+                            error!("Failed to finalize block {} - {finalize_error}", block.height());
+                        })?;
+                    } else {
+                        // Rollback the block.
+                        self.block_store().remove_last_n(1).inspect_err(|_| {
+                            // Log the finalize error.
+                            error!("Failed to finalize block {} - {finalize_error}", block.height());
+                        })?;
+                    }
+                } else if cfg!(feature = "rocks") {
                     self.block_store().abort_atomic();
                     self.finalize_store().abort_atomic();
-                    // Disable the atomic batch override.
-                    // Note: This call is guaranteed to succeed (without error), because `DISCARD_BATCH == true`.
-                    self.block_store().unpause_atomic_writes::<true>()?;
-                    // Rollback the Merkle tree.
                     self.block_store().remove_last_n_from_tree_only(1).inspect_err(|_| {
-                        // Log the finalize error.
                         error!("Failed to finalize block {} - {finalize_error}", block.height());
                     })?;
                 } else {
-                    // Rollback the block.
+                    if self.finalize_store().is_atomic_in_progress() {
+                        self.finalize_store().abort_atomic();
+                    }
                     self.block_store().remove_last_n(1).inspect_err(|_| {
-                        // Log the finalize error.
                         error!("Failed to finalize block {} - {finalize_error}", block.height());
                     })?;
                 }
@@ -702,6 +756,9 @@ impl<N: Network, C: ConsensusStorage<N>> Drop for VM<N, C> {
     fn drop(&mut self) {
         // Check if this the final external reference to `VM`.
         if Arc::strong_count(&self.sequential_ops_tx) == 1 {
+            // Abort any kept finalize batch before shutting down the sequential thread.
+            // Send the abort without `blocking_recv` so `VM` can drop from an async context.
+            self.discard_kept_speculation_on_drop();
             // If the background thread exists, shut it down.
             if let Some(thread) = self.sequential_ops_thread.lock().take() {
                 // First, close the channel.

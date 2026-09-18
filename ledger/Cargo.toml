@@ -86,7 +86,7 @@ locktick = [
   "snarkvm-ledger-store/locktick",
   "snarkvm-synthesizer/locktick"
 ]
-metrics = [ "snarkvm-ledger-committee/metrics", "snarkvm-ledger-store/metrics" ]
+metrics = [ "snarkvm-ledger-committee/metrics", "snarkvm-ledger-store/metrics", "snarkvm-synthesizer/metrics" ]
 # Enables the proving benchmarks in `benches/transaction.rs`.
 #
 # Off by default because proving a transaction takes seconds: on a shared CI
