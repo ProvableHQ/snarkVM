@@ -205,6 +205,22 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let _ = self.run_sequential_operation(SequentialOperation::DiscardKeptSpeculation);
     }
 
+    /// Queues a kept-batch abort without waiting, so `Drop` can run from an async context.
+    pub(crate) fn discard_kept_speculation_on_drop(&self) {
+        if self.is_on_sequential_thread() {
+            self.discard_kept_speculation_inner();
+            return;
+        }
+        let (response_tx, _response_rx) = oneshot::channel();
+        if let Some(tx) = &*self.sequential_ops_tx.read() {
+            let _ = tx.send(SequentialOperationRequest {
+                op: SequentialOperation::DiscardKeptSpeculation,
+                response_tx,
+                queued_at: std::time::Instant::now(),
+            });
+        }
+    }
+
     /// Aborts a kept finalize batch. Must run on the sequential operations thread.
     pub(crate) fn discard_kept_speculation_inner(&self) {
         if let Some(kept) = self.self_constructed.lock().take()

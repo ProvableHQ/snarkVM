@@ -757,7 +757,8 @@ impl<N: Network, C: ConsensusStorage<N>> Drop for VM<N, C> {
         // Check if this the final external reference to `VM`.
         if Arc::strong_count(&self.sequential_ops_tx) == 1 {
             // Abort any kept finalize batch before shutting down the sequential thread.
-            self.discard_kept_speculation();
+            // Send the abort without `blocking_recv` so `VM` can drop from an async context.
+            self.discard_kept_speculation_on_drop();
             // If the background thread exists, shut it down.
             if let Some(thread) = self.sequential_ops_thread.lock().take() {
                 // First, close the channel.
