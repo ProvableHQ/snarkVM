@@ -416,9 +416,12 @@ impl<
         // Return early if there is no atomic batch in progress on this thread.
         if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
             let start = Instant::now();
-            let pending = self.pending.lock();
-            crate::helpers::atomic_owner::record_lock_wait(start);
-            crate::helpers::pending_overlay::get_flat(&self.atomic_batch.lock(), &pending, key)
+            let idx = {
+                let pending = self.pending.lock();
+                crate::helpers::atomic_owner::record_lock_wait(start);
+                pending.get(key).copied()
+            };
+            idx.and_then(|i| self.atomic_batch.lock().get(i).map(|(_, value)| value.clone()))
         } else {
             None
         }
