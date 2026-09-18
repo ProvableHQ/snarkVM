@@ -25,6 +25,7 @@ mod rewards;
 pub use rewards::*;
 
 mod sequential_op;
+pub use sequential_op::SpeculationId;
 pub(crate) use sequential_op::*;
 
 pub(crate) mod transaction;

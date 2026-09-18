@@ -161,8 +161,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         candidate_solutions: &Solutions<N>,
         candidate_transactions: impl ExactSizeIterator<Item = &'a Transaction<N>>,
         rng: &mut R,
-    ) -> Result<(Ratifications<N>, Transactions<N>, Vec<N::TransactionID>, Vec<FinalizeOperation<N>>)> {
-        self.speculate_with_keep(
+    ) -> Result<(Ratifications<N>, Transactions<N>, Vec<N::TransactionID>, Vec<FinalizeOperation<N>>, SpeculationId)>
+    {
+        let (ratifications, transactions, aborted, finalize_operations) = self.speculate_with_keep(
             state,
             time_since_last_block,
             coinbase_reward,
@@ -171,7 +172,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             candidate_transactions,
             rng,
             true,
-        )
+        )?;
+        let id = self
+            .self_constructed
+            .lock()
+            .as_ref()
+            .map(|constructed| constructed.id)
+            .ok_or_else(|| anyhow!("construct-path speculate did not retain an identity"))?;
+        Ok((ratifications, transactions, aborted, finalize_operations, id))
     }
 
     /// # Panics

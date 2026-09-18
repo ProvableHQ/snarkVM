@@ -17,12 +17,22 @@ use crate::{Stack, vm::*};
 use console::network::prelude::Network;
 
 use indexmap::IndexMap;
-use std::{fmt, sync::Arc, thread};
+use std::{
+    fmt,
+    sync::{Arc, atomic::Ordering},
+    thread,
+};
 use tokio::sync::oneshot;
+
+/// Identifies one construct-path speculate so hash binding cannot attach to a later candidate.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct SpeculationId(u64);
 
 /// State retained after a successful construct-path speculate, so check can skip a second dry-run
 /// and add can finish the pending finalize batch instead of replaying it.
 pub(crate) struct SelfConstructed<N: Network> {
+    /// Opaque id of this speculate, used to bind and take the matching entry.
+    pub id: SpeculationId,
     /// Set after the candidate block is built.
     pub hash: Option<N::BlockHash>,
     /// Finalize operations from the construct-path speculate, used by `Block::verify`.
@@ -153,14 +163,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         finalize_operations: Vec<FinalizeOperation<N>>,
         parked_stacks: IndexMap<ProgramID<N>, Arc<Stack<N>>>,
         batch_kept: bool,
-    ) {
+    ) -> SpeculationId {
+        let id = SpeculationId(self.next_speculation_id.fetch_add(1, Ordering::Relaxed));
         *self.self_constructed.lock() =
-            Some(SelfConstructed { hash: None, finalize_operations, parked_stacks, batch_kept });
+            Some(SelfConstructed { id, hash: None, finalize_operations, parked_stacks, batch_kept });
+        id
     }
 
-    /// Associates a constructed block hash with the last construct-path speculate.
-    pub fn bind_self_constructed_hash(&self, hash: N::BlockHash) {
-        if let Some(constructed) = self.self_constructed.lock().as_mut() {
+    /// Associates a constructed block hash with the matching construct-path speculate.
+    pub fn bind_self_constructed_hash(&self, id: SpeculationId, hash: N::BlockHash) {
+        if let Some(constructed) = self.self_constructed.lock().as_mut()
+            && constructed.id == id
+        {
             constructed.hash = Some(hash);
         }
     }
@@ -252,4 +266,28 @@ pub enum SequentialOperationResult<N: Network> {
         )>,
     ),
     DiscardKeptSpeculation,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::vm::test_helpers::{CurrentNetwork, sample_vm};
+    use console::{network::prelude::Network, types::Field};
+    use indexmap::IndexMap;
+
+    #[test]
+    fn bind_self_constructed_hash_ignores_stale_speculation_id() {
+        let vm = sample_vm();
+        let hash_a = <CurrentNetwork as Network>::BlockHash::from(Field::<CurrentNetwork>::from_u64(1));
+        let hash_b = <CurrentNetwork as Network>::BlockHash::from(Field::<CurrentNetwork>::from_u64(2));
+
+        let id_a = vm.store_self_constructed(Vec::new(), IndexMap::new(), false);
+        let id_b = vm.store_self_constructed(Vec::new(), IndexMap::new(), false);
+
+        vm.bind_self_constructed_hash(id_a, hash_a);
+        assert!(vm.self_constructed_ops_for(hash_a).is_none());
+
+        vm.bind_self_constructed_hash(id_b, hash_b);
+        assert!(vm.self_constructed_ops_for(hash_b).is_some());
+        assert!(vm.self_constructed_ops_for(hash_a).is_none());
+    }
 }

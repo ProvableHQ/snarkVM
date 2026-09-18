@@ -42,9 +42,22 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             return Err(anyhow!("Ratifications are currently unsupported from the memory pool").into());
         }
         // Construct the block template.
-        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) = match self
-            .construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)
-        {
+        let (
+            header,
+            ratifications,
+            solutions,
+            aborted_solution_ids,
+            transactions,
+            aborted_transaction_ids,
+            speculation_id,
+        ) = match self.construct_block_template(
+            &previous_block,
+            Some(&subdag),
+            ratifications,
+            solutions,
+            transactions,
+            rng,
+        ) {
             Ok(template) => template,
             Err(e) => {
                 self.vm.discard_kept_speculation();
@@ -69,7 +82,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 return Err(CheckBlockError::Other(e));
             }
         };
-        self.vm.bind_self_constructed_hash(block.hash());
+        self.vm.bind_self_constructed_hash(speculation_id, block.hash());
         Ok(block)
     }
 
@@ -99,15 +112,22 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let previous_block = self.current_block.read();
 
         // Construct the block template.
-        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) = match self
-            .construct_block_template(
-                &previous_block,
-                None,
-                candidate_ratifications,
-                candidate_solutions,
-                candidate_transactions,
-                rng,
-            ) {
+        let (
+            header,
+            ratifications,
+            solutions,
+            aborted_solution_ids,
+            transactions,
+            aborted_transaction_ids,
+            speculation_id,
+        ) = match self.construct_block_template(
+            &previous_block,
+            None,
+            candidate_ratifications,
+            candidate_solutions,
+            candidate_transactions,
+            rng,
+        ) {
             Ok(template) => template,
             Err(e) => {
                 self.vm.discard_kept_speculation();
@@ -133,7 +153,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 return Err(CheckBlockError::Other(e));
             }
         };
-        self.vm.bind_self_constructed_hash(block.hash());
+        self.vm.bind_self_constructed_hash(speculation_id, block.hash());
         Ok(block)
     }
 
@@ -293,7 +313,15 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         candidate_transactions: Vec<Transaction<N>>,
         rng: &mut R,
     ) -> Result<
-        (Header<N>, Ratifications<N>, Solutions<N>, Vec<SolutionID<N>>, Transactions<N>, Vec<N::TransactionID>),
+        (
+            Header<N>,
+            Ratifications<N>,
+            Solutions<N>,
+            Vec<SolutionID<N>>,
+            Transactions<N>,
+            Vec<N::TransactionID>,
+            SpeculationId,
+        ),
         CheckBlockError<N>,
     > {
         // Construct the solutions.
@@ -457,7 +485,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             block_synthesis_limit,
         )?;
         // Speculate over the ratifications, solutions, and transactions.
-        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) =
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations, speculation_id) =
             self.vm.speculate_for_commit(
                 state,
                 next_timestamp.saturating_sub(previous_block.timestamp()),
@@ -503,6 +531,14 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         )?;
 
         // Return the block template.
-        Ok((header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids))
+        Ok((
+            header,
+            ratifications,
+            solutions,
+            aborted_solution_ids,
+            transactions,
+            aborted_transaction_ids,
+            speculation_id,
+        ))
     }
 }

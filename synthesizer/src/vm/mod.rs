@@ -111,7 +111,7 @@ use rand::{SeedableRng, rngs::StdRng};
 use std::{
     collections::{HashMap, HashSet},
     num::NonZeroUsize,
-    sync::{Arc, mpsc},
+    sync::{Arc, atomic::AtomicU64, mpsc},
     thread,
 };
 
@@ -144,6 +144,8 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     sequential_ops_thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
     /// Construct-path speculate output used to skip a second dry-run and optionally keep the batch.
     self_constructed: Arc<Mutex<Option<SelfConstructed<N>>>>,
+    /// Monotonic ids for construct-path speculations, shared across `VM` clones.
+    next_speculation_id: Arc<AtomicU64>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -245,6 +247,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             pending_rejected_reasons: Default::default(),
             sequential_ops_thread: Default::default(),
             self_constructed: Default::default(),
+            next_speculation_id: Default::default(),
         };
 
         // Spawn a thread for sequential operations.
