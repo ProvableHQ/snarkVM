@@ -103,13 +103,23 @@ pub(crate) mod pending_overlay {
     use serde::Serialize;
     use std::hash::Hash;
 
-    /// Rebuilds the latest pending value per key from an ordered write log.
-    pub(crate) fn rebuild_flat<K: Clone + Eq + Hash, V: Clone>(log: &[(K, Option<V>)]) -> IndexMap<K, Option<V>> {
+    /// Rebuilds the latest pending log index per key from an ordered write log.
+    pub(crate) fn rebuild_flat<K: Clone + Eq + Hash, V>(log: &[(K, Option<V>)]) -> IndexMap<K, usize> {
         let mut pending = IndexMap::with_capacity(log.len());
-        for (key, value) in log {
-            pending.insert(key.clone(), value.clone());
+        for (i, (key, _)) in log.iter().enumerate() {
+            pending.insert(key.clone(), i);
         }
         pending
+    }
+
+    /// Returns the pending value for `key`, using the latest log index in `pending`.
+    pub(crate) fn get_flat<K, V, Q>(log: &[(K, Option<V>)], pending: &IndexMap<K, usize>, key: &Q) -> Option<Option<V>>
+    where
+        K: Eq + Hash + std::borrow::Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+        V: Clone,
+    {
+        pending.get(key).and_then(|&i| log.get(i).map(|(_, value)| value.clone()))
     }
 
     /// Latest nested pending values, plus maps that were fully removed in the log.
@@ -192,14 +202,14 @@ pub(crate) mod pending_overlay {
 
     #[cfg(test)]
     mod pending_overlay_tests {
-        use super::{NestedPending, rebuild_flat};
+        use super::{NestedPending, get_flat, rebuild_flat};
 
         #[test]
         fn rebuild_flat_keeps_latest_value() {
             let log = vec![(1u32, Some("a")), (1u32, Some("b")), (2u32, None)];
             let pending = rebuild_flat(&log);
-            assert_eq!(pending.get(&1), Some(&Some("b")));
-            assert_eq!(pending.get(&2), Some(&None));
+            assert_eq!(get_flat(&log, &pending, &1), Some(Some("b")));
+            assert_eq!(get_flat(&log, &pending, &2), Some(None));
         }
 
         #[test]

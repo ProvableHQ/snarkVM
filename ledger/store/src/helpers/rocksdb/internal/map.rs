@@ -48,8 +48,8 @@ pub struct InnerDataMap<K: Serialize + DeserializeOwned + Eq + Hash, V: Serializ
     pub(super) atomic_owner: AtomicU64,
     /// The database transaction.
     pub(super) atomic_batch: Mutex<Vec<(K, Option<V>)>>,
-    /// Latest pending value per key, rebuilt from `atomic_batch` on rewind.
-    pub(super) pending: Mutex<IndexMap<K, Option<V>>>,
+    /// Latest pending log index per key, rebuilt from `atomic_batch` on rewind.
+    pub(super) pending: Mutex<IndexMap<K, usize>>,
     /// The checkpoint stack for the batched operations within the map.
     pub(super) checkpoints: Mutex<Vec<usize>>,
 }
@@ -86,7 +86,7 @@ impl<
                 let mut batch = self.atomic_batch.lock();
                 let mut pending = self.pending.lock();
                 crate::helpers::atomic_owner::record_lock_wait(start);
-                pending.insert(key.clone(), Some(value.clone()));
+                pending.insert(key.clone(), batch.len());
                 batch.push((key, Some(value)));
             }
             // Otherwise, insert the key-value pair directly into the map.
@@ -111,7 +111,7 @@ impl<
             true => {
                 let mut batch = self.atomic_batch.lock();
                 let mut pending = self.pending.lock();
-                pending.insert(key.clone(), None);
+                pending.insert(key.clone(), batch.len());
                 batch.push((key.clone(), None));
             }
             // Otherwise, remove the key-value pair directly from the map.
@@ -371,10 +371,13 @@ impl<
         // If this thread owns an in-progress batch, check the atomic batch first.
         if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
             let start = Instant::now();
-            let pending = self.pending.lock();
-            crate::helpers::atomic_owner::record_lock_wait(start);
-            if let Some(value) = pending.get(key) {
-                return Ok(value.is_some());
+            let idx = {
+                let pending = self.pending.lock();
+                crate::helpers::atomic_owner::record_lock_wait(start);
+                pending.get(key).copied()
+            };
+            if let Some(idx) = idx {
+                return Ok(self.atomic_batch.lock().get(idx).is_some_and(|(_, value)| value.is_some()));
             }
         }
 
@@ -415,7 +418,7 @@ impl<
             let start = Instant::now();
             let pending = self.pending.lock();
             crate::helpers::atomic_owner::record_lock_wait(start);
-            pending.get(key).cloned()
+            crate::helpers::pending_overlay::get_flat(&self.atomic_batch.lock(), &pending, key)
         } else {
             None
         }
