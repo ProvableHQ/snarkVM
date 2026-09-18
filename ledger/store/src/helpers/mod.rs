@@ -122,6 +122,53 @@ pub(crate) mod pending_overlay {
         pending.get(key).and_then(|&i| log.get(i).map(|(_, value)| value.clone()))
     }
 
+    /// Write log and latest-index overlay sharing one mutex.
+    pub(crate) struct FlatBatch<K, V> {
+        pub log: Vec<(K, Option<V>)>,
+        pub pending: IndexMap<K, usize>,
+    }
+
+    impl<K, V> Default for FlatBatch<K, V> {
+        fn default() -> Self {
+            Self { log: Vec::new(), pending: IndexMap::new() }
+        }
+    }
+
+    impl<K: Clone + Eq + Hash, V> FlatBatch<K, V> {
+        pub(crate) fn is_empty(&self) -> bool {
+            self.log.is_empty()
+        }
+
+        pub(crate) fn clear(&mut self) {
+            self.log.clear();
+            self.pending.clear();
+        }
+
+        pub(crate) fn push(&mut self, key: K, value: Option<V>) {
+            self.pending.insert(key.clone(), self.log.len());
+            self.log.push((key, value));
+        }
+
+        pub(crate) fn rewind(&mut self, checkpoint: usize) {
+            self.log.truncate(checkpoint);
+            self.pending = rebuild_flat(&self.log);
+        }
+
+        pub(crate) fn take_log(&mut self) -> Vec<(K, Option<V>)> {
+            self.pending.clear();
+            core::mem::take(&mut self.log)
+        }
+
+        pub(crate) fn get<Q>(&self, key: &Q) -> Option<Option<V>>
+        where
+            K: std::borrow::Borrow<Q>,
+            Q: Eq + Hash + ?Sized,
+            V: Clone,
+        {
+            get_flat(&self.log, &self.pending, key)
+        }
+    }
+
     /// Latest nested pending values, plus maps that were fully removed in the log.
     pub(crate) struct NestedPending<M, K, V> {
         /// Latest `(map, serialized-key)` write. `None` is a key deletion.

@@ -49,9 +49,7 @@ pub struct MemoryMap<
     batch_in_progress: Arc<AtomicBool>,
     /// Owner of the in-progress atomic batch (`0` = none).
     atomic_owner: Arc<AtomicU64>,
-    atomic_batch: Arc<Mutex<Vec<(K, Option<V>)>>>,
-    /// Latest pending log index per key, rebuilt from `atomic_batch` on rewind.
-    pending: Arc<Mutex<IndexMap<K, usize>>>,
+    atomic_batch: Arc<Mutex<crate::helpers::pending_overlay::FlatBatch<K, V>>>,
     checkpoint: Arc<Mutex<Vec<usize>>>,
 }
 
@@ -66,7 +64,6 @@ impl<
             batch_in_progress: Default::default(),
             atomic_owner: Default::default(),
             atomic_batch: Default::default(),
-            pending: Default::default(),
             checkpoint: Default::default(),
         }
     }
@@ -88,7 +85,6 @@ impl<
             batch_in_progress: Default::default(),
             atomic_owner: Default::default(),
             atomic_batch: Default::default(),
-            pending: Default::default(),
             checkpoint: Default::default(),
         }
     }
@@ -110,10 +106,8 @@ impl<
             true => {
                 let start = Instant::now();
                 let mut batch = self.atomic_batch.lock();
-                let mut pending = self.pending.lock();
                 crate::helpers::atomic_owner::record_lock_wait(start);
-                pending.insert(key.clone(), batch.len());
-                batch.push((key, Some(value)));
+                batch.push(key, Some(value));
             }
             // Otherwise, insert the key-value pair directly into the map.
             false => {
@@ -133,9 +127,7 @@ impl<
             // If a batch is in progress, add the key-None pair to the batch.
             true => {
                 let mut batch = self.atomic_batch.lock();
-                let mut pending = self.pending.lock();
-                pending.insert(key.clone(), batch.len());
-                batch.push((key.clone(), None));
+                batch.push(key.clone(), None);
             }
             // Otherwise, remove the key-value pair directly from the map.
             false => {
@@ -159,10 +151,6 @@ impl<
             self.atomic_batch.lock().is_empty(),
             "Cannot start an atomic batch operation while another one is already in progress"
         );
-        assert!(
-            self.pending.lock().is_empty(),
-            "Cannot start an atomic batch operation while another one is already in progress"
-        );
     }
 
     ///
@@ -180,7 +168,7 @@ impl<
     ///
     fn atomic_checkpoint(&self) {
         // Push the current length of the atomic batch to the checkpoint stack.
-        self.checkpoint.lock().push(self.atomic_batch.lock().len());
+        self.checkpoint.lock().push(self.atomic_batch.lock().log.len());
     }
 
     ///
@@ -203,8 +191,7 @@ impl<
         let checkpoint = self.checkpoint.lock().pop().unwrap_or(0);
 
         // Remove all operations after the checkpoint.
-        atomic_batch.truncate(checkpoint);
-        *self.pending.lock() = crate::helpers::pending_overlay::rebuild_flat(&atomic_batch);
+        atomic_batch.rewind(checkpoint);
     }
 
     ///
@@ -212,8 +199,7 @@ impl<
     ///
     fn abort_atomic(&self) {
         // Clear the atomic batch.
-        *self.atomic_batch.lock() = Default::default();
-        *self.pending.lock() = Default::default();
+        self.atomic_batch.lock().clear();
         // Clear the checkpoint stack.
         *self.checkpoint.lock() = Default::default();
         // Set the atomic batch flag to `false`.
@@ -226,8 +212,7 @@ impl<
     ///
     fn finish_atomic(&self) -> Result<()> {
         // Retrieve the atomic batch.
-        let operations = core::mem::take(&mut *self.atomic_batch.lock());
-        self.pending.lock().clear();
+        let operations = self.atomic_batch.lock().take_log();
 
         // Insert the operations into an index map to remove any operations that would have been overwritten anyways.
         let operations: IndexMap<_, _> = IndexMap::from_iter(operations);
@@ -328,13 +313,10 @@ impl<
         // If this thread owns an in-progress batch, check the atomic batch first.
         if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
             let start = Instant::now();
-            let idx = {
-                let pending = self.pending.lock();
-                crate::helpers::atomic_owner::record_lock_wait(start);
-                pending.get(key).copied()
-            };
-            if let Some(idx) = idx {
-                return Ok(self.atomic_batch.lock().get(idx).is_some_and(|(_, value)| value.is_some()));
+            let batch = self.atomic_batch.lock();
+            crate::helpers::atomic_owner::record_lock_wait(start);
+            if let Some(value) = batch.get(key) {
+                return Ok(value.is_some());
             }
         }
 
@@ -369,9 +351,9 @@ impl<
         // Return early if there is no atomic batch in progress on this thread.
         if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
             let start = Instant::now();
-            let pending = self.pending.lock();
+            let batch = self.atomic_batch.lock();
             crate::helpers::atomic_owner::record_lock_wait(start);
-            crate::helpers::pending_overlay::get_flat(&self.atomic_batch.lock(), &pending, key)
+            batch.get(key)
         } else {
             None
         }
@@ -402,7 +384,7 @@ impl<
     /// Returns an iterator visiting each key-value pair in the atomic batch.
     ///
     fn iter_pending(&'a self) -> Self::PendingIterator {
-        let filtered_atomic_batch: IndexMap<_, _> = IndexMap::from_iter(self.atomic_batch.lock().clone());
+        let filtered_atomic_batch: IndexMap<_, _> = IndexMap::from_iter(self.atomic_batch.lock().log.clone());
         filtered_atomic_batch.into_iter().map(|(k, v)| (Cow::Owned(k), v.map(|v| Cow::Owned(v))))
     }
 
