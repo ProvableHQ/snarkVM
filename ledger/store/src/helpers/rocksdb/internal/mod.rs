@@ -35,6 +35,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use std::{
     borrow::Borrow,
     collections::HashMap,
+    hash::Hash,
     marker::PhantomData,
     mem,
     ops::Deref,
@@ -64,7 +65,12 @@ pub trait Database {
         Self: Sized;
 
     /// Opens the map with the given `network_id`, `storage mode`, and `map_id` from storage.
-    fn open_map<S: Into<StorageMode>, K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned, T: Into<u16>>(
+    fn open_map<
+        S: Into<StorageMode>,
+        K: Serialize + DeserializeOwned + Eq + Hash,
+        V: Serialize + DeserializeOwned,
+        T: Into<u16>,
+    >(
         network_id: u16,
         storage: S,
         map_id: T,
@@ -192,7 +198,7 @@ impl Database for RocksDB {
     /// Opens the map with the given `network_id`, `storage mode`, and `map_id` from storage.
     fn open_map<
         S: Into<StorageMode>,
-        K: Serialize + DeserializeOwned,
+        K: Serialize + DeserializeOwned + Eq + Hash,
         V: Serialize + DeserializeOwned,
         T: Into<u16>,
     >(
@@ -214,6 +220,7 @@ impl Database for RocksDB {
             batch_in_progress: Default::default(),
             atomic_owner: Default::default(),
             atomic_batch: Default::default(),
+            pending: Default::default(),
             checkpoints: Default::default(),
         })))
     }
@@ -244,6 +251,7 @@ impl Database for RocksDB {
             batch_in_progress: Default::default(),
             atomic_owner: Default::default(),
             atomic_batch: Default::default(),
+            pending: Default::default(),
             checkpoints: Default::default(),
         })
     }

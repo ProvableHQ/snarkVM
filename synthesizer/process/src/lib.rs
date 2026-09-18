@@ -184,15 +184,35 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
     /// This will remove the new stacks and restore the old stacks.
     #[inline]
     pub fn revert_stacks(&self) {
-        // Restore the old stacks.
+        let _ = self.park_staged_stacks();
+    }
+
+    /// Reverts staged stacks and returns the new stacks so they can be restored later.
+    #[inline]
+    pub fn park_staged_stacks(&self) -> IndexMap<ProgramID<N>, Arc<Stack<N>>> {
         let mut stacks = self.process.stacks.write();
-        for (program_id, stack) in self.process.old_stacks.write().drain(..) {
-            // If the stack is `None`, remove the program from the process.
-            // Otherwise, insert the old stack back into the process.
-            if let Some(stack) = stack {
-                stacks.insert(program_id, stack);
-            } else {
-                stacks.shift_remove(&program_id);
+        let mut parked = IndexMap::with_capacity(self.process.old_stacks.read().len());
+        for (program_id, old) in self.process.old_stacks.write().drain(..) {
+            let new_stack = match old {
+                Some(old) => stacks.insert(program_id, old),
+                None => stacks.shift_remove(&program_id),
+            };
+            if let Some(new_stack) = new_stack {
+                parked.insert(program_id, new_stack);
+            }
+        }
+        parked
+    }
+
+    /// Restages previously parked stacks without committing them.
+    #[inline]
+    pub fn restore_staged_stacks(&self, parked: IndexMap<ProgramID<N>, Arc<Stack<N>>>) {
+        let mut stacks = self.process.stacks.write();
+        let mut old_stacks = self.process.old_stacks.write();
+        for (program_id, new_stack) in parked {
+            let old = stacks.insert(program_id, new_stack);
+            if !old_stacks.contains_key(&program_id) {
+                old_stacks.insert(program_id, old);
             }
         }
     }

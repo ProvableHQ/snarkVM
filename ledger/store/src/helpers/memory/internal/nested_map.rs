@@ -50,6 +50,8 @@ pub struct NestedMemoryMap<
     /// Owner of the in-progress atomic batch (`0` = none).
     atomic_owner: Arc<AtomicU64>,
     atomic_batch: Arc<Mutex<Vec<(M, Option<K>, Option<V>)>>>,
+    /// Latest pending values, rebuilt from `atomic_batch` on rewind.
+    pending: Arc<Mutex<crate::helpers::pending_overlay::NestedPending<M, K, V>>>,
     checkpoint: Arc<Mutex<Vec<usize>>>,
 }
 
@@ -66,6 +68,7 @@ impl<
             batch_in_progress: Default::default(),
             atomic_owner: Default::default(),
             atomic_batch: Default::default(),
+            pending: Default::default(),
             checkpoint: Default::default(),
         }
     }
@@ -95,6 +98,7 @@ impl<
             batch_in_progress: Default::default(),
             atomic_owner: Default::default(),
             atomic_batch: Default::default(),
+            pending: Default::default(),
             checkpoint: Default::default(),
         }
     }
@@ -116,8 +120,11 @@ impl<
             // If a batch is in progress, add the map-key-value pair to the batch.
             true => {
                 let start = Instant::now();
-                self.atomic_batch.lock().push((map, Some(key), Some(value)));
+                let mut batch = self.atomic_batch.lock();
+                let mut pending = self.pending.lock();
                 crate::helpers::atomic_owner::record_lock_wait(start);
+                pending.apply(map, Some(key.clone()), Some(value.clone()));
+                batch.push((map, Some(key), Some(value)));
             }
             // Otherwise, insert the key-value pair directly into the map.
             false => insert(&mut self.map.write(), &mut self.map_inner.write(), &map, &key, value),
@@ -132,7 +139,12 @@ impl<
         // Determine if an atomic batch is in progress.
         match self.is_atomic_in_progress() {
             // If a batch is in progress, add the map-None pair to the batch.
-            true => self.atomic_batch.lock().push((*map, None, None)),
+            true => {
+                let mut batch = self.atomic_batch.lock();
+                let mut pending = self.pending.lock();
+                pending.apply(*map, None, None);
+                batch.push((*map, None, None));
+            }
             // Otherwise, remove the map directly from the map.
             false => remove_map(&mut self.map.write(), &mut self.map_inner.write(), map),
         }
@@ -146,7 +158,12 @@ impl<
         // Determine if an atomic batch is in progress.
         match self.is_atomic_in_progress() {
             // If a batch is in progress, add the key-None pair to the batch.
-            true => self.atomic_batch.lock().push((*map, Some(key.clone()), None)),
+            true => {
+                let mut batch = self.atomic_batch.lock();
+                let mut pending = self.pending.lock();
+                pending.apply(*map, Some(key.clone()), None);
+                batch.push((*map, Some(key.clone()), None));
+            }
             // Otherwise, remove the key-value pair directly from the map.
             false => remove_key(&mut self.map.write(), &mut self.map_inner.write(), map, key),
         }
@@ -164,6 +181,10 @@ impl<
         // Ensure that the atomic batch is empty.
         assert!(
             self.atomic_batch.lock().is_empty(),
+            "Cannot start an atomic operation while another one is already in progress"
+        );
+        assert!(
+            self.pending.lock().is_empty(),
             "Cannot start an atomic operation while another one is already in progress"
         );
     }
@@ -207,6 +228,7 @@ impl<
 
         // Remove all operations after the checkpoint.
         atomic_batch.truncate(checkpoint);
+        *self.pending.lock() = crate::helpers::pending_overlay::NestedPending::rebuild(&atomic_batch);
     }
 
     ///
@@ -215,6 +237,7 @@ impl<
     fn abort_atomic(&self) {
         // Clear the atomic batch.
         *self.atomic_batch.lock() = Default::default();
+        self.pending.lock().clear();
         // Clear the checkpoint stack.
         *self.checkpoint.lock() = Default::default();
         // Set the atomic batch flag to `false`.
@@ -228,6 +251,7 @@ impl<
     fn finish_atomic(&self) -> Result<()> {
         // Retrieve the atomic batch.
         let operations = core::mem::take(&mut *self.atomic_batch.lock());
+        *self.pending.lock() = Default::default();
 
         if !operations.is_empty() {
             // Acquire a write lock on the map.
@@ -313,25 +337,11 @@ impl<
     fn contains_key_speculative(&self, map: &M, key: &K) -> Result<bool> {
         // If this thread owns an in-progress batch, check the atomic batch first.
         if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
-            // We iterate from the back of the `atomic_batch` to find the latest value.
             let start = Instant::now();
-            let batch = self.atomic_batch.lock();
+            let pending = self.pending.lock();
             crate::helpers::atomic_owner::record_lock_wait(start);
-            for (m, k, v) in batch.iter().rev() {
-                // If the map does not match the given map, then continue.
-                if m != map {
-                    continue;
-                }
-                // If the key is 'None', then the map is scheduled to be removed.
-                if k.is_none() {
-                    return Ok(false);
-                }
-                // If the key matches the given key, then return whether the value is 'Some(V)'.
-                if k.as_ref().unwrap() == key {
-                    // If the value is 'Some(V)', then the key exists.
-                    // If the value is 'None', then the key is scheduled to be removed.
-                    return Ok(v.is_some());
-                }
+            if let Some(value) = pending.get(map, key) {
+                return Ok(value.is_some());
             }
         }
         // Otherwise, check the map for the key.
@@ -377,41 +387,22 @@ impl<
             return self.get_map_confirmed(map);
         }
 
-        // Retrieve the confirmed key-value pairs for the given map.
-        let mut key_values = self.get_map_confirmed(map)?;
+        let start = Instant::now();
+        let pending = self.pending.lock();
+        crate::helpers::atomic_owner::record_lock_wait(start);
 
-        // Retrieve the atomic batch.
-        let operations = self.atomic_batch.lock().clone();
+        let mut key_values = if pending.map_is_deleted(map) { Vec::new() } else { self.get_map_confirmed(map)? };
 
-        if !operations.is_empty() {
-            // Perform all the queued operations.
-            for (m, k, v) in operations {
-                // If the map does not match the given map, then continue.
-                if &m != map {
-                    continue;
-                }
-
-                // Perform the operation.
-                match (k, v) {
-                    // Insert or update the key-value pair for the key.
-                    (Some(k), Some(v)) => {
-                        // If the key exists, then update the value.
-                        // Otherwise, insert the key-value pair.
-                        match key_values.iter_mut().find(|(key, _)| key == &k) {
-                            Some((_, value)) => *value = v,
-                            None => key_values.push((k, v)),
-                        }
-                    }
-                    // Clear the key-value pairs for the map.
-                    (None, None) => key_values.clear(),
-                    // Remove the key-value pair for the key.
-                    (Some(k), None) => key_values.retain(|(key, _)| key != &k),
-                    (None, Some(_)) => unreachable!("Cannot remove a key-value pair from a map without a key."),
-                }
+        for (k, v) in pending.entries_for_map(map) {
+            match v {
+                Some(v) => match key_values.iter_mut().find(|(key, _)| key == k) {
+                    Some((_, value)) => *value = v.clone(),
+                    None => key_values.push((k.clone(), v.clone())),
+                },
+                None => key_values.retain(|(key, _)| key != k),
             }
         }
 
-        // Return the key-value pairs for the map.
         Ok(key_values)
     }
 
@@ -438,27 +429,10 @@ impl<
     fn get_value_pending(&self, map: &M, key: &K) -> Option<Option<V>> {
         // Return early if there is no atomic batch in progress on this thread.
         if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
-            // We iterate from the back of the `atomic_batch` to find the latest value.
             let start = Instant::now();
-            let batch = self.atomic_batch.lock();
+            let pending = self.pending.lock();
             crate::helpers::atomic_owner::record_lock_wait(start);
-            for (m, k, v) in batch.iter().rev() {
-                // If the map does not match the given map, then continue.
-                if m != map {
-                    continue;
-                }
-                // If the key is 'None', then the map is scheduled to be removed.
-                if k.is_none() {
-                    return Some(None);
-                }
-                // If the key matches the given key, then return whether the value is 'Some(V)'.
-                if k.as_ref().unwrap() == key {
-                    // If the value is 'Some(V)', then the key exists.
-                    // If the value is 'Some(None)', then the key is scheduled to be removed.
-                    return Some(v.clone());
-                }
-            }
-            None
+            pending.get(map, key)
         } else {
             None
         }

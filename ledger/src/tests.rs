@@ -105,6 +105,28 @@ fn test_load() {
 }
 
 #[test]
+fn test_self_constructed_check_and_advance() {
+    let rng = &mut TestRng::default();
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let store = ConsensusStore::<_, LedgerType>::open(StorageMode::new_test(None)).unwrap();
+    let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, rng).unwrap();
+    let ledger = CurrentLedger::load(genesis, StorageMode::new_test(None)).unwrap();
+
+    // Constructing a block twice without advancing must drop the first kept speculate batch.
+    let _abandoned = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+    let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+    ledger.check_next_block(&block, rng).unwrap();
+    ledger.advance_to_next_block(&block).unwrap();
+    assert_eq!(ledger.latest_height(), 1);
+
+    let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+    ledger.check_next_block(&block, rng).unwrap();
+    ledger.advance_to_next_block(&block).unwrap();
+    assert_eq!(ledger.latest_height(), 2);
+}
+
+#[test]
 fn test_load_unchecked() {
     let rng = &mut TestRng::default();
 

@@ -42,11 +42,18 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             return Err(anyhow!("Ratifications are currently unsupported from the memory pool").into());
         }
         // Construct the block template.
-        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) =
-            self.construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)?;
+        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) = match self
+            .construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)
+        {
+            Ok(template) => template,
+            Err(e) => {
+                self.vm.discard_kept_speculation();
+                return Err(e);
+            }
+        };
 
         // Construct the new quorum block.
-        Block::new_quorum(
+        let block = match Block::new_quorum(
             previous_block.hash(),
             header,
             subdag,
@@ -55,8 +62,15 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             aborted_solution_ids,
             transactions,
             aborted_transaction_ids,
-        )
-        .map_err(|e| CheckBlockError::Other(e))
+        ) {
+            Ok(block) => block,
+            Err(e) => {
+                self.vm.discard_kept_speculation();
+                return Err(CheckBlockError::Other(e));
+            }
+        };
+        self.vm.bind_self_constructed_hash(block.hash());
+        Ok(block)
     }
 
     /// Returns a candidate for the next block in the ledger.
@@ -85,7 +99,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let previous_block = self.current_block.read();
 
         // Construct the block template.
-        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) = self
+        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) = match self
             .construct_block_template(
                 &previous_block,
                 None,
@@ -93,10 +107,16 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 candidate_solutions,
                 candidate_transactions,
                 rng,
-            )?;
+            ) {
+            Ok(template) => template,
+            Err(e) => {
+                self.vm.discard_kept_speculation();
+                return Err(e);
+            }
+        };
 
         // Construct the new beacon block.
-        Block::new_beacon(
+        let block = match Block::new_beacon(
             private_key,
             previous_block.hash(),
             header,
@@ -106,8 +126,15 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             transactions,
             aborted_transaction_ids,
             rng,
-        )
-        .map_err(|e| CheckBlockError::Other(e))
+        ) {
+            Ok(block) => block,
+            Err(e) => {
+                self.vm.discard_kept_speculation();
+                return Err(CheckBlockError::Other(e));
+            }
+        };
+        self.vm.bind_self_constructed_hash(block.hash());
+        Ok(block)
     }
 
     /// Adds the given block as the next block in the ledger.
@@ -430,15 +457,16 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             block_synthesis_limit,
         )?;
         // Speculate over the ratifications, solutions, and transactions.
-        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = self.vm.speculate(
-            state,
-            next_timestamp.saturating_sub(previous_block.timestamp()),
-            Some(coinbase_reward),
-            candidate_ratifications,
-            &solutions,
-            candidate_transactions.iter(),
-            rng,
-        )?;
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) =
+            self.vm.speculate_for_commit(
+                state,
+                next_timestamp.saturating_sub(previous_block.timestamp()),
+                Some(coinbase_reward),
+                candidate_ratifications,
+                &solutions,
+                candidate_transactions.iter(),
+                rng,
+            )?;
 
         // Compute the ratifications root.
         let ratifications_root = ratifications.to_ratifications_root()?;
