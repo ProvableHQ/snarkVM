@@ -94,6 +94,135 @@ pub(crate) mod atomic_owner {
     }
 }
 
+/// Coalesced latest-value index for in-progress atomic batches.
+///
+/// The write log (`atomic_batch` Vec) remains the source of truth for checkpoints, rewind, and
+/// nested finish order. This overlay is rebuilt from the log on rewind and updated on insert.
+pub(crate) mod pending_overlay {
+    use indexmap::{IndexMap, IndexSet};
+    use serde::Serialize;
+    use std::hash::Hash;
+
+    /// Rebuilds the latest pending value per key from an ordered write log.
+    pub(crate) fn rebuild_flat<K: Clone + Eq + Hash, V: Clone>(log: &[(K, Option<V>)]) -> IndexMap<K, Option<V>> {
+        let mut pending = IndexMap::with_capacity(log.len());
+        for (key, value) in log {
+            pending.insert(key.clone(), value.clone());
+        }
+        pending
+    }
+
+    /// Latest nested pending values, plus maps that were fully removed in the log.
+    pub(crate) struct NestedPending<M, K, V> {
+        /// Latest `(map, serialized-key)` write. `None` is a key deletion.
+        entries: IndexMap<(M, Vec<u8>), (K, Option<V>)>,
+        /// Maps whose confirmed contents should be ignored (a map-level delete ran).
+        deleted_maps: IndexSet<M>,
+    }
+
+    impl<M, K, V> Default for NestedPending<M, K, V> {
+        fn default() -> Self {
+            Self { entries: IndexMap::new(), deleted_maps: IndexSet::new() }
+        }
+    }
+
+    impl<M: Copy + Eq + Hash, K: Clone + Serialize, V: Clone> NestedPending<M, K, V> {
+        /// Applies one nested log operation to the overlay.
+        pub(crate) fn apply(&mut self, map: M, key: Option<K>, value: Option<V>) {
+            match (key, value) {
+                (Some(key), value) => {
+                    // Note: The 'unwrap' is safe here, because the keys are defined by us.
+                    let key_bytes = bincode::serialize(&key).unwrap();
+                    self.entries.insert((map, key_bytes), (key, value));
+                }
+                (None, None) => {
+                    self.entries.retain(|(pending_map, _), _| pending_map != &map);
+                    self.deleted_maps.insert(map);
+                }
+                (None, Some(_)) => unreachable!("Cannot remove a key-value pair from a map without a key."),
+            }
+        }
+
+        /// Rebuilds the overlay from an ordered nested write log.
+        pub(crate) fn rebuild(log: &[(M, Option<K>, Option<V>)]) -> Self {
+            let mut pending = Self::default();
+            for (map, key, value) in log {
+                pending.apply(*map, key.clone(), value.clone());
+            }
+            pending
+        }
+
+        /// Returns the pending value for `key` in `map`, using the same `Option<Option<V>>` meaning
+        /// as a reverse scan of the write log.
+        pub(crate) fn get(&self, map: &M, key: &K) -> Option<Option<V>> {
+            // Note: The 'unwrap' is safe here, because the keys are defined by us.
+            let key_bytes = bincode::serialize(key).unwrap();
+            if let Some((_, value)) = self.entries.get(&(*map, key_bytes)) {
+                return Some(value.clone());
+            }
+            if self.deleted_maps.contains(map) {
+                return Some(None);
+            }
+            None
+        }
+
+        /// Returns whether `map` was fully removed in the pending log.
+        pub(crate) fn map_is_deleted(&self, map: &M) -> bool {
+            self.deleted_maps.contains(map)
+        }
+
+        /// Returns `true` when the overlay has no pending entries or map deletes.
+        pub(crate) fn is_empty(&self) -> bool {
+            self.entries.is_empty() && self.deleted_maps.is_empty()
+        }
+
+        /// Clears the overlay.
+        pub(crate) fn clear(&mut self) {
+            self.entries.clear();
+            self.deleted_maps.clear();
+        }
+
+        /// Latest pending entries for `map`.
+        pub(crate) fn entries_for_map(&self, map: &M) -> impl Iterator<Item = (&K, &Option<V>)> {
+            self.entries
+                .iter()
+                .filter_map(move |((pending_map, _), (key, value))| (pending_map == map).then_some((key, value)))
+        }
+    }
+
+    #[cfg(test)]
+    mod pending_overlay_tests {
+        use super::{NestedPending, rebuild_flat};
+
+        #[test]
+        fn rebuild_flat_keeps_latest_value() {
+            let log = vec![(1u32, Some("a")), (1u32, Some("b")), (2u32, None)];
+            let pending = rebuild_flat(&log);
+            assert_eq!(pending.get(&1), Some(&Some("b")));
+            assert_eq!(pending.get(&2), Some(&None));
+        }
+
+        #[test]
+        fn nested_delete_then_reinsert_ignores_confirmed_keys() {
+            let mut pending = NestedPending::default();
+            pending.apply(0u8, Some(1u8), Some(10u8));
+            pending.apply(0u8, None, None);
+            pending.apply(0u8, Some(2u8), Some(20u8));
+            assert_eq!(pending.get(&0, &2), Some(Some(20u8)));
+            assert_eq!(pending.get(&0, &1), Some(None));
+            assert!(pending.map_is_deleted(&0));
+        }
+
+        #[test]
+        fn nested_rebuild_matches_apply() {
+            let log = vec![(0u8, Some(1u8), Some(10u8)), (0u8, None, None), (0u8, Some(1u8), Some(11u8))];
+            let pending = NestedPending::rebuild(&log);
+            assert_eq!(pending.get(&0, &1), Some(Some(11u8)));
+            assert!(pending.map_is_deleted(&0));
+        }
+    }
+}
+
 /// This macro executes the given block of operations as a new atomic write batch IFF there is no
 /// atomic write batch in progress yet. This ensures that complex atomic operations consisting of
 /// multiple lower-level operations - which might also need to be atomic if executed individually -
