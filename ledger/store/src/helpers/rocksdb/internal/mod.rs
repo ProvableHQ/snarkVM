@@ -220,7 +220,6 @@ impl Database for RocksDB {
             batch_in_progress: Default::default(),
             atomic_owner: Default::default(),
             atomic_batch: Default::default(),
-            pending: Default::default(),
             checkpoints: Default::default(),
         })))
     }
@@ -251,7 +250,6 @@ impl Database for RocksDB {
             batch_in_progress: Default::default(),
             atomic_owner: Default::default(),
             atomic_batch: Default::default(),
-            pending: Default::default(),
             checkpoints: Default::default(),
         })
     }

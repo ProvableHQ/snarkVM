@@ -247,6 +247,44 @@ pub(crate) mod pending_overlay {
         }
     }
 
+    /// Nested write log and overlay sharing one mutex.
+    pub(crate) struct NestedBatch<M, K, V> {
+        pub log: Vec<(M, Option<K>, Option<V>)>,
+        pub pending: NestedPending<M, K, V>,
+    }
+
+    impl<M, K, V> Default for NestedBatch<M, K, V> {
+        fn default() -> Self {
+            Self { log: Vec::new(), pending: NestedPending::default() }
+        }
+    }
+
+    impl<M: Copy + Eq + Hash, K: Clone + Serialize, V: Clone> NestedBatch<M, K, V> {
+        pub(crate) fn is_empty(&self) -> bool {
+            self.log.is_empty() && self.pending.is_empty()
+        }
+
+        pub(crate) fn clear(&mut self) {
+            self.log.clear();
+            self.pending.clear();
+        }
+
+        pub(crate) fn push(&mut self, map: M, key: Option<K>, value: Option<V>) {
+            self.pending.apply(map, key.clone(), value.clone());
+            self.log.push((map, key, value));
+        }
+
+        pub(crate) fn rewind(&mut self, checkpoint: usize) {
+            self.log.truncate(checkpoint);
+            self.pending = NestedPending::rebuild(&self.log);
+        }
+
+        pub(crate) fn take_log(&mut self) -> Vec<(M, Option<K>, Option<V>)> {
+            self.pending.clear();
+            core::mem::take(&mut self.log)
+        }
+    }
+
     #[cfg(test)]
     mod pending_overlay_tests {
         use super::{NestedPending, get_flat, rebuild_flat};
