@@ -77,6 +77,7 @@ pub enum ConsensusVersion {
     /// `PlaintextType` declared in a deployed program, and updates the number of validators.
     V20 = 20,
     /// V21: Increases the maximum number of mappings in a program to 128.
+    ///      Modifies the cost of the rand_chacha opcode to a more accurate value.
     V21 = 21,
 }
 
