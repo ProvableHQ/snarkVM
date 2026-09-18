@@ -503,28 +503,15 @@ impl<
             return self.get_map_confirmed(map);
         }
 
-        let (map_deleted, overlay) = {
+        let log = {
             let start = Instant::now();
             let batch = self.atomic_batch.lock();
             crate::helpers::atomic_owner::record_lock_wait(start);
-            (
-                batch.pending.map_is_deleted(map),
-                batch.pending.entries_for_map(map).map(|(k, v)| (k.clone(), v.clone())).collect::<Vec<_>>(),
-            )
+            batch.log.clone()
         };
 
-        let mut key_values = if map_deleted { Vec::new() } else { self.get_map_confirmed(map)? };
-
-        for (k, v) in overlay {
-            match v {
-                Some(v) => match key_values.iter_mut().find(|(key, _)| key == &k) {
-                    Some((_, value)) => *value = v,
-                    None => key_values.push((k, v)),
-                },
-                None => key_values.retain(|(key, _)| key != &k),
-            }
-        }
-
+        let mut key_values = self.get_map_confirmed(map)?;
+        crate::helpers::pending_overlay::apply_nested_log(&mut key_values, &log, map);
         Ok(key_values)
     }
 

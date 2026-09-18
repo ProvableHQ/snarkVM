@@ -223,11 +223,6 @@ pub(crate) mod pending_overlay {
             None
         }
 
-        /// Returns whether `map` was fully removed in the pending log.
-        pub(crate) fn map_is_deleted(&self, map: &M) -> bool {
-            self.deleted_maps.contains(map)
-        }
-
         /// Returns `true` when the overlay has no pending entries or map deletes.
         pub(crate) fn is_empty(&self) -> bool {
             self.entries.is_empty() && self.deleted_maps.is_empty()
@@ -237,13 +232,6 @@ pub(crate) mod pending_overlay {
         pub(crate) fn clear(&mut self) {
             self.entries.clear();
             self.deleted_maps.clear();
-        }
-
-        /// Latest pending entries for `map`.
-        pub(crate) fn entries_for_map(&self, map: &M) -> impl Iterator<Item = (&K, &Option<V>)> {
-            self.entries
-                .iter()
-                .filter_map(move |((pending_map, _), (key, value))| (pending_map == map).then_some((key, value)))
         }
     }
 
@@ -285,6 +273,28 @@ pub(crate) mod pending_overlay {
         }
     }
 
+    /// Applies an ordered nested write log to confirmed `key_values` for `map`.
+    pub(crate) fn apply_nested_log<M: Copy + PartialEq, K: Clone + PartialEq, V: Clone>(
+        key_values: &mut Vec<(K, V)>,
+        log: &[(M, Option<K>, Option<V>)],
+        map: &M,
+    ) {
+        for (pending_map, key, value) in log {
+            if pending_map != map {
+                continue;
+            }
+            match (key, value) {
+                (Some(k), Some(v)) => match key_values.iter_mut().find(|(existing, _)| existing == k) {
+                    Some((_, existing)) => *existing = v.clone(),
+                    None => key_values.push((k.clone(), v.clone())),
+                },
+                (Some(k), None) => key_values.retain(|(existing, _)| existing != k),
+                (None, None) => key_values.clear(),
+                (None, Some(_)) => unreachable!("Cannot remove a key-value pair from a map without a key."),
+            }
+        }
+    }
+
     #[cfg(test)]
     mod pending_overlay_tests {
         use super::{NestedPending, get_flat, rebuild_flat};
@@ -305,7 +315,7 @@ pub(crate) mod pending_overlay {
             pending.apply(0u8, Some(2u8), Some(20u8));
             assert_eq!(pending.get(&0, &2), Some(Some(20u8)));
             assert_eq!(pending.get(&0, &1), Some(None));
-            assert!(pending.map_is_deleted(&0));
+            assert_eq!(pending.get(&0, &99), Some(None));
         }
 
         #[test]
@@ -313,7 +323,7 @@ pub(crate) mod pending_overlay {
             let log = vec![(0u8, Some(1u8), Some(10u8)), (0u8, None, None), (0u8, Some(1u8), Some(11u8))];
             let pending = NestedPending::rebuild(&log);
             assert_eq!(pending.get(&0, &1), Some(Some(11u8)));
-            assert!(pending.map_is_deleted(&0));
+            assert_eq!(pending.get(&0, &99), Some(None));
         }
     }
 }
