@@ -159,6 +159,7 @@ jobs:
       RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
       PREGENERATED_TX_DIR: ${{ github.workspace }}/transaction_files
       PREGENERATED_TX_LIMIT: "0"
+      GCLOUD_SERVICE_KEY: ${{ secrets.GCLOUD_SERVICE_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -181,8 +182,7 @@ jobs:
           key: ${{ runner.os }}-cargo-pregenerated-bench-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Set up Google Cloud Integration
-        env:
-          GCLOUD_SERVICE_KEY: ${{ secrets.GCLOUD_SERVICE_KEY }}
+        if: env.GCLOUD_SERVICE_KEY != ''
         run: |
           curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
           echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
@@ -193,10 +193,15 @@ jobs:
 
       - name: Fetch pregenerated transactions
         run: |
-          gcloud config set project protocol-development-sandbox
-          gcloud storage cp \
-            gs://provable-pregenerated-transactions/pregenerated_transactions/transactions-testnet-40val-10-22-9349107e39bb93a84f9a539602ae3cca1372557e_test_network-6000-20.zip \
-            transactions.zip
+          if [ -n "$GCLOUD_SERVICE_KEY" ]; then
+            gcloud config set project protocol-development-sandbox
+            gcloud storage cp \
+              gs://provable-pregenerated-transactions/pregenerated_transactions/transactions-testnet-40val-10-22-9349107e39bb93a84f9a539602ae3cca1372557e_test_network-6000-20.zip \
+              transactions.zip
+          else
+            curl -fsSL -o transactions.zip \
+              "https://github.com/ProvableHQ/snarkVM/releases/download/ci-pregenerated-txs-testnet-40val-6000/transactions.zip"
+          fi
           unzip -o transactions.zip -d "${{ github.workspace }}"
           if [ -d "${{ github.workspace }}/transaction_files/transaction_files" ]; then
             echo "PREGENERATED_TX_DIR=${{ github.workspace }}/transaction_files/transaction_files" >> "$GITHUB_ENV"
