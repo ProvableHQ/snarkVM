@@ -146,10 +146,9 @@ fn main() {
     let mut blocks = 0usize;
 
     for chunk in txs.chunks(chunk_size) {
-        let timestamp = builder.ledger().latest_timestamp().saturating_add(CurrentNetwork::BLOCK_TIME as i64);
         let (subdag, transmissions, leader_certificate) = builder
             .build_quorum_subdag_and_transmissions_for_next_block(
-                GenerateBlockOptions { transactions: chunk.to_vec(), timestamp, ..Default::default() },
+                GenerateBlockOptions { transactions: chunk.to_vec(), ..Default::default() },
                 rng,
             )
             .pretty_expect("Failed to build the quorum subdag");
