@@ -908,7 +908,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let post_ratifications = reward_ratifications.iter().chain(post_ratifications);
 
             // Process the post-ratifications.
-            match Self::atomic_post_ratify::<false>(&self.puzzle, store, state, post_ratifications, &solutions) {
+            match Self::atomic_post_ratify(&self.puzzle, store, state, post_ratifications, &solutions) {
                 // Store the finalize operations from the post-ratify.
                 Ok(operations) => ratified_finalize_operations.extend(operations),
                 // Note: This will abort the entire atomic batch.
@@ -956,11 +956,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .current_block_height()
             .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
-        // Signal to Slipstream plugins that canonical finalize is starting.
-        #[cfg(feature = "slipstream-plugins")]
-        {
-            self.store.finalize_store().is_finalize_mode().store(true, std::sync::atomic::Ordering::SeqCst);
-        }
         self.store.finalize_store().block_height().store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
         // Perform the finalize operation on the preset finalize mode.
@@ -1182,7 +1177,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             /* Perform the ratifications after finalize. */
 
-            match Self::atomic_post_ratify::<true>(&self.puzzle, store, state, post_ratifications, solutions) {
+            match Self::atomic_post_ratify(&self.puzzle, store, state, post_ratifications, solutions) {
                 // Store the finalize operations from the post-ratify.
                 Ok(operations) => ratified_finalize_operations.extend(operations),
                 // Note: This will abort the entire atomic batch.
@@ -1198,12 +1193,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             Ok(ratified_finalize_operations)
         });
-
-        // Reset the canonical finalize flag regardless of whether finalize succeeded or failed.
-        #[cfg(feature = "slipstream-plugins")]
-        {
-            self.store.finalize_store().is_finalize_mode().store(false, std::sync::atomic::Ordering::SeqCst);
-        }
 
         finalize_result
     }
@@ -1795,7 +1784,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
     /// Performs the post-ratifications after finalizing transactions.
     #[inline]
-    fn atomic_post_ratify<'a, const IS_FINALIZE: bool>(
+    fn atomic_post_ratify<'a>(
         puzzle: &Puzzle<N>,
         store: &FinalizeStore<N, C::FinalizeStorage>,
         state: FinalizeGlobalState,
@@ -1858,23 +1847,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         {
                             let reward = new_stake - curr_stake;
                             store.staking_rewards_map().insert((*staker, height), (*validator, reward, *new_stake))?;
-                            // Notify Slipstream plugins of the staking reward, if in canonical finalize mode.
-                            #[cfg(feature = "slipstream-plugins")]
-                            if IS_FINALIZE {
-                                store.notify_staking_reward(staker, validator, reward, *new_stake, height);
-                            }
-                        }
-                    }
-
-                    // When history-staking-rewards is disabled, notify Slipstream plugins directly.
-                    #[cfg(all(feature = "slipstream-plugins", not(feature = "history-staking-rewards")))]
-                    if IS_FINALIZE {
-                        let height = state.block_height();
-                        for (curr_stake, (staker, (validator, new_stake))) in
-                            current_stakers.values().map(|(_, current_stake)| current_stake).zip(&next_stakers)
-                        {
-                            let reward = new_stake - curr_stake;
-                            store.notify_staking_reward(staker, validator, reward, *new_stake, height);
                         }
                     }
 
