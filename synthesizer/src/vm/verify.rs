@@ -903,12 +903,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Ensure the global state root exists in the block store.
         let result = match verification {
-            // Ensure the global state root exists in the block store.
-            Ok(()) => match self.block_store().contains_state_root(&execution.global_state_root()) {
-                Ok(true) => Ok(()),
-                Ok(false) => bail!("Execution verification failed - global state root does not exist (yet)"),
-                Err(error) => bail!("Execution verification failed - {error}"),
-            },
+            Ok(()) => self.ensure_global_state_root_exists(
+                execution.global_state_root(),
+                "Execution verification failed - global state root does not exist (yet)",
+            ),
             Err(error) => bail!("Execution verification failed - {error}"),
         };
         finish!(timer, "Check the global state root");
@@ -989,15 +987,29 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Ensure the global state root exists in the block store.
         let result = match verification {
-            Ok(()) => match self.block_store().contains_state_root(&fee.global_state_root()) {
-                Ok(true) => Ok(()),
-                Ok(false) => bail!("Fee verification failed - State root {} not found", fee.global_state_root()),
-                Err(error) => bail!("Fee verification failed - Storage error - {error}"),
-            },
+            Ok(()) => self.ensure_global_state_root_exists(
+                fee.global_state_root(),
+                format!("Fee verification failed - State root {} not found", fee.global_state_root()),
+            ),
             Err(error) => bail!("Fee verification failed - {error}"),
         };
         finish!(timer, "Check the global state root");
         result
+    }
+
+    /// Returns `Ok(())` when `state_root` is in the block store.
+    fn ensure_global_state_root_exists(&self, state_root: N::StateRoot, missing_message: impl ToString) -> Result<()> {
+        #[cfg(feature = "dev_skip_state_root_check")]
+        {
+            let _ = (state_root, missing_message);
+            Ok(())
+        }
+        #[cfg(not(feature = "dev_skip_state_root_check"))]
+        match self.block_store().contains_state_root(&state_root) {
+            Ok(true) => Ok(()),
+            Ok(false) => bail!("{}", missing_message.to_string()),
+            Err(error) => bail!("Verification failed - {error}"),
+        }
     }
 }
 

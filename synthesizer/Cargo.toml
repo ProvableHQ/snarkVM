@@ -63,8 +63,9 @@ wasm = [
 ]
 dev-print = [ "snarkvm-utilities/dev-print", "snarkvm-console/dev-print" ]
 dev_skip_checks = [ "snarkvm-synthesizer-process/dev_skip_checks" ]
+dev_skip_state_root_check = [ ]
 snark-print = [ "snarkvm-algorithms/snark-print" ]
-test_consensus_heights = [ "snarkvm-synthesizer-process/test_consensus_heights" ]
+test_consensus_heights = [ "snarkvm-synthesizer-process/test_consensus_heights", "snarkvm-console/test_consensus_heights" ]
 memory-intensive = [ ]
 metrics = [ "dep:snarkvm-metrics", "snarkvm-ledger-store/metrics" ]
 
@@ -82,6 +83,12 @@ harness = false
 name = "check_transaction_multirecord"
 path = "benches/check_transaction_multirecord/main.rs"
 harness = false
+
+[[bench]]
+name = "pregenerated_advance"
+path = "benches/pregenerated_advance.rs"
+harness = false
+required-features = [ "test_consensus_heights", "dev_skip_checks", "dev_skip_state_root_check" ]
 
 [dependencies.snarkvm-algorithms]
 workspace = true
@@ -222,6 +229,10 @@ features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-ledger-test-helpers]
 path = "../ledger/test-helpers"
+
+[dev-dependencies.snarkvm-ledger]
+workspace = true
+features = [ "test-helpers" ]
 
 [dev-dependencies.rayon]
 workspace = true
