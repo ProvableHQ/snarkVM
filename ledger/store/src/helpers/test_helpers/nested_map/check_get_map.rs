@@ -122,10 +122,30 @@ fn check_get_same_map(map: &impl for<'a> NestedMap<'a, usize, usize, String>) {
     ensure_map_is_empty(map);
 }
 
+fn check_get_map_delete_and_reinsert_order(map: &impl for<'a> NestedMap<'a, usize, usize, String>) {
+    ensure_map_is_empty(map);
+
+    const MAP: usize = 0;
+    map.insert(MAP, 0, "a".to_string()).unwrap();
+    map.insert(MAP, 1, "b".to_string()).unwrap();
+
+    map.start_atomic();
+    map.remove_key(&MAP, &0).unwrap();
+    map.insert(MAP, 0, "c".to_string()).unwrap();
+    assert_eq!(map.get_map_speculative(&MAP).unwrap(), vec![(1, "b".to_string()), (0, "c".to_string())]);
+    map.abort_atomic();
+
+    map.remove_map(&MAP).unwrap();
+    ensure_map_is_empty(map);
+}
+
 pub fn check_get_map(map: impl for<'a> NestedMap<'a, usize, usize, String>) {
     println!("Checking get unique maps");
     check_get_unique_maps(&map);
 
     println!("Checking get same map");
     check_get_same_map(&map);
+
+    println!("Checking get map delete and reinsert order");
+    check_get_map_delete_and_reinsert_order(&map);
 }
