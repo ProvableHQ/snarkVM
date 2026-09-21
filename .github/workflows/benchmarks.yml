@@ -11,6 +11,7 @@ jobs:
   # Run benchmarks and stores the output to a file
   benchmark:
     name: Benchmark
+    if: github.event_name == 'push'
     # Pin to a specific image to reduce runner-image drift between comparisons.
     runs-on: ubuntu-24.04
     permissions:
@@ -146,4 +147,91 @@ jobs:
           alert-comment-cc-users: '@vicsn,@snarkworld,@cbeck88'
           auto-push: true
           # Enable Job Summary for PRs
+          summary-always: true
+
+  pregenerated:
+    name: Pregenerated advance
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
+      PREGENERATED_TX_DIR: ${{ github.workspace }}/transaction_files
+      PREGENERATED_TX_LIMIT: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install required Debian packages
+        run: |
+          DEBIAN_FRONTEND=noninteractive sudo apt-get update
+          DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends \
+            clang libclang-dev llvm-dev llvm lld pkg-config xz-utils make libssl-dev unzip
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-pregenerated-bench-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Set up Google Cloud Integration
+        env:
+          GCLOUD_SERVICE_KEY: ${{ secrets.GCLOUD_SERVICE_KEY }}
+        run: |
+          curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+          echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+          sudo apt-get update
+          sudo apt-get install google-cloud-cli -y
+          echo "$GCLOUD_SERVICE_KEY" > ${HOME}/gcloud-key.json
+          gcloud auth activate-service-account --key-file=${HOME}/gcloud-key.json
+
+      - name: Fetch pregenerated transactions
+        run: |
+          gcloud config set project protocol-development-sandbox
+          gcloud storage cp \
+            gs://provable-pregenerated-transactions/pregenerated_transactions/transactions-testnet-40val-10-22-9349107e39bb93a84f9a539602ae3cca1372557e_test_network-6000-20.zip \
+            transactions.zip
+          unzip -o transactions.zip -d "${{ github.workspace }}"
+          if [ -d "${{ github.workspace }}/transaction_files/transaction_files" ]; then
+            echo "PREGENERATED_TX_DIR=${{ github.workspace }}/transaction_files/transaction_files" >> "$GITHUB_ENV"
+          fi
+          find "${{ github.workspace }}" -name 'executions-*.txt' | head
+
+      - name: Benchmark prepare/check/advance
+        timeout-minutes: 90
+        run: |
+          set -o pipefail
+          cargo bench --locked --package=snarkvm-synthesizer --bench pregenerated_advance \
+            --features=test_consensus_heights,dev_skip_checks,dev_skip_state_root_check \
+            | tee output.txt
+
+      - name: Clean benchmark output
+        run: |
+          sed -n -i '/bench:/p' output.txt
+          cat output.txt
+
+      - name: Download previous benchmark data
+        uses: actions/cache@v4
+        with:
+          path: ./cache
+          key: ${{ runner.os }}-pregenerated-benchmark
+
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: snarkVM Pregenerated Advance
+          tool: 'cargo'
+          output-file-path: output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          alert-threshold: '200%'
+          comment-on-alert: true
+          fail-on-alert: false
+          alert-comment-cc-users: '@vicsn,@snarkworld,@cbeck88'
+          auto-push: false
           summary-always: true

@@ -17,6 +17,8 @@
 #![warn(clippy::cast_possible_truncation)]
 // TODO (howardwu): Update the return type on `execute` after stabilizing the interface.
 #![allow(clippy::type_complexity)]
+#[cfg(all(feature = "dev_skip_state_root_check", not(feature = "test_consensus_heights")))]
+compile_error!("feature \"dev_skip_state_root_check\" requires feature \"test_consensus_heights\".");
 
 #[allow(unused_imports)] // Only needed for some features
 #[macro_use]
