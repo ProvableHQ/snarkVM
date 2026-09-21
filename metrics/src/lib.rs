@@ -39,6 +39,19 @@ pub mod committee {
     pub const TOTAL_STAKE: &str = "snarkvm_ledger_committee_total_stake";
 }
 
+/// Sequential-thread and speculate-stage timings.
+pub mod vm {
+    /// Time from enqueueing a sequential operation until the sequential thread starts it.
+    ///
+    /// Labeled by `op`: `add_next_block`, `atomic_speculate`, or `discard_kept_speculation`.
+    pub const SEQUENTIAL_OP_QUEUE_WAIT_SECONDS: &str = "snarkvm_vm_sequential_op_queue_wait_seconds";
+    /// Wall time of a `VM::speculate` stage, labeled by `stage`.
+    ///
+    /// Label values: `prepare` (proof verify, off the sequential thread), `queue` (sequential
+    /// FIFO wait), `inner` (finalize dry-run on the sequential thread).
+    pub const SPECULATE_STAGE_DURATION_SECONDS: &str = "snarkvm_vm_speculate_stage_duration_seconds";
+}
+
 /// Per-map atomic-batch contention.
 ///
 /// Overlay `ATOMIC_BATCH_LOCK_WAIT_SECONDS` with `ATOMIC_BATCH_OFF_THREAD_SPECULATIVE_READ_TOTAL`

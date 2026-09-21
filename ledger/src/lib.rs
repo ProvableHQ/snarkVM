@@ -68,7 +68,7 @@ use snarkvm_ledger_query::QueryTrait;
 use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore};
 use snarkvm_synthesizer::{
     program::{FinalizeGlobalState, Program},
-    vm::VM,
+    vm::{SpeculationId, VM},
 };
 
 use aleo_std::{
