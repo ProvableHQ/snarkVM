@@ -107,7 +107,9 @@ pub(crate) mod pending_overlay {
     pub(crate) fn rebuild_flat<K: Clone + Eq + Hash, V>(log: &[(K, Option<V>)]) -> IndexMap<K, usize> {
         let mut pending = IndexMap::with_capacity(log.len());
         for (i, (key, _)) in log.iter().enumerate() {
-            pending.insert(key.clone(), i);
+            if let Some(previous) = pending.insert(key.clone(), i) {
+                assert!(previous < i, "Pending overlay index must increase");
+            }
         }
         pending
     }
@@ -145,7 +147,10 @@ pub(crate) mod pending_overlay {
         }
 
         pub(crate) fn push(&mut self, key: K, value: Option<V>) {
-            self.pending.insert(key.clone(), self.log.len());
+            let index = self.log.len();
+            if let Some(previous) = self.pending.insert(key.clone(), index) {
+                assert!(previous < index, "Pending overlay index must increase");
+            }
             self.log.push((key, value));
         }
 
@@ -308,7 +313,7 @@ pub(crate) mod pending_overlay {
 
     #[cfg(test)]
     mod pending_overlay_tests {
-        use super::{NestedBatch, NestedPending, get_flat, rebuild_flat};
+        use super::{FlatBatch, NestedBatch, NestedPending, get_flat, rebuild_flat};
 
         #[test]
         fn rebuild_flat_keeps_latest_value() {
@@ -316,6 +321,14 @@ pub(crate) mod pending_overlay {
             let pending = rebuild_flat(&log);
             assert_eq!(get_flat(&log, &pending, &1), Some(Some("b")));
             assert_eq!(get_flat(&log, &pending, &2), Some(None));
+        }
+
+        #[test]
+        fn flat_push_replaces_with_a_later_index() {
+            let mut batch = FlatBatch::default();
+            batch.push(1u32, Some("a"));
+            batch.push(1u32, Some("b"));
+            assert_eq!(batch.get(&1), Some(Some("b")));
         }
 
         #[test]

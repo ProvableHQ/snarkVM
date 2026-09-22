@@ -193,6 +193,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         if let Some(constructed) = self.self_constructed.lock().as_mut()
             && constructed.id == id
         {
+            assert!(constructed.hash.is_none(), "Construct-path speculate hash is already bound");
             constructed.hash = Some(hash);
         }
     }
@@ -328,5 +329,18 @@ mod tests {
         vm.bind_self_constructed_hash(id_b, hash_b);
         assert!(vm.self_constructed_ops_for(hash_b).is_some());
         assert!(vm.self_constructed_ops_for(hash_a).is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "Construct-path speculate hash is already bound")]
+    fn bind_self_constructed_hash_panics_when_already_bound() {
+        let vm = sample_vm();
+        let hash_a = <CurrentNetwork as Network>::BlockHash::from(Field::<CurrentNetwork>::from_u64(1));
+        let hash_b = <CurrentNetwork as Network>::BlockHash::from(Field::<CurrentNetwork>::from_u64(2));
+
+        let id = vm.allocate_speculation_id();
+        vm.store_self_constructed(Vec::new(), IndexMap::new(), Default::default(), id, false);
+        vm.bind_self_constructed_hash(id, hash_a);
+        vm.bind_self_constructed_hash(id, hash_b);
     }
 }
