@@ -27,7 +27,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         request_rx: mpsc::Receiver<SequentialOperationRequest<N>>,
     ) -> thread::JoinHandle<()> {
         // Spawn a dedicated thread.
-        let vm = self.clone();
+        // The worker must not own the sender that keeps its receive loop alive.
+        // Only external VM clones own the queue and join it when the last clone drops.
+        let mut vm = self.clone();
+        vm.sequential_ops_tx = None;
         thread::spawn(move || {
             // Sequentially process incoming operations.
             while let Ok(request) = request_rx.recv() {
@@ -61,9 +64,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let request = SequentialOperationRequest { op, response_tx };
 
         // This pattern match is infallible unless already shutting down the thread.
-        if let Some(tx) = &*self.sequential_ops_tx.read() {
+        if let Some(queue) = &self.sequential_ops_tx {
             // Send the operation to be processed sequentially.
-            let _ = tx.send(request);
+            let _ = queue.sender.as_ref()?.send(request);
 
             // Wait for the result of the queued operation. This is a blocking method,
             // and will panic in async contexts (which doesn't happen in production, as
@@ -81,7 +84,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// A safeguard used to ensure that the given operation is processed in the thread
     /// enforcing sequential processing of operations.
     pub fn ensure_sequential_processing(&self) {
-        assert_eq!(thread::current().id(), self.sequential_ops_thread.lock().as_ref().unwrap().thread().id());
+        assert_eq!(
+            thread::current().id(),
+            *self.sequential_ops_thread_id.get().expect("Sequential ops thread not initialized")
+        );
     }
 }
 
@@ -121,4 +127,59 @@ pub enum SequentialOperationResult<N: Network> {
             Vec<FinalizeOperation<N>>,
         )>,
     ),
+}
+
+/// Owned only by external VM clones. Arc runs this destructor exactly once,
+/// including when the final clones are dropped concurrently.
+pub(crate) struct SequentialOperationQueue<N: Network> {
+    pub(crate) sender: Option<mpsc::Sender<SequentialOperationRequest<N>>>,
+    pub(crate) thread: Option<thread::JoinHandle<()>>,
+}
+
+impl<N: Network> Drop for SequentialOperationQueue<N> {
+    fn drop(&mut self) {
+        // Closing the last sender drains queued operations and terminates the worker.
+        self.sender.take();
+        if let Some(thread) = self.thread.take() {
+            trace!("Waiting for sequential ops thread to terminate");
+            thread.join().expect("Sequential ops thread had an error");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aleo_std::StorageMode;
+    use console::network::MainnetV0;
+    use snarkvm_ledger_store::helpers::memory::ConsensusMemory;
+
+    #[test]
+    fn final_drop_drains_queued_operations() {
+        let store = ConsensusStore::<MainnetV0, ConsensusMemory<MainnetV0>>::open(StorageMode::Production).unwrap();
+        let vm = VM::from(store).unwrap();
+        let process = Arc::downgrade(vm.process());
+        let state = FinalizeGlobalState::new_genesis::<MainnetV0>().unwrap();
+        let responses = (0..8)
+            .map(|_| {
+                let (response_tx, response_rx) = oneshot::channel();
+                let op = SequentialOperation::AtomicSpeculate(state, 0, None, vec![], Solutions::from(None), vec![]);
+                vm.sequential_ops_tx
+                    .as_ref()
+                    .unwrap()
+                    .sender
+                    .as_ref()
+                    .unwrap()
+                    .send(SequentialOperationRequest { op, response_tx })
+                    .unwrap();
+                response_rx
+            })
+            .collect::<Vec<_>>();
+
+        drop(vm);
+        assert!(process.upgrade().is_none());
+        for response in responses {
+            assert!(matches!(response.blocking_recv().unwrap(), SequentialOperationResult::AtomicSpeculate(_)));
+        }
+    }
 }
