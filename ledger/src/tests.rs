@@ -127,6 +127,48 @@ fn test_self_constructed_check_and_advance() {
 }
 
 #[test]
+fn test_consensus_and_sync_checks_preserve_kept_speculate() {
+    let rng = &mut TestRng::default();
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let store = ConsensusStore::<_, LedgerType>::open(StorageMode::new_test(None)).unwrap();
+    let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, rng).unwrap();
+    let consensus = CurrentLedger::load(genesis.clone(), StorageMode::new_test(None)).unwrap();
+    let syncing = CurrentLedger::load(genesis, StorageMode::new_test(None)).unwrap();
+
+    let block = consensus.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+    assert!(consensus.vm().finalize_store().is_atomic_in_progress());
+    assert!(syncing.check_prepared_next_block(&block, rng).is_err());
+    assert!(!syncing.vm().finalize_store().is_atomic_in_progress());
+
+    consensus.check_prepared_next_block(&block, rng).unwrap();
+    assert!(consensus.vm().finalize_store().is_atomic_in_progress());
+    consensus.advance_to_next_block(&block).unwrap();
+    assert!(!consensus.vm().finalize_store().is_atomic_in_progress());
+
+    syncing.check_next_block(&block, rng).unwrap();
+    assert!(!syncing.vm().finalize_store().is_atomic_in_progress());
+    syncing.check_sync_next_block(&block, rng).unwrap();
+    assert!(syncing.vm().finalize_store().is_atomic_in_progress());
+    syncing.advance_to_next_block(&block).unwrap();
+    assert!(!syncing.vm().finalize_store().is_atomic_in_progress());
+    assert_eq!(syncing.latest_hash(), consensus.latest_hash());
+
+    let block = consensus.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+    consensus.check_prepared_next_block(&block, rng).unwrap();
+    assert!(consensus.vm().finalize_store().is_atomic_in_progress());
+    consensus.advance_to_next_block(&block).unwrap();
+
+    let pending = syncing.check_block_subdag(block, &[]).unwrap();
+    let block = syncing.check_sync_block_content(pending, rng).unwrap();
+    assert!(syncing.vm().finalize_store().is_atomic_in_progress());
+    syncing.advance_to_next_block(&block).unwrap();
+    assert!(!syncing.vm().finalize_store().is_atomic_in_progress());
+    assert_eq!(syncing.latest_height(), 2);
+    assert_eq!(syncing.latest_hash(), consensus.latest_hash());
+}
+
+#[test]
 fn test_load_unchecked() {
     let rng = &mut TestRng::default();
 

@@ -171,9 +171,52 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// This function panics if called from an async context.
     pub fn check_next_block<R: CryptoRng + Rng>(&self, block: &Block<N>, rng: &mut R) -> Result<()> {
         self.check_block_subdag_inner(block, &[]).map_err(|err| err.into_anyhow())?;
-        self.check_block_content_inner(block, rng).map_err(|err| err.into_anyhow())?;
+        self.check_block_content_inner(block, rng, false).map_err(|err| err.into_anyhow())?;
 
         Ok(())
+    }
+
+    /// Checks the next block on a consensus node.
+    ///
+    /// `block` is the candidate from [`Self::prepare_advance_to_next_quorum_block`] or
+    /// [`Self::prepare_advance_to_next_beacon_block`]. The speculate retained for that candidate
+    /// stays open when this check succeeds, so [`Self::advance_to_next_block`] can finish it.
+    /// A failed check aborts that speculate.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
+    pub fn check_prepared_next_block<R: CryptoRng + Rng>(
+        &self,
+        block: &Block<N>,
+        rng: &mut R,
+    ) -> Result<(), CheckBlockError<N>> {
+        if !self.vm.has_kept_speculation(block.hash()) {
+            return Err(CheckBlockError::Other(anyhow!("No retained speculate for block {}", block.hash())));
+        }
+        let result = (|| {
+            self.check_block_subdag_inner(block, &[])?;
+            self.check_block_content_inner(block, rng, false)?;
+            Ok(())
+        })();
+        if result.is_err() {
+            self.vm.discard_kept_speculation();
+        }
+        result
+    }
+
+    /// Checks the next block on a syncing node.
+    ///
+    /// On success the speculate over `block` stays open, so [`Self::advance_to_next_block`] can finish it.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
+    pub fn check_sync_next_block<R: CryptoRng + Rng>(
+        &self,
+        block: &Block<N>,
+        rng: &mut R,
+    ) -> Result<(), CheckBlockError<N>> {
+        self.check_block_subdag_inner(block, &[])?;
+        self.check_block_content_inner(block, rng, true)
     }
 
     /// Takes a pending block and performs the remaining checks to full verify it.
@@ -199,7 +242,23 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         block: PendingBlock<N>,
         rng: &mut R,
     ) -> Result<Block<N>, CheckBlockError<N>> {
-        self.check_block_content_inner(&block.0, rng)?;
+        self.check_block_content_inner(&block.0, rng, false)?;
+        Ok(block.0)
+    }
+
+    /// Checks a pending block's content on a syncing node.
+    ///
+    /// [`Self::check_block_subdag`] has already accepted the block's subDAG. On success the speculate
+    /// over the block stays open, so [`Self::advance_to_next_block`] can finish it.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
+    pub fn check_sync_block_content<R: CryptoRng + Rng>(
+        &self,
+        block: PendingBlock<N>,
+        rng: &mut R,
+    ) -> Result<Block<N>, CheckBlockError<N>> {
+        self.check_block_content_inner(&block.0, rng, true)?;
         Ok(block.0)
     }
 
@@ -209,6 +268,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         &self,
         block: &Block<N>,
         rng: &mut R,
+        keep_speculate: bool,
     ) -> Result<(), CheckBlockError<N>> {
         let latest_block = self.current_block.read();
         let latest_block_timestamp = latest_block.timestamp();
@@ -250,8 +310,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             None => self.get_epoch_hash(latest_block.height())?,
         };
 
-        let (expected_existing_solution_ids, expected_existing_transaction_ids) =
-            match self.vm.check_block_content_inner(
+        let vm_check = if keep_speculate {
+            self.vm.check_block_content_for_commit(
                 block,
                 &latest_block,
                 latest_block_timestamp,
@@ -262,15 +322,37 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 latest_epoch_hash,
                 OffsetDateTime::now_utc().unix_timestamp(),
                 rng,
-            ) {
-                Ok(ids) => ids,
-                Err(VmCheckBlockContentError::Speculation(inner)) => {
-                    return Err(CheckBlockError::SpeculationFailed { inner });
-                }
-                Err(VmCheckBlockContentError::Verification(inner)) => {
-                    return Err(CheckBlockError::VerificationFailed { inner });
-                }
-            };
+            )
+        } else {
+            self.vm.check_block_content_inner(
+                block,
+                &latest_block,
+                latest_block_timestamp,
+                self.latest_state_root(),
+                &previous_committee_lookback,
+                &committee_lookback,
+                self.puzzle(),
+                latest_epoch_hash,
+                OffsetDateTime::now_utc().unix_timestamp(),
+                rng,
+            )
+        };
+        let (expected_existing_solution_ids, expected_existing_transaction_ids) = match vm_check {
+            Ok(ids) => ids,
+            Err(VmCheckBlockContentError::Speculation(inner)) => {
+                return Err(CheckBlockError::SpeculationFailed { inner });
+            }
+            Err(VmCheckBlockContentError::Verification(inner)) => {
+                return Err(CheckBlockError::VerificationFailed { inner });
+            }
+        };
+        // A reject after the speculate aborts an open finalize batch.
+        let abort_kept = |error: CheckBlockError<N>| {
+            if keep_speculate {
+                self.vm.discard_kept_speculation();
+            }
+            error
+        };
 
         // Ensure that the provers are within their stake bounds.
         if let Some(solutions) = block.solutions().deref() {
@@ -284,7 +366,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                     num_accepted_solutions,
                     latest_block_timestamp,
                 ) {
-                    return Err(CheckBlockError::SolutionLimitReached { prover_address });
+                    return Err(abort_kept(CheckBlockError::SolutionLimitReached { prover_address }));
                 }
                 // Track the already accepted solutions.
                 *accepted_solutions.entry(prover_address).or_insert(0) += 1;
@@ -293,15 +375,22 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         // Ensure that each existing solution ID from the block exists in the ledger.
         for existing_solution_id in expected_existing_solution_ids {
-            if !self.contains_solution_id(&existing_solution_id)? {
-                return Err(CheckBlockError::PreviousSolutionNotFound { solution_id: existing_solution_id });
+            let exists = self.contains_solution_id(&existing_solution_id).map_err(|error| abort_kept(error.into()))?;
+            if !exists {
+                return Err(abort_kept(CheckBlockError::PreviousSolutionNotFound {
+                    solution_id: existing_solution_id,
+                }));
             }
         }
 
         // Ensure that each existing transaction ID from the block exists in the ledger.
         for existing_transaction_id in expected_existing_transaction_ids {
-            if !self.contains_transaction_id(&existing_transaction_id)? {
-                return Err(CheckBlockError::PreviousTransactionNotFound { transaction_id: existing_transaction_id });
+            let exists =
+                self.contains_transaction_id(&existing_transaction_id).map_err(|error| abort_kept(error.into()))?;
+            if !exists {
+                return Err(abort_kept(CheckBlockError::PreviousTransactionNotFound {
+                    transaction_id: existing_transaction_id,
+                }));
             }
         }
 

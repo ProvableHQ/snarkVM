@@ -277,6 +277,26 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         transactions: &Transactions<N>,
         rng: &mut R,
     ) -> Result<Vec<FinalizeOperation<N>>> {
+        self.check_speculate_with_keep(state, time_since_last_block, ratifications, solutions, transactions, rng, None)
+    }
+
+    /// Like [`Self::check_speculate`]. When `keep` is set, a matching speculate leaves its finalize batch open.
+    /// A mismatch aborts that batch.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    fn check_speculate_with_keep<R: Rng + CryptoRng>(
+        &self,
+        state: FinalizeGlobalState,
+        time_since_last_block: i64,
+        ratifications: &Ratifications<N>,
+        solutions: &Solutions<N>,
+        transactions: &Transactions<N>,
+        rng: &mut R,
+        keep: Option<SpeculationId>,
+    ) -> Result<Vec<FinalizeOperation<N>>> {
         let timer = timer!("VM::check_speculate");
 
         // Retrieve the transactions and their rejected IDs.
@@ -304,16 +324,22 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 candidate_ratifications,
                 solutions.clone(),
                 candidate_transactions,
-                None,
+                keep,
             )?;
 
         // Ensure the ratifications after speculation match.
         if ratifications != &speculate_ratifications {
+            if keep.is_some() {
+                self.discard_kept_speculation();
+            }
             bail!("The ratifications after speculation do not match the ratifications in the block");
         }
         // Ensure the transactions after speculation match.
         let confirmed_transactions = confirmed_transactions.into_iter().collect();
         if transactions != &confirmed_transactions {
+            if keep.is_some() {
+                self.discard_kept_speculation();
+            }
             let confirmed_transaction_ids =
                 confirmed_transactions.transaction_ids().map(|id| id.to_string()).collect::<Vec<_>>();
             bail!(
@@ -323,7 +349,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Ensure there are no aborted transaction IDs from this speculation.
         // Note: There should be no aborted transactions, because we are checking a block,
         // where any aborted transactions should be in the aborted transaction ID list, not in transactions.
-        ensure!(aborted_transactions.is_empty(), "Aborted transactions found in the block (from speculation)");
+        if !aborted_transactions.is_empty() {
+            if keep.is_some() {
+                self.discard_kept_speculation();
+            }
+            bail!("Aborted transactions found in the block (from speculation)");
+        }
 
         finish!(timer, "Finished dry-run of the transactions");
 
@@ -376,6 +407,74 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         current_timestamp: i64,
         rng: &mut R,
     ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>), VmCheckBlockContentError> {
+        self.check_block_content_with_keep(
+            block,
+            latest_block,
+            latest_block_timestamp,
+            latest_state_root,
+            previous_committee_lookback,
+            committee_lookback,
+            puzzle,
+            latest_epoch_hash,
+            current_timestamp,
+            rng,
+            false,
+        )
+    }
+
+    /// Like [`Self::check_block_content_inner`]. When this block has no open speculate, the check
+    /// starts one and leaves the finalize batch bound to `block.hash()`.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn check_block_content_for_commit<R: Rng + CryptoRng>(
+        &self,
+        block: &Block<N>,
+        latest_block: &Block<N>,
+        latest_block_timestamp: i64,
+        latest_state_root: N::StateRoot,
+        previous_committee_lookback: &Committee<N>,
+        committee_lookback: &Committee<N>,
+        puzzle: &Puzzle<N>,
+        latest_epoch_hash: N::BlockHash,
+        current_timestamp: i64,
+        rng: &mut R,
+    ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>), VmCheckBlockContentError> {
+        self.check_block_content_with_keep(
+            block,
+            latest_block,
+            latest_block_timestamp,
+            latest_state_root,
+            previous_committee_lookback,
+            committee_lookback,
+            puzzle,
+            latest_epoch_hash,
+            current_timestamp,
+            rng,
+            true,
+        )
+    }
+
+    /// # Panics
+    /// This function panics if called from an async context.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    fn check_block_content_with_keep<R: Rng + CryptoRng>(
+        &self,
+        block: &Block<N>,
+        latest_block: &Block<N>,
+        latest_block_timestamp: i64,
+        latest_state_root: N::StateRoot,
+        previous_committee_lookback: &Committee<N>,
+        committee_lookback: &Committee<N>,
+        puzzle: &Puzzle<N>,
+        latest_epoch_hash: N::BlockHash,
+        current_timestamp: i64,
+        rng: &mut R,
+        keep_speculate: bool,
+    ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>), VmCheckBlockContentError> {
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
         // Determine the block's spend and synthesis limits.
@@ -397,7 +496,25 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         .map_err(VmCheckBlockContentError::Verification)?;
 
         let time_since_last_block = block.timestamp().saturating_sub(latest_block_timestamp);
-        let ratified_finalize_operations = if let Some(ops) = self.self_constructed_ops_for(block.hash()) {
+        // An open batch for this hash is reused. A commit check with no open batch starts one and binds it.
+        let ratified_finalize_operations = if let Some(ops) = self.self_constructed_ops_for(block.hash())
+            && (!keep_speculate || self.has_kept_speculation(block.hash()))
+        {
+            ops
+        } else if keep_speculate {
+            let id = self.allocate_speculation_id();
+            let ops = self
+                .check_speculate_with_keep(
+                    state,
+                    time_since_last_block,
+                    block.ratifications(),
+                    block.solutions(),
+                    block.transactions(),
+                    rng,
+                    Some(id),
+                )
+                .map_err(VmCheckBlockContentError::Speculation)?;
+            self.bind_self_constructed_hash(id, block.hash());
             ops
         } else {
             self.check_speculate(
@@ -411,18 +528,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .map_err(VmCheckBlockContentError::Speculation)?
         };
 
-        block
-            .verify(
-                latest_block,
-                latest_state_root,
-                previous_committee_lookback,
-                committee_lookback,
-                puzzle,
-                latest_epoch_hash,
-                current_timestamp,
-                ratified_finalize_operations,
-            )
-            .map_err(VmCheckBlockContentError::Verification)
+        let verification = block.verify(
+            latest_block,
+            latest_state_root,
+            previous_committee_lookback,
+            committee_lookback,
+            puzzle,
+            latest_epoch_hash,
+            current_timestamp,
+            ratified_finalize_operations,
+        );
+        if verification.is_err() && keep_speculate {
+            self.discard_kept_speculation();
+        }
+        verification.map_err(VmCheckBlockContentError::Verification)
     }
 
     /// Like [`Self::check_block_content_inner`], loading the block tip and committee lookbacks from this VM.

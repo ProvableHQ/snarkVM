@@ -30,8 +30,11 @@ use tokio::sync::oneshot;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct SpeculationId(u64);
 
-/// State retained after a successful construct-path speculate, so check can skip a second dry-run
-/// and add can finish the pending finalize batch instead of replaying it.
+/// State retained after a successful speculate.
+///
+/// A consensus node stores this while constructing a block. A syncing node stores it while checking
+/// an incoming block. Check reuses the finalize operations when the block hash matches, and
+/// `add_next_block` finishes the open finalize batch.
 pub(crate) struct SelfConstructed<N: Network> {
     /// Opaque id of this speculate, used to bind and take the matching entry.
     pub id: SpeculationId,
@@ -198,12 +201,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
     }
 
-    /// Returns finalize operations from construct-path speculate when `hash` matches.
+    /// Returns finalize operations from a retained speculate when `hash` matches.
     pub(crate) fn self_constructed_ops_for(&self, hash: N::BlockHash) -> Option<Vec<FinalizeOperation<N>>> {
         self.self_constructed
             .lock()
             .as_ref()
             .and_then(|constructed| (constructed.hash == Some(hash)).then(|| constructed.finalize_operations.clone()))
+    }
+
+    /// Returns `true` when the finalize batch for `hash` is still open.
+    pub fn has_kept_speculation(&self, hash: N::BlockHash) -> bool {
+        self.self_constructed
+            .lock()
+            .as_ref()
+            .is_some_and(|constructed| constructed.hash == Some(hash) && constructed.batch_kept)
     }
 
     /// Takes a kept finalize batch when it belongs to `hash`.
