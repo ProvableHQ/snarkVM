@@ -658,7 +658,6 @@ impl<K: Serialize + DeserializeOwned + Eq + Hash, V: Serialize + DeserializeOwne
 mod tests {
     use super::*;
     use crate::{
-        FinalizeMode,
         atomic_batch_scope,
         atomic_finalize,
         helpers::rocksdb::{MapID, TestMap},
@@ -1134,7 +1133,7 @@ mod tests {
         assert_eq!(map.checkpoints.lock().last(), None);
 
         // Start an atomic finalize.
-        let outcome = atomic_finalize!(map, FinalizeMode::RealRun, {
+        let outcome = atomic_finalize!(map, {
             // Start a nested atomic batch scope that completes successfully.
             atomic_batch_scope!(map, {
                 // Queue (since a batch is in progress) NUM_ITEMS / 2 insertions.
@@ -1213,7 +1212,7 @@ mod tests {
         assert_eq!(map.checkpoints.lock().last(), None);
 
         // Start an atomic finalize.
-        let outcome = atomic_finalize!(map, FinalizeMode::RealRun, {
+        let outcome = atomic_finalize!(map, {
             // Start a nested atomic batch scope that completes successfully.
             atomic_batch_scope!(map, {
                 // Queue (since a batch is in progress) NUM_ITEMS / 2 insertions.
@@ -1293,7 +1292,7 @@ mod tests {
         // Construct an atomic batch scope.
         let outcome: Result<()> = atomic_batch_scope!(map, {
             // Start an atomic finalize.
-            let outcome = atomic_finalize!(map, FinalizeMode::RealRun, { Ok(()) });
+            let outcome = atomic_finalize!(map, { Ok(()) });
             // Ensure that the atomic finalize fails.
             assert!(outcome.is_err());
 
@@ -1307,7 +1306,7 @@ mod tests {
         map.start_atomic();
 
         // We need to catch the `atomic_finalize` here, otherwise it will end the test early.
-        let outcome = || atomic_finalize!(map, FinalizeMode::RealRun, { Ok(()) });
+        let outcome = || atomic_finalize!(map, { Ok(()) });
 
         // Ensure that the atomic finalize fails if an atomic batch is in progress.
         assert!(outcome().is_err());
@@ -1385,7 +1384,7 @@ mod tests {
         map.insert(0, "0".to_string()).unwrap();
 
         // Start an atomic finalize.
-        let outcome = atomic_finalize!(map, FinalizeMode::RealRun, {
+        let outcome = atomic_finalize!(map, {
             // Create an atomic batch scope that will complete correctly.
             // Simulates an accepted transaction.
             let result: Result<()> = atomic_batch_scope!(map, {

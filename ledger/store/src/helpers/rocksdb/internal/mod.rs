@@ -99,7 +99,7 @@ pub struct RocksDB {
     /// The storage mode.
     storage_mode: StorageMode,
     /// The low-level database transaction that gets executed atomically at the end
-    /// of a real-run `atomic_finalize` or the outermost `atomic_batch_scope`.
+    /// of `atomic_finalize` or the outermost `atomic_batch_scope`.
     pub(super) atomic_batch: Arc<Mutex<rocksdb::WriteBatch>>,
     /// The depth of the current atomic write batch; it gets incremented with every call
     /// to `start_atomic` and decremented with each call to `finish_atomic`.

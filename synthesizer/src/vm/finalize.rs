@@ -1085,8 +1085,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         self.store.finalize_store().block_height().store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
-        // Perform the finalize operation on the preset finalize mode.
-        let finalize_result = atomic_finalize!(self.finalize_store(), FinalizeMode::RealRun, {
+        // Perform the finalize operation, committing the batch when it succeeds.
+        let finalize_result = atomic_finalize!(self.finalize_store(), {
             // Initialize an iterator for ratifications before finalize.
             let pre_ratifications = ratifications.iter().filter(|r| match r {
                 Ratify::Genesis(_, _, _) => true,

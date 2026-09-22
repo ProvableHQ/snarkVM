@@ -94,9 +94,9 @@ restricted to a single logical unit of storage (e.g. `BlockStorage`), which sepa
 later workaround that is `(un)pause_atomic_writes` (which was introduced specifically so that a
 single atomic operation could be performed both on `BlockStorage` and `FinalizeStorage`).
 
-`atomic_finalize`: this was added in order to facilitate different modes of finalization,
-specifically to not perform any actual writes in the `DryRun` mode. Other than that, it behaves
-like `atomic_batch_scope`, with the exception that it may not be nested.
+`atomic_finalize`: this commits a non-nested atomic batch of finalize writes, and aborts the
+batch when an operation fails. It behaves like `atomic_batch_scope`, with the exception that it
+may not be nested.
 
 ### Basic atomic batch happy path for RocksDB
 

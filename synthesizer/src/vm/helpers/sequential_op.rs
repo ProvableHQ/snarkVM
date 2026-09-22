@@ -41,7 +41,7 @@ pub(crate) struct SelfConstructed<N: Network> {
     pub finalize_operations: Vec<FinalizeOperation<N>>,
     /// Deployment stacks from this speculate. Inserted into `Process` when the block is committed.
     pub staged_stacks: IndexMap<ProgramID<N>, Arc<Stack<N>>>,
-    /// Rejection reasons recorded by this speculate. RealRun inserts any that are still pending.
+    /// Rejection reasons recorded by this speculate. A replayed finalize inserts any that are still pending.
     pub rejected_reasons: HashMap<N::TransactionID, RejectedReason<N>>,
     /// When `true`, the finalize-store atomic batch is still open and must be finished or aborted.
     pub batch_kept: bool,

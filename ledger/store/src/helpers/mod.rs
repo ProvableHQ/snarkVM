@@ -397,9 +397,10 @@ macro_rules! atomic_batch_scope {
 }
 
 /// A top-level helper macro to perform the finalize operation on a list of transactions.
+/// The batch is committed when the operations succeed and aborted when they fail.
 #[macro_export]
 macro_rules! atomic_finalize {
-    ($self:expr, $finalize_mode:expr, $ops:block) => {{
+    ($self:expr, $ops:block) => {{
         // Ensure that there is no atomic batch write in progress.
         if $self.is_atomic_in_progress() {
             // We intentionally 'bail!' here instead of passing an Err() to the caller because
@@ -415,26 +416,16 @@ macro_rules! atomic_finalize {
         // Wrap the operations that should be batched in a closure to be able to abort the entire
         // write batch if any of them fails.
         #[allow(clippy::redundant_closure_call)]
-        match ($finalize_mode, || -> Result<_, String> { $ops }()) {
-            // If this is a successful real run, commit the atomic batch.
-            (FinalizeMode::RealRun, Ok(result)) => {
+        match (|| -> Result<_, String> { $ops }()) {
+            // Commit the atomic batch.
+            Ok(result) => {
                 $self.finish_atomic()?;
                 Ok(result)
             }
-            // If this is a failed real run, abort the atomic batch.
-            (FinalizeMode::RealRun, Err(error_msg)) => {
+            // Abort the atomic batch.
+            Err(error_msg) => {
                 $self.abort_atomic();
                 Err(anyhow!("Failed to finalize transactions - {error_msg}"))
-            }
-            // If this is a successful dry run, abort the atomic batch.
-            (FinalizeMode::DryRun, Ok(result)) => {
-                $self.abort_atomic();
-                Ok(result)
-            }
-            // If this is a failed dry run, abort the atomic batch.
-            (FinalizeMode::DryRun, Err(error_msg)) => {
-                $self.abort_atomic();
-                Err(anyhow!("Failed to speculate on transactions - {error_msg}"))
             }
         }
     }};

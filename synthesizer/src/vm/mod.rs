@@ -70,7 +70,6 @@ use snarkvm_ledger_store::{
     BlockStore,
     ConsensusStorage,
     ConsensusStore,
-    FinalizeMode,
     FinalizeStore,
     TransactionStore,
     TransitionStore,
@@ -633,7 +632,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         )?;
 
         // When a construct-path speculate left its finalize batch open, finish that batch after insert
-        // instead of pausing and replaying RealRun.
+        // instead of pausing and replaying finalize.
         let kept = self.take_kept_matching(block.hash());
         let using_kept_batch = kept.is_some();
         let rejected_reasons = if using_kept_batch { HashMap::new() } else { self.take_rejected_reasons() };
