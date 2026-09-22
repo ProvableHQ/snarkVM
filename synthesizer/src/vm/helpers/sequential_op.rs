@@ -142,7 +142,11 @@ impl<N: Network> Drop for SequentialOperationQueue<N> {
         self.sender.take();
         if let Some(thread) = self.thread.take() {
             trace!("Waiting for sequential ops thread to terminate");
-            thread.join().expect("Sequential ops thread had an error");
+            // Dropping a VM may itself run during unwinding. A worker panic
+            // must not become a second panic and abort the process.
+            if thread.join().is_err() {
+                error!("Sequential ops thread panicked");
+            }
         }
     }
 }
@@ -154,11 +158,34 @@ mod tests {
     use console::network::MainnetV0;
     use snarkvm_ledger_store::helpers::memory::ConsensusMemory;
 
+    fn queue_with_panicking_worker() -> SequentialOperationQueue<MainnetV0> {
+        SequentialOperationQueue { sender: None, thread: Some(thread::spawn(|| panic!("worker failed"))) }
+    }
+
     #[test]
-    fn final_drop_drains_queued_operations() {
+    fn dropping_panicked_worker_does_not_panic() {
+        assert!(std::panic::catch_unwind(|| drop(queue_with_panicking_worker())).is_ok());
+    }
+
+    #[test]
+    fn dropping_panicked_worker_during_unwind_preserves_original_panic() {
+        let error = std::panic::catch_unwind(|| {
+            let _queue = queue_with_panicking_worker();
+            panic!("original panic");
+        })
+        .unwrap_err();
+        assert_eq!(error.downcast_ref::<&str>(), Some(&"original panic"));
+    }
+
+    #[test]
+    fn concurrent_final_drop_drains_queued_operations() {
         let store = ConsensusStore::<MainnetV0, ConsensusMemory<MainnetV0>>::open(StorageMode::Production).unwrap();
         let vm = VM::from(store).unwrap();
         let process = Arc::downgrade(vm.process());
+        // Keep the worker blocked on its Process lock until queued requests and
+        // the final external clones are all ready, without timing assumptions.
+        let process_owner = vm.process().clone();
+        let process_guard = process_owner.lock();
         let state = FinalizeGlobalState::new_genesis::<MainnetV0>().unwrap();
         let responses = (0..8)
             .map(|_| {
@@ -176,10 +203,24 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        drop(vm);
+        let barrier = Arc::new(std::sync::Barrier::new(5));
+        thread::scope(|scope| {
+            for _ in 0..4 {
+                let vm = vm.clone();
+                let barrier = barrier.clone();
+                scope.spawn(move || {
+                    barrier.wait();
+                    drop(vm);
+                });
+            }
+            drop(vm);
+            barrier.wait();
+            drop(process_guard);
+        });
+        drop(process_owner);
         assert!(process.upgrade().is_none());
         for response in responses {
-            assert!(matches!(response.blocking_recv().unwrap(), SequentialOperationResult::AtomicSpeculate(_)));
+            assert!(matches!(response.blocking_recv().unwrap(), SequentialOperationResult::AtomicSpeculate(Ok(_))));
         }
     }
 }
