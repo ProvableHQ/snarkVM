@@ -26,7 +26,6 @@ use snarkvm_ledger_committee::{MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE, MI
 use snarkvm_ledger_query::Query;
 use snarkvm_ledger_store::{
     BlockStore,
-    FinalizeMode,
     FinalizeStorage,
     FinalizeStore,
     atomic_finalize,
@@ -80,9 +79,9 @@ macro_rules! sample_finalize_store {
 }
 
 macro_rules! test_atomic_finalize {
-    ($store:ident, $mode:expr, $test:block) => {{
+    ($store:ident, $test:block) => {{
         // The test closure.
-        let mut run = || -> Result<()> { atomic_finalize!($store, $mode, $test) };
+        let mut run = || -> Result<()> { atomic_finalize!($store, $test) };
         // Run the test.
         run()
     }};
@@ -502,7 +501,7 @@ fn test_bond_validator_simple() {
     assert_eq!(account_balance(&store, validator_address).unwrap(), public_balance);
 
     /* Ensure bonding as a validator with the exact MIN_VALIDATOR_STAKE succeeds. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         // Perform the bond.
         bond_validator(&process, &store, validator_private_key, withdrawal_address, amount, TEST_COMMISSION, rng)
             .unwrap();
@@ -568,7 +567,7 @@ fn test_bond_public_with_minimum_bond() {
     1. Delegator bonds to validator before validator is in the committee
     2. Validator can then bond_validator to join the committee
     */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         // Perform the bond public.
         bond_public(
             &process,
@@ -640,7 +639,7 @@ fn test_bond_validator_below_min_stake_fails() {
     let public_balance = account_balance(&store, validator_address).unwrap();
 
     /* Ensure bonding as a validator below the MIN_VALIDATOR_STAKE fails. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         let amount = rng.random_range(1_000_000..MIN_VALIDATOR_STAKE);
         let result =
             bond_validator(&process, &store, validator_private_key, withdrawal_address, amount, TEST_COMMISSION, rng);
@@ -676,7 +675,7 @@ fn test_bond_validator_same_withdrawal_address_fails() {
     let public_balance = account_balance(&store, validator_address).unwrap();
 
     /* Ensure bonding as a validator below the MIN_VALIDATOR_STAKE fails. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         let amount = MIN_VALIDATOR_STAKE;
         let result =
             bond_validator(&process, &store, validator_private_key, validator_address, amount, TEST_COMMISSION, rng);
@@ -712,7 +711,7 @@ fn test_bond_validator_with_insufficient_funds_fails() {
     let public_balance = account_balance(&store, validator_address).unwrap();
 
     /* Ensure bonding an amount larger than the account balance will fail. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         let amount = public_balance + 1;
         let result =
             bond_validator(&process, &store, validator_private_key, withdrawal_address, amount, TEST_COMMISSION, rng);
@@ -749,7 +748,7 @@ fn test_bond_validator_different_commission_fails() {
     let public_balance = account_balance(&store, validator_address).unwrap();
 
     /*  Ensure that bonding additional stake succeeds. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         /* First Bond */
 
         // Perform the first bond.
@@ -817,7 +816,7 @@ fn test_bond_validator_multiple_bonds() {
     let public_balance = account_balance(&store, validator_address).unwrap();
 
     /*  Ensure that bonding additional stake succeeds. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         /* First Bond */
 
         // Perform the first bond.
@@ -876,7 +875,7 @@ fn test_bond_validator_to_other_validator_fails() {
     let (validator_private_key_2, (validator_address_2, _, _, withdrawal_address_2)) = validators.next().unwrap();
 
     /* Ensure that bonding to another validator fails. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         /* Validator 1 */
 
         // Retrieve the account balance.
@@ -973,7 +972,7 @@ fn test_bond_delegator_simple() {
     let delegator_amount = MIN_DELEGATOR_STAKE;
 
     /* Ensure bonding a delegator with the exact MIN_DELEGATOR_STAKE succeeds. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         // Bond the delegator.
         bond_public(
             &process,
@@ -1027,7 +1026,7 @@ fn test_bond_delegator_below_min_stake_fails() {
     let delegator_balance = account_balance(&store, delegator_address).unwrap();
 
     /* Ensure bonding as a delegator below the MIN_DELEGATOR_STAKE fails. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         // Bond the validator.
         let validator_amount = MIN_VALIDATOR_STAKE;
         bond_validator(
@@ -1094,7 +1093,7 @@ fn test_bond_delegator_with_insufficient_funds_fails() {
     let delegator_balance = account_balance(&store, delegator_address).unwrap();
 
     /* Ensure bonding an amount larger than the account balance will fail. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         // Bond the validator.
         let validator_amount = MIN_VALIDATOR_STAKE;
         bond_validator(
@@ -1166,7 +1165,7 @@ fn test_bond_delegator_multiple_bonds() {
         .unwrap();
 
     /* Ensure that bonding additional stake as a delegator succeeds. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         /* First Bond */
 
         // Perform the first bond.
@@ -1417,7 +1416,7 @@ fn test_bond_delegator_to_multiple_validators_fails() {
     .unwrap();
 
     /* Ensure bonding a delegator to multiple validators fails. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         /* First Bond */
 
         // Perform the first bond.
@@ -1535,7 +1534,7 @@ fn test_unbond_validator() {
         .unwrap();
 
     /* Ensure the validator can unbond their entire balance. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         /* First Unbond */
 
         // Perform the first unbond.
@@ -1676,7 +1675,7 @@ fn test_bond_validator_fails_if_unbonding_state() {
         .unwrap();
 
     /* Ensure the validator can unbond their entire balance. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         // Ensure the validator is part of the committee and bonded correctly
         assert_eq!(
             committee_state(&store, validator_address).unwrap(),
@@ -1768,7 +1767,7 @@ fn test_unbond_validator_fails_if_unbonding_beyond_their_stake() {
         .unwrap();
 
     /* Ensure the validator cannot unbond more than their stake. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         // Perform the unbond.
         let unbond_amount = validator_amount + 1;
         let block_height = rng.random_range(1..100);
@@ -1805,7 +1804,7 @@ fn test_unbond_validator_fails_if_unbonding_beyond_their_stake() {
         .unwrap();
 
     /* Ensure the validator cannot unbond more than their stake. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         // Perform the unbond.
         let unbond_amount = validator_amount + 1;
         let block_height = rng.random_range(1..100);
@@ -1871,7 +1870,7 @@ fn test_unbond_validator_continues_if_there_is_a_delegator() {
         .unwrap();
 
     /* Ensure the validator can fully-unbond if there remains a delegator. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         // Perform the first unbond.
         let unbond_amount_1 = MIN_VALIDATOR_STAKE;
         let block_height_1 = rng.random_range(1..100);
@@ -1951,7 +1950,7 @@ fn test_unbond_delegator() {
         .unwrap();
 
     /* Ensure the delegator can unbond their entire balance. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         /* First Unbond */
 
         // Perform the first unbond.
@@ -2100,7 +2099,7 @@ fn test_unbond_delegator_without_validator() {
         .unwrap();
 
     /* Ensure the delegator can unbond their entire balance. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         // Perform the unbond.
         let block_height = rng.random_range(1..100);
         unbond_public(&process, &store, delegator_private_key, delegator_address, delegator_amount, block_height, rng)
@@ -2156,7 +2155,7 @@ fn test_unbond_delegator_removes_validator_with_insufficient_stake() {
     .unwrap();
 
     /* Ensure the delegator can unbond their entire balance. */
-    test_atomic_finalize!(store, FinalizeMode::RealRun, {
+    test_atomic_finalize!(store, {
         // Ensure that the validator is part of the committee and correctly bonded
         assert_eq!(
             committee_state(&store, validator_address).unwrap(),

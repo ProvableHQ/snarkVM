@@ -21,15 +21,9 @@ use console::{
 use rand::seq::IteratorRandom;
 use snarkvm_ledger_committee::{MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE, MIN_VALIDATOR_STAKE};
 #[cfg(feature = "rocks")]
-use snarkvm_ledger_store::{FinalizeMode, FinalizeStorage, FinalizeStore, atomic_finalize};
+use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore, atomic_finalize};
 #[cfg(not(feature = "rocks"))]
-use snarkvm_ledger_store::{
-    FinalizeMode,
-    FinalizeStorage,
-    FinalizeStore,
-    atomic_finalize,
-    helpers::memory::FinalizeMemory,
-};
+use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore, atomic_finalize, helpers::memory::FinalizeMemory};
 
 use indexmap::{IndexMap, IndexSet};
 
@@ -596,7 +590,7 @@ fn test_random_operations() {
         let mut state = State::new(8, &store, &mut rng);
 
         let mut executed_ops = Vec::new();
-        test_atomic_finalize!(store, FinalizeMode::RealRun, {
+        test_atomic_finalize!(store, {
             while executed_ops.len() < 64 {
                 let op = Operation::random(&state, &mut rng);
                 let expected_result = state.execute_operation(&op);

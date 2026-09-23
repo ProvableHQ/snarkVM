@@ -35,6 +35,7 @@ use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Progr
 use snarkvm_synthesizer_snark::UniversalSRS;
 
 use aleo_std::StorageMode;
+use indexmap::IndexMap;
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
@@ -2984,4 +2985,60 @@ fn test_program_exceeding_transaction_spend_limit() {
     let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
     // Attempt to verify the deployment, which should fail.
     assert!(process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).is_ok());
+}
+
+#[test]
+fn test_commit_staged_stacks_inserts_into_process() {
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = process.lock();
+
+    let foo = Program::<CurrentNetwork>::from_str(
+        r"
+program staged_foo.aleo;
+
+function c:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    add r0 r1 into r2;
+    output r2 as u8.private;
+        ",
+    )
+    .unwrap();
+    let bar = Program::<CurrentNetwork>::from_str(
+        r"
+import staged_foo.aleo;
+
+program staged_bar.aleo;
+
+function b:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    call staged_foo.aleo/c r0 r1 into r2;
+    output r2 as u8.private;
+        ",
+    )
+    .unwrap();
+
+    let foo_id = *foo.id();
+    let mut staged = IndexMap::new();
+    staged.insert(foo_id, Arc::new(crate::Stack::new(&process, &foo).unwrap()));
+
+    assert!(!process.contains_program(&foo_id));
+    assert!(!process.program_ids().contains(&foo_id));
+    assert!(process.get_stack(foo_id).is_err());
+    assert!(crate::Stack::new(&process, &bar).is_err());
+
+    process.commit_staged_stacks(staged);
+    assert!(process.contains_program(&foo_id));
+    assert!(process.program_ids().contains(&foo_id));
+    assert_eq!(*process.get_stack(foo_id).unwrap().program_edition(), 0);
+    crate::Stack::new(&process, &bar).unwrap();
+
+    let replacement = crate::Stack::new(&process, &foo).unwrap();
+    assert_eq!(*replacement.program_edition(), 1);
+    assert_eq!(*process.get_stack(foo_id).unwrap().program_edition(), 0);
+    let mut staged = IndexMap::new();
+    staged.insert(foo_id, Arc::new(replacement));
+    process.commit_staged_stacks(staged);
+    assert_eq!(*process.get_stack(foo_id).unwrap().program_edition(), 1);
 }

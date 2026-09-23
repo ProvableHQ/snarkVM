@@ -53,9 +53,9 @@ macro_rules! sample_finalize_store {
 pub(super) use sample_finalize_store;
 
 macro_rules! test_atomic_finalize {
-    ($store:ident, $mode:expr, $test:block) => {{
+    ($store:ident, $test:block) => {{
         // The test closure.
-        let mut run = || -> Result<()> { atomic_finalize!($store, $mode, $test) };
+        let mut run = || -> Result<()> { atomic_finalize!($store, $test) };
         // Run the test.
         run()
     }};

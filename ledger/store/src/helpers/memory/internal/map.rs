@@ -49,7 +49,7 @@ pub struct MemoryMap<
     batch_in_progress: Arc<AtomicBool>,
     /// Owner of the in-progress atomic batch (`0` = none).
     atomic_owner: Arc<AtomicU64>,
-    atomic_batch: Arc<Mutex<Vec<(K, Option<V>)>>>,
+    atomic_batch: Arc<Mutex<crate::helpers::pending_overlay::FlatBatch<K, V>>>,
     checkpoint: Arc<Mutex<Vec<usize>>>,
 }
 
@@ -105,8 +105,9 @@ impl<
             // If a batch is in progress, add the key-value pair to the batch.
             true => {
                 let start = Instant::now();
-                self.atomic_batch.lock().push((key, Some(value)));
+                let mut batch = self.atomic_batch.lock();
                 crate::helpers::atomic_owner::record_lock_wait(start);
+                batch.push(key, Some(value));
             }
             // Otherwise, insert the key-value pair directly into the map.
             false => {
@@ -125,7 +126,8 @@ impl<
         match self.is_atomic_in_progress() {
             // If a batch is in progress, add the key-None pair to the batch.
             true => {
-                self.atomic_batch.lock().push((key.clone(), None));
+                let mut batch = self.atomic_batch.lock();
+                batch.push(key.clone(), None);
             }
             // Otherwise, remove the key-value pair directly from the map.
             false => {
@@ -166,7 +168,7 @@ impl<
     ///
     fn atomic_checkpoint(&self) {
         // Push the current length of the atomic batch to the checkpoint stack.
-        self.checkpoint.lock().push(self.atomic_batch.lock().len());
+        self.checkpoint.lock().push(self.atomic_batch.lock().log.len());
     }
 
     ///
@@ -189,7 +191,7 @@ impl<
         let checkpoint = self.checkpoint.lock().pop().unwrap_or(0);
 
         // Remove all operations after the checkpoint.
-        atomic_batch.truncate(checkpoint);
+        atomic_batch.rewind(checkpoint);
     }
 
     ///
@@ -197,7 +199,7 @@ impl<
     ///
     fn abort_atomic(&self) {
         // Clear the atomic batch.
-        *self.atomic_batch.lock() = Default::default();
+        self.atomic_batch.lock().clear();
         // Clear the checkpoint stack.
         *self.checkpoint.lock() = Default::default();
         // Set the atomic batch flag to `false`.
@@ -210,7 +212,7 @@ impl<
     ///
     fn finish_atomic(&self) -> Result<()> {
         // Retrieve the atomic batch.
-        let operations = core::mem::take(&mut *self.atomic_batch.lock());
+        let operations = self.atomic_batch.lock().take_log();
 
         // Insert the operations into an index map to remove any operations that would have been overwritten anyways.
         let operations: IndexMap<_, _> = IndexMap::from_iter(operations);
@@ -310,14 +312,10 @@ impl<
     {
         // If this thread owns an in-progress batch, check the atomic batch first.
         if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
-            // If the key is present in the atomic batch, then check if the value is 'Some(V)'.
-            // We iterate from the back of the `atomic_batch` to find the latest value.
             let start = Instant::now();
             let batch = self.atomic_batch.lock();
             crate::helpers::atomic_owner::record_lock_wait(start);
-            if let Some((_, value)) = batch.iter().rev().find(|&(k, _)| k.borrow() == key) {
-                // If the value is 'Some(V)', then the key exists.
-                // If the value is 'Some(None)', then the key is scheduled to be removed.
+            if let Some(value) = batch.get(key) {
                 return Ok(value.is_some());
             }
         }
@@ -352,11 +350,10 @@ impl<
     {
         // Return early if there is no atomic batch in progress on this thread.
         if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
-            // We iterate from the back of the `atomic_batch` to find the latest value.
             let start = Instant::now();
             let batch = self.atomic_batch.lock();
             crate::helpers::atomic_owner::record_lock_wait(start);
-            batch.iter().rev().find(|&(k, _)| k.borrow() == key).map(|(_, value)| value).cloned()
+            batch.get(key)
         } else {
             None
         }
@@ -387,7 +384,7 @@ impl<
     /// Returns an iterator visiting each key-value pair in the atomic batch.
     ///
     fn iter_pending(&'a self) -> Self::PendingIterator {
-        let filtered_atomic_batch: IndexMap<_, _> = IndexMap::from_iter(self.atomic_batch.lock().clone());
+        let filtered_atomic_batch: IndexMap<_, _> = IndexMap::from_iter(self.atomic_batch.lock().log.clone());
         filtered_atomic_batch.into_iter().map(|(k, v)| (Cow::Owned(k), v.map(|v| Cow::Owned(v))))
     }
 
@@ -457,7 +454,7 @@ impl<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{FinalizeMode, atomic_batch_scope, atomic_finalize};
+    use crate::{atomic_batch_scope, atomic_finalize};
     use console::{account::Address, network::MainnetV0};
 
     type CurrentNetwork = MainnetV0;
@@ -726,7 +723,7 @@ mod tests {
         assert_eq!(map.checkpoint.lock().last(), None);
 
         // Start an atomic finalize.
-        let outcome = atomic_finalize!(map, FinalizeMode::RealRun, {
+        let outcome = atomic_finalize!(map, {
             // Start a nested atomic batch scope that completes successfully.
             atomic_batch_scope!(map, {
                 // Queue (since a batch is in progress) NUM_ITEMS / 2 insertions.
@@ -804,7 +801,7 @@ mod tests {
         assert_eq!(map.checkpoint.lock().last(), None);
 
         // Start an atomic finalize.
-        let outcome = atomic_finalize!(map, FinalizeMode::RealRun, {
+        let outcome = atomic_finalize!(map, {
             // Start a nested atomic batch scope that completes successfully.
             atomic_batch_scope!(map, {
                 // Queue (since a batch is in progress) NUM_ITEMS / 2 insertions.
@@ -883,7 +880,7 @@ mod tests {
         // Construct an atomic batch scope.
         let outcome: Result<()> = atomic_batch_scope!(map, {
             // Start an atomic finalize.
-            let outcome = atomic_finalize!(map, FinalizeMode::RealRun, { Ok(()) });
+            let outcome = atomic_finalize!(map, { Ok(()) });
             // Ensure that the atomic finalize fails.
             assert!(outcome.is_err());
 
@@ -897,7 +894,7 @@ mod tests {
         map.start_atomic();
 
         // We need to catch the `atomic_finalize` here, otherwise it will end the test early.
-        let outcome = || atomic_finalize!(map, FinalizeMode::RealRun, { Ok(()) });
+        let outcome = || atomic_finalize!(map, { Ok(()) });
 
         // Ensure that the atomic finalize fails if an atomic batch is in progress.
         assert!(outcome().is_err());
@@ -970,7 +967,7 @@ mod tests {
         map.insert(0, "0".to_string()).unwrap();
 
         // Start an atomic finalize.
-        let outcome = atomic_finalize!(map, FinalizeMode::RealRun, {
+        let outcome = atomic_finalize!(map, {
             // Create an atomic batch scope that will complete correctly.
             // Simulates an accepted transaction.
             let result: Result<()> = atomic_batch_scope!(map, {

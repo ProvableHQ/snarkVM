@@ -15,6 +15,7 @@
 
 use super::*;
 
+use snarkvm_ledger_block::RejectedReason;
 use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
 use snarkvm_ledger_puzzle::SolutionID;
 #[cfg(feature = "history-staking-rewards")]
@@ -27,6 +28,11 @@ use snarkvm_synthesizer_error::{
     indexed_finalize_bail,
 };
 use snarkvm_utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
+
+use crate::Stack;
+#[cfg(feature = "metrics")]
+use std::time::Instant;
+use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
 /// Uniqueness tracking accumulated while assembling a candidate block's transactions.
 struct CandidateTransactionDetails<N: Network> {
@@ -133,12 +139,68 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         candidate_transactions: impl ExactSizeIterator<Item = &'a Transaction<N>>,
         rng: &mut R,
     ) -> Result<(Ratifications<N>, Transactions<N>, Vec<N::TransactionID>, Vec<FinalizeOperation<N>>)> {
+        self.speculate_with_keep(
+            state,
+            time_since_last_block,
+            coinbase_reward,
+            candidate_ratifications,
+            candidate_solutions,
+            candidate_transactions,
+            rng,
+            None,
+        )
+    }
+
+    /// Like [`Self::speculate`], leaving the finalize-store atomic batch open for `add_next_block`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn speculate_for_commit<'a, R: Rng + CryptoRng>(
+        &self,
+        state: FinalizeGlobalState,
+        time_since_last_block: i64,
+        coinbase_reward: Option<u64>,
+        candidate_ratifications: Vec<Ratify<N>>,
+        candidate_solutions: &Solutions<N>,
+        candidate_transactions: impl ExactSizeIterator<Item = &'a Transaction<N>>,
+        rng: &mut R,
+    ) -> Result<(Ratifications<N>, Transactions<N>, Vec<N::TransactionID>, Vec<FinalizeOperation<N>>, SpeculationId)>
+    {
+        let id = self.allocate_speculation_id();
+        let (ratifications, transactions, aborted, finalize_operations) = self.speculate_with_keep(
+            state,
+            time_since_last_block,
+            coinbase_reward,
+            candidate_ratifications,
+            candidate_solutions,
+            candidate_transactions,
+            rng,
+            Some(id),
+        )?;
+        Ok((ratifications, transactions, aborted, finalize_operations, id))
+    }
+
+    /// # Panics
+    /// This function panics if called from an async context.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    fn speculate_with_keep<'a, R: Rng + CryptoRng>(
+        &self,
+        state: FinalizeGlobalState,
+        time_since_last_block: i64, // TODO (raychu86): Consider moving this value into `FinalizeGlobalState`.
+        coinbase_reward: Option<u64>,
+        candidate_ratifications: Vec<Ratify<N>>,
+        candidate_solutions: &Solutions<N>,
+        candidate_transactions: impl ExactSizeIterator<Item = &'a Transaction<N>>,
+        rng: &mut R,
+        keep: Option<SpeculationId>,
+    ) -> Result<(Ratifications<N>, Transactions<N>, Vec<N::TransactionID>, Vec<FinalizeOperation<N>>)> {
         let timer = timer!("VM::speculate");
 
         // Collect the candidate transactions into a vector.
         let candidate_transactions: Vec<_> = candidate_transactions.collect::<Vec<_>>();
         let candidate_transaction_ids: Vec<_> = candidate_transactions.iter().map(|tx| tx.id()).collect();
 
+        #[cfg(feature = "metrics")]
+        let prepare_start = Instant::now();
         // Determine if the vm is currently processing the genesis block.
         let is_genesis =
             self.block_store().find_block_height_from_state_root(self.block_store().current_state_root())?.is_none();
@@ -149,6 +211,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Verify transactions for all non-genesis cases.
             false => self.prepare_for_speculate(&candidate_transactions, state, rng)?,
         };
+        #[cfg(feature = "metrics")]
+        snarkvm_metrics::histogram_label(
+            snarkvm_metrics::vm::SPECULATE_STAGE_DURATION_SECONDS,
+            "stage",
+            "prepare".to_string(),
+            prepare_start.elapsed().as_secs_f64(),
+        );
 
         // Performs a **dry-run** over the list of ratifications, solutions, and transactions.
         let (ratifications, confirmed_transactions, speculation_aborted_transactions, ratified_finalize_operations) =
@@ -159,6 +228,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 candidate_ratifications,
                 candidate_solutions.clone(),
                 verified_transactions.into_iter().cloned().collect(),
+                keep,
             )?;
 
         // Get the aborted transaction ids.
@@ -207,6 +277,26 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         transactions: &Transactions<N>,
         rng: &mut R,
     ) -> Result<Vec<FinalizeOperation<N>>> {
+        self.check_speculate_with_keep(state, time_since_last_block, ratifications, solutions, transactions, rng, None)
+    }
+
+    /// Like [`Self::check_speculate`]. When `keep` is set, a matching speculate leaves its finalize batch open.
+    /// A mismatch aborts that batch.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    fn check_speculate_with_keep<R: Rng + CryptoRng>(
+        &self,
+        state: FinalizeGlobalState,
+        time_since_last_block: i64,
+        ratifications: &Ratifications<N>,
+        solutions: &Solutions<N>,
+        transactions: &Transactions<N>,
+        rng: &mut R,
+        keep: Option<SpeculationId>,
+    ) -> Result<Vec<FinalizeOperation<N>>> {
         let timer = timer!("VM::check_speculate");
 
         // Retrieve the transactions and their rejected IDs.
@@ -234,15 +324,22 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 candidate_ratifications,
                 solutions.clone(),
                 candidate_transactions,
+                keep,
             )?;
 
         // Ensure the ratifications after speculation match.
         if ratifications != &speculate_ratifications {
+            if keep.is_some() {
+                self.discard_kept_speculation();
+            }
             bail!("The ratifications after speculation do not match the ratifications in the block");
         }
         // Ensure the transactions after speculation match.
         let confirmed_transactions = confirmed_transactions.into_iter().collect();
         if transactions != &confirmed_transactions {
+            if keep.is_some() {
+                self.discard_kept_speculation();
+            }
             let confirmed_transaction_ids =
                 confirmed_transactions.transaction_ids().map(|id| id.to_string()).collect::<Vec<_>>();
             bail!(
@@ -252,7 +349,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Ensure there are no aborted transaction IDs from this speculation.
         // Note: There should be no aborted transactions, because we are checking a block,
         // where any aborted transactions should be in the aborted transaction ID list, not in transactions.
-        ensure!(aborted_transactions.is_empty(), "Aborted transactions found in the block (from speculation)");
+        if !aborted_transactions.is_empty() {
+            if keep.is_some() {
+                self.discard_kept_speculation();
+            }
+            bail!("Aborted transactions found in the block (from speculation)");
+        }
 
         finish!(timer, "Finished dry-run of the transactions");
 
@@ -305,6 +407,74 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         current_timestamp: i64,
         rng: &mut R,
     ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>), VmCheckBlockContentError> {
+        self.check_block_content_with_keep(
+            block,
+            latest_block,
+            latest_block_timestamp,
+            latest_state_root,
+            previous_committee_lookback,
+            committee_lookback,
+            puzzle,
+            latest_epoch_hash,
+            current_timestamp,
+            rng,
+            false,
+        )
+    }
+
+    /// Like [`Self::check_block_content_inner`]. When this block has no open speculate, the check
+    /// starts one and leaves the finalize batch bound to `block.hash()`.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn check_block_content_for_commit<R: Rng + CryptoRng>(
+        &self,
+        block: &Block<N>,
+        latest_block: &Block<N>,
+        latest_block_timestamp: i64,
+        latest_state_root: N::StateRoot,
+        previous_committee_lookback: &Committee<N>,
+        committee_lookback: &Committee<N>,
+        puzzle: &Puzzle<N>,
+        latest_epoch_hash: N::BlockHash,
+        current_timestamp: i64,
+        rng: &mut R,
+    ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>), VmCheckBlockContentError> {
+        self.check_block_content_with_keep(
+            block,
+            latest_block,
+            latest_block_timestamp,
+            latest_state_root,
+            previous_committee_lookback,
+            committee_lookback,
+            puzzle,
+            latest_epoch_hash,
+            current_timestamp,
+            rng,
+            true,
+        )
+    }
+
+    /// # Panics
+    /// This function panics if called from an async context.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    fn check_block_content_with_keep<R: Rng + CryptoRng>(
+        &self,
+        block: &Block<N>,
+        latest_block: &Block<N>,
+        latest_block_timestamp: i64,
+        latest_state_root: N::StateRoot,
+        previous_committee_lookback: &Committee<N>,
+        committee_lookback: &Committee<N>,
+        puzzle: &Puzzle<N>,
+        latest_epoch_hash: N::BlockHash,
+        current_timestamp: i64,
+        rng: &mut R,
+        keep_speculate: bool,
+    ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>), VmCheckBlockContentError> {
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
         // Determine the block's spend and synthesis limits.
@@ -326,8 +496,28 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         .map_err(VmCheckBlockContentError::Verification)?;
 
         let time_since_last_block = block.timestamp().saturating_sub(latest_block_timestamp);
-        let ratified_finalize_operations = self
-            .check_speculate(
+        // An open batch for this hash is reused. A commit check with no open batch starts one and binds it.
+        let ratified_finalize_operations = if let Some(ops) = self.self_constructed_ops_for(block.hash())
+            && (!keep_speculate || self.has_kept_speculation(block.hash()))
+        {
+            ops
+        } else if keep_speculate {
+            let id = self.allocate_speculation_id();
+            let ops = self
+                .check_speculate_with_keep(
+                    state,
+                    time_since_last_block,
+                    block.ratifications(),
+                    block.solutions(),
+                    block.transactions(),
+                    rng,
+                    Some(id),
+                )
+                .map_err(VmCheckBlockContentError::Speculation)?;
+            self.bind_self_constructed_hash(id, block.hash());
+            ops
+        } else {
+            self.check_speculate(
                 state,
                 time_since_last_block,
                 block.ratifications(),
@@ -335,20 +525,23 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 block.transactions(),
                 rng,
             )
-            .map_err(VmCheckBlockContentError::Speculation)?;
+            .map_err(VmCheckBlockContentError::Speculation)?
+        };
 
-        block
-            .verify(
-                latest_block,
-                latest_state_root,
-                previous_committee_lookback,
-                committee_lookback,
-                puzzle,
-                latest_epoch_hash,
-                current_timestamp,
-                ratified_finalize_operations,
-            )
-            .map_err(VmCheckBlockContentError::Verification)
+        let verification = block.verify(
+            latest_block,
+            latest_state_root,
+            previous_committee_lookback,
+            committee_lookback,
+            puzzle,
+            latest_epoch_hash,
+            current_timestamp,
+            ratified_finalize_operations,
+        );
+        if verification.is_err() && keep_speculate {
+            self.discard_kept_speculation();
+        }
+        verification.map_err(VmCheckBlockContentError::Verification)
     }
 
     /// Like [`Self::check_block_content_inner`], loading the block tip and committee lookbacks from this VM.
@@ -439,10 +632,23 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         solutions: &Solutions<N>,
         transactions: &Transactions<N>,
     ) -> Result<Vec<FinalizeOperation<N>>> {
+        // Performs a **real-run** of finalize over the list of ratifications, solutions, and transactions.
+        self.finalize_with_rejected_reasons(state, ratifications, solutions, transactions, self.take_rejected_reasons())
+    }
+
+    /// Real-run finalize, inserting `rejected_reasons` for rejected transactions in this block.
+    pub(crate) fn finalize_with_rejected_reasons(
+        &self,
+        state: FinalizeGlobalState,
+        ratifications: &Ratifications<N>,
+        solutions: &Solutions<N>,
+        transactions: &Transactions<N>,
+        rejected_reasons: HashMap<N::TransactionID, RejectedReason<N>>,
+    ) -> Result<Vec<FinalizeOperation<N>>> {
         let timer = timer!("VM::finalize");
 
-        // Performs a **real-run** of finalize over the list of ratifications, solutions, and transactions.
-        let ratified_finalize_operations = self.atomic_finalize(state, ratifications, solutions, transactions)?;
+        let ratified_finalize_operations =
+            self.atomic_finalize(state, ratifications, solutions, transactions, rejected_reasons)?;
 
         finish!(timer, "Finished real-run of finalize");
         Ok(ratified_finalize_operations)
@@ -472,6 +678,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     ///
     /// # Panics
     /// This function panics if called from an async context.
+    #[allow(clippy::too_many_arguments)]
     fn atomic_speculate(
         &self,
         state: FinalizeGlobalState,
@@ -480,20 +687,22 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         ratifications: Vec<Ratify<N>>,
         solutions: Solutions<N>,
         transactions: Vec<Transaction<N>>,
+        keep: Option<SpeculationId>,
     ) -> Result<(
         Ratifications<N>,
         Vec<ConfirmedTransaction<N>>,
         Vec<(Transaction<N>, String)>,
         Vec<FinalizeOperation<N>>,
     )> {
-        let sequential_op = SequentialOperation::AtomicSpeculate(
+        let sequential_op = SequentialOperation::AtomicSpeculate {
             state,
             time_since_last_block,
             coinbase_reward,
             ratifications,
             solutions,
             transactions,
-        );
+            keep,
+        };
         let Some(SequentialOperationResult::AtomicSpeculate(ret)) = self.run_sequential_operation(sequential_op) else {
             bail!("Already shutting down");
         };
@@ -508,6 +717,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     ///
     /// # Panics
     /// This function panics if not called from the sequential operation thread.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn atomic_speculate_inner(
         &self,
         state: FinalizeGlobalState,
@@ -516,6 +726,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         ratifications: Vec<Ratify<N>>,
         solutions: Solutions<N>,
         transactions: Vec<Transaction<N>>,
+        keep: Option<SpeculationId>,
     ) -> Result<(
         Ratifications<N>,
         Vec<ConfirmedTransaction<N>>,
@@ -523,7 +734,19 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         Vec<FinalizeOperation<N>>,
     )> {
         self.ensure_sequential_processing();
+        self.discard_kept_speculation_inner();
 
+        #[cfg(feature = "metrics")]
+        let inner_start = Instant::now();
+        #[cfg(feature = "metrics")]
+        defer! {
+            snarkvm_metrics::histogram_label(
+                snarkvm_metrics::vm::SPECULATE_STAGE_DURATION_SECONDS,
+                "stage",
+                "inner".to_string(),
+                inner_start.elapsed().as_secs_f64(),
+            );
+        }
         let timer = timer!("VM::atomic_speculate");
 
         // Retrieve the number of solutions.
@@ -535,16 +758,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Determine the maximum number of aborted transactions allowed in a block.
         let max_aborted_transactions = Transactions::<N>::max_aborted_transactions();
 
-        // Clear out any pending rejection reasons in case of errors in the previous iteration.
-        {
-            let mut rejected_reasons = self.pending_rejected_reasons.write();
-            if !rejected_reasons.is_empty() {
-                // This may be emitted once during shutdown.
-                warn!("There are pending rejection reasons, clearing them up: {:?}", &*rejected_reasons);
-            }
-            rejected_reasons.clear();
-        }
-
         // Update the block height used for the purposes of historical mapping accounting.
         #[cfg(feature = "history")]
         self.store
@@ -552,8 +765,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .current_block_height()
             .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
-        // Perform the finalize operation on the preset finalize mode.
-        atomic_finalize!(self.finalize_store(), FinalizeMode::DryRun, {
+        // Perform the finalize operation. Dry-run aborts the batch on success unless `keep` is set.
+        if self.finalize_store().is_atomic_in_progress() {
+            bail!("Cannot start an atomic batch write operation while another one is already in progress.");
+        }
+        self.finalize_store().start_atomic();
+        let staged_cell: RefCell<Option<IndexMap<ProgramID<N>, Arc<Stack<N>>>>> = RefCell::new(None);
+        let rejected_reasons: RefCell<HashMap<N::TransactionID, RejectedReason<N>>> = RefCell::new(HashMap::new());
+        let result = (|| -> Result<_, String> {
             // Ensure the number of solutions does not exceed the maximum.
             if num_solutions > max_aborted_solutions {
                 // Note: This will abort the entire atomic batch.
@@ -601,12 +820,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // we choose to acquire it for the entire duration of this atomic batch.
             let process = self.process.lock();
 
-            // Revert any unstaged stacks, when the function returns.
-            // Note. This function does not call `commit_stacks` so the staged stacks will always be reverted
-            //  regardless of whether the function succeeds or fails.
-            defer! {
-                process.revert_stacks();
-            }
+            // Deployment stacks retained for a kept speculate. Not inserted into `Process` here.
+            let mut staged_stacks = IndexMap::new();
 
             // Initialize a list of the confirmed transactions.
             let mut confirmed = Vec::with_capacity(num_transactions);
@@ -699,8 +914,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         ConfirmedTransaction::rejected_deploy(counter, fee_tx, rejected, finalize)
                                             .and_then(|confirmed_tx| {
                                                 // Store the rejection reason.
-                                                self.pending_rejected_reasons
-                                                    .write()
+                                                rejected_reasons
+                                                    .borrow_mut()
                                                     .insert(confirmed_tx.id(), rejected_reason.clone());
                                                 store
                                                     .insert_rejected_reason(*confirmed_tx.id(), rejected_reason)
@@ -732,8 +947,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             false => match process.finalize_deployment(state, store, deployment, fee) {
                                 // Construct the accepted deploy transaction.
                                 Ok((stack, finalize)) => {
-                                    // Add the stack to the process with the option to be reverted.
-                                    process.stage_stack(stack);
+                                    staged_stacks.insert(*stack.program_id(), Arc::new(stack));
                                     ConfirmedTransaction::accepted_deploy(counter, transaction.clone(), finalize)
                                         .map_err(|e| e.to_string())
                                 }
@@ -793,8 +1007,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                                 )
                                                 .and_then(|confirmed_tx| {
                                                     // Store the rejection reason.
-                                                    self.pending_rejected_reasons
-                                                        .write()
+                                                    rejected_reasons
+                                                        .borrow_mut()
                                                         .insert(confirmed_tx.id(), rejected_reason.clone());
                                                     store
                                                         .insert_rejected_reason(*confirmed_tx.id(), rejected_reason)
@@ -917,8 +1131,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             /* Construct the ratifications after speculation. */
 
-            let Ok(ratifications) =
-                Ratifications::try_from_iter(reward_ratifications.into_iter().chain(ratifications.into_iter()))
+            let Ok(ratifications) = Ratifications::try_from_iter(reward_ratifications.into_iter().chain(ratifications))
             else {
                 // Note: This will abort the entire atomic batch.
                 return Err("Failed to construct the ratifications after speculation".to_string());
@@ -926,10 +1139,42 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             finish!(timer);
 
-            // On return, 'atomic_finalize!' will abort the batch, and return the ratifications,
-            // confirmed & aborted transactions, and finalize operations from pre-ratify and post-ratify.
+            if keep.is_some() {
+                staged_cell.replace(Some(staged_stacks));
+            }
+
+            // Return the ratifications, confirmed & aborted transactions, and finalize operations.
             Ok((ratifications, confirmed, aborted, ratified_finalize_operations))
-        })
+        })();
+        match result {
+            Ok((ratifications, confirmed, aborted, ratified_finalize_operations)) => {
+                let staged = staged_cell.into_inner().unwrap_or_default();
+                let rejected_reasons = rejected_reasons.into_inner();
+                if let Some(id) = keep {
+                    self.store_self_constructed(
+                        ratified_finalize_operations.clone(),
+                        staged,
+                        rejected_reasons,
+                        id,
+                        true,
+                    );
+                } else {
+                    self.finalize_store().abort_atomic();
+                    self.store_self_constructed(
+                        ratified_finalize_operations.clone(),
+                        IndexMap::new(),
+                        rejected_reasons,
+                        self.allocate_speculation_id(),
+                        false,
+                    );
+                }
+                Ok((ratifications, confirmed, aborted, ratified_finalize_operations))
+            }
+            Err(error_msg) => {
+                self.finalize_store().abort_atomic();
+                Err(anyhow!("Failed to speculate on transactions - {error_msg}"))
+            }
+        }
     }
 
     /// Performs atomic finalization over a list of transactions.
@@ -942,6 +1187,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         ratifications: &Ratifications<N>,
         solutions: &Solutions<N>,
         transactions: &Transactions<N>,
+        mut rejected_reasons: HashMap<N::TransactionID, RejectedReason<N>>,
     ) -> Result<Vec<FinalizeOperation<N>>> {
         // The tests may run this method ad-hoc, outside of the context of add_next_block.
         #[cfg(not(test))]
@@ -958,8 +1204,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         self.store.finalize_store().block_height().store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
-        // Perform the finalize operation on the preset finalize mode.
-        let finalize_result = atomic_finalize!(self.finalize_store(), FinalizeMode::RealRun, {
+        // Perform the finalize operation, committing the batch when it succeeds.
+        let finalize_result = atomic_finalize!(self.finalize_store(), {
             // Initialize an iterator for ratifications before finalize.
             let pre_ratifications = ratifications.iter().filter(|r| match r {
                 Ratify::Genesis(_, _, _) => true,
@@ -1099,7 +1345,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     ));
                                 }
 
-                                if let Some(rejected_reason) = self.pending_rejected_reasons.write().remove(fee_tx_id) {
+                                if let Some(rejected_reason) = rejected_reasons.remove(fee_tx_id) {
                                     store.insert_rejected_reason(**fee_tx_id, rejected_reason.clone()).map_err(
                                         |_| "Couldn't store the reason behind a rejected deployment".to_string(),
                                     )?;
@@ -1144,7 +1390,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     ));
                                 }
 
-                                if let Some(rejected_reason) = self.pending_rejected_reasons.write().remove(fee_tx_id) {
+                                if let Some(rejected_reason) = rejected_reasons.remove(fee_tx_id) {
                                     store.insert_rejected_reason(**fee_tx_id, rejected_reason.clone()).map_err(
                                         |_| "Couldn't store the reason behind a rejected execute".to_string(),
                                     )?;
@@ -1190,6 +1436,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             process.commit_stacks();
 
             finish!(timer); // <- Note: This timer does **not** include the time to write batch to DB.
+
+            if !rejected_reasons.is_empty() {
+                warn!("There are pending rejection reasons, clearing them up: {:?}", rejected_reasons);
+            }
 
             Ok(ratified_finalize_operations)
         });
@@ -2358,6 +2608,7 @@ finalize transfer_public:
                 vec![],
                 None.into(),
                 vec![deployment_transaction],
+                None,
             )
             .unwrap();
         assert_eq!(candidate_transactions.len(), 1);
@@ -2454,6 +2705,7 @@ finalize transfer_public:
                 vec![],
                 None.into(),
                 transactions,
+                None,
             )
             .unwrap();
 
@@ -2580,6 +2832,7 @@ finalize transfer_public:
                 vec![],
                 None.into(),
                 transactions,
+                None,
             )
             .unwrap();
 
@@ -2600,6 +2853,7 @@ finalize transfer_public:
                 vec![],
                 None.into(),
                 transactions,
+                None,
             )
             .unwrap();
 
@@ -2712,6 +2966,7 @@ finalize transfer_public:
                     vec![],
                     None.into(),
                     transactions,
+                    None,
                 )
                 .unwrap();
 
@@ -2740,6 +2995,7 @@ finalize transfer_public:
                     vec![],
                     None.into(),
                     transactions,
+                    None,
                 )
                 .unwrap();
 
@@ -2768,6 +3024,7 @@ finalize transfer_public:
                     vec![],
                     None.into(),
                     transactions,
+                    None,
                 )
                 .unwrap();
 
@@ -2800,6 +3057,7 @@ finalize transfer_public:
                     vec![],
                     None.into(),
                     transactions,
+                    None,
                 )
                 .unwrap();
 

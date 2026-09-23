@@ -27,11 +27,11 @@ use std::{borrow::Cow, ops::Deref, path::Path, sync::atomic::Ordering, time::Ins
 use tracing::error;
 
 #[derive(Clone)]
-pub struct DataMap<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned>(
+pub struct DataMap<K: Serialize + DeserializeOwned + Eq + Hash, V: Serialize + DeserializeOwned>(
     pub(super) Arc<InnerDataMap<K, V>>,
 );
 
-impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> Deref for DataMap<K, V> {
+impl<K: Serialize + DeserializeOwned + Eq + Hash, V: Serialize + DeserializeOwned> Deref for DataMap<K, V> {
     type Target = InnerDataMap<K, V>;
 
     fn deref(&self) -> &Self::Target {
@@ -39,7 +39,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> Deref for
     }
 }
 
-pub struct InnerDataMap<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> {
+pub struct InnerDataMap<K: Serialize + DeserializeOwned + Eq + Hash, V: Serialize + DeserializeOwned> {
     pub(super) database: RocksDB,
     pub(super) context: Vec<u8>,
     /// The tracker for whether a database transaction is in progress.
@@ -47,12 +47,12 @@ pub struct InnerDataMap<K: Serialize + DeserializeOwned, V: Serialize + Deserial
     /// Owner of the in-progress atomic batch (`0` = none).
     pub(super) atomic_owner: AtomicU64,
     /// The database transaction.
-    pub(super) atomic_batch: Mutex<Vec<(K, Option<V>)>>,
+    pub(super) atomic_batch: Mutex<crate::helpers::pending_overlay::FlatBatch<K, V>>,
     /// The checkpoint stack for the batched operations within the map.
     pub(super) checkpoints: Mutex<Vec<usize>>,
 }
 
-impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> InnerDataMap<K, V> {
+impl<K: Serialize + DeserializeOwned + Eq + Hash, V: Serialize + DeserializeOwned> InnerDataMap<K, V> {
     pub fn backup_database<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
         let checkpoint = rocksdb::checkpoint::Checkpoint::new(&self.database)?;
         checkpoint.create_checkpoint(path).map_err(|e| e.into_string())
@@ -81,8 +81,9 @@ impl<
             // If a batch is in progress, add the key-value pair to the batch.
             true => {
                 let start = Instant::now();
-                self.atomic_batch.lock().push((key, Some(value)));
+                let mut batch = self.atomic_batch.lock();
                 crate::helpers::atomic_owner::record_lock_wait(start);
+                batch.push(key, Some(value));
             }
             // Otherwise, insert the key-value pair directly into the map.
             false => {
@@ -104,7 +105,8 @@ impl<
         match self.is_atomic_in_progress() {
             // If a batch is in progress, add the key to the batch.
             true => {
-                self.atomic_batch.lock().push((key.clone(), None));
+                let mut batch = self.atomic_batch.lock();
+                batch.push(key.clone(), None);
             }
             // Otherwise, remove the key-value pair directly from the map.
             false => {
@@ -158,7 +160,7 @@ impl<
     ///
     fn atomic_checkpoint(&self) {
         // Push the current length of the atomic batch to the checkpoint stack.
-        let batch_len = self.atomic_batch.lock().len();
+        let batch_len = self.atomic_batch.lock().log.len();
         self.checkpoints.lock().push(batch_len);
     }
 
@@ -182,7 +184,7 @@ impl<
         let checkpoint = self.checkpoints.lock().pop().unwrap_or(0);
 
         // Remove all operations after the checkpoint.
-        atomic_batch.truncate(checkpoint);
+        atomic_batch.rewind(checkpoint);
     }
 
     ///
@@ -207,7 +209,7 @@ impl<
     ///
     fn finish_atomic(&self) -> Result<()> {
         // Retrieve the atomic batch belonging to the map.
-        let operations = core::mem::take(&mut *self.atomic_batch.lock());
+        let operations = self.atomic_batch.lock().take_log();
 
         if !operations.is_empty() {
             // Insert the operations into an index map to remove any operations that would have been overwritten anyways.
@@ -355,14 +357,10 @@ impl<
     {
         // If this thread owns an in-progress batch, check the atomic batch first.
         if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
-            // If the key is present in the atomic batch, then check if the value is 'Some(V)'.
-            // We iterate from the back of the `atomic_batch` to find the latest value.
             let start = Instant::now();
             let batch = self.atomic_batch.lock();
             crate::helpers::atomic_owner::record_lock_wait(start);
-            if let Some((_, value)) = batch.iter().rev().find(|&(k, _)| k.borrow() == key) {
-                // If the value is 'Some(V)', then the key exists.
-                // If the value is 'Some(None)', then the key is scheduled to be removed.
+            if let Some(value) = batch.get(key) {
                 return Ok(value.is_some());
             }
         }
@@ -401,11 +399,10 @@ impl<
     {
         // Return early if there is no atomic batch in progress on this thread.
         if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
-            // We iterate from the back of the `atomic_batch` to find the latest value.
             let start = Instant::now();
             let batch = self.atomic_batch.lock();
             crate::helpers::atomic_owner::record_lock_wait(start);
-            batch.iter().rev().find(|&(k, _)| k.borrow() == key).map(|(_, value)| value).cloned()
+            batch.get(key)
         } else {
             None
         }
@@ -450,7 +447,7 @@ impl<
     /// Returns an iterator visiting each key-value pair in the atomic batch.
     ///
     fn iter_pending(&'a self) -> Self::PendingIterator {
-        let filtered_atomic_batch: IndexMap<_, _> = IndexMap::from_iter(self.atomic_batch.lock().clone());
+        let filtered_atomic_batch: IndexMap<_, _> = IndexMap::from_iter(self.atomic_batch.lock().log.clone());
         filtered_atomic_batch.into_iter().map(|(k, v)| (Cow::Owned(k), v.map(|v| Cow::Owned(v))))
     }
 
@@ -625,7 +622,7 @@ impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for Values<'a, V
     }
 }
 
-impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K, V> {
+impl<K: Serialize + DeserializeOwned + Eq + Hash, V: Serialize + DeserializeOwned> DataMap<K, V> {
     #[inline]
     fn create_prefixed_key<Q>(&self, key: &Q) -> Result<SmallVec<[u8; 64]>>
     where
@@ -651,7 +648,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
     }
 }
 
-impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> fmt::Debug for DataMap<K, V> {
+impl<K: Serialize + DeserializeOwned + Eq + Hash, V: Serialize + DeserializeOwned> fmt::Debug for DataMap<K, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DataMap").field("context", &self.context).finish()
     }
@@ -661,7 +658,6 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> fmt::Debu
 mod tests {
     use super::*;
     use crate::{
-        FinalizeMode,
         atomic_batch_scope,
         atomic_finalize,
         helpers::rocksdb::{MapID, TestMap},
@@ -680,7 +676,11 @@ mod tests {
     // Below are a few objects that mimic the way our DataMaps are organized,
     // in order to provide a more accurate test setup for some scenarios.
 
-    fn open_map_testing_from_db<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned, T: Into<u16>>(
+    fn open_map_testing_from_db<
+        K: Serialize + DeserializeOwned + Eq + Hash,
+        V: Serialize + DeserializeOwned,
+        T: Into<u16>,
+    >(
         database: RocksDB,
         map_id: T,
     ) -> DataMap<K, V> {
@@ -1133,7 +1133,7 @@ mod tests {
         assert_eq!(map.checkpoints.lock().last(), None);
 
         // Start an atomic finalize.
-        let outcome = atomic_finalize!(map, FinalizeMode::RealRun, {
+        let outcome = atomic_finalize!(map, {
             // Start a nested atomic batch scope that completes successfully.
             atomic_batch_scope!(map, {
                 // Queue (since a batch is in progress) NUM_ITEMS / 2 insertions.
@@ -1212,7 +1212,7 @@ mod tests {
         assert_eq!(map.checkpoints.lock().last(), None);
 
         // Start an atomic finalize.
-        let outcome = atomic_finalize!(map, FinalizeMode::RealRun, {
+        let outcome = atomic_finalize!(map, {
             // Start a nested atomic batch scope that completes successfully.
             atomic_batch_scope!(map, {
                 // Queue (since a batch is in progress) NUM_ITEMS / 2 insertions.
@@ -1292,7 +1292,7 @@ mod tests {
         // Construct an atomic batch scope.
         let outcome: Result<()> = atomic_batch_scope!(map, {
             // Start an atomic finalize.
-            let outcome = atomic_finalize!(map, FinalizeMode::RealRun, { Ok(()) });
+            let outcome = atomic_finalize!(map, { Ok(()) });
             // Ensure that the atomic finalize fails.
             assert!(outcome.is_err());
 
@@ -1306,7 +1306,7 @@ mod tests {
         map.start_atomic();
 
         // We need to catch the `atomic_finalize` here, otherwise it will end the test early.
-        let outcome = || atomic_finalize!(map, FinalizeMode::RealRun, { Ok(()) });
+        let outcome = || atomic_finalize!(map, { Ok(()) });
 
         // Ensure that the atomic finalize fails if an atomic batch is in progress.
         assert!(outcome().is_err());
@@ -1384,7 +1384,7 @@ mod tests {
         map.insert(0, "0".to_string()).unwrap();
 
         // Start an atomic finalize.
-        let outcome = atomic_finalize!(map, FinalizeMode::RealRun, {
+        let outcome = atomic_finalize!(map, {
             // Create an atomic batch scope that will complete correctly.
             // Simulates an accepted transaction.
             let result: Result<()> = atomic_batch_scope!(map, {
@@ -1430,7 +1430,7 @@ mod tests {
                 // Make sure the checkpoint index is 1.
                 assert_eq!(map.checkpoints.lock().last(), Some(&1));
                 // Ensure that the atomic batch length is 2.
-                assert_eq!(map.atomic_batch.lock().len(), 2);
+                assert_eq!(map.atomic_batch.lock().log.len(), 2);
                 // Ensure that the database atomic batch is empty.
                 assert!(map.database.atomic_batch.lock().is_empty());
                 // Ensure that the database atomic depth is 1.
@@ -1462,7 +1462,7 @@ mod tests {
             // Make sure the checkpoint index is None.
             assert_eq!(map.checkpoints.lock().last(), None);
             // Ensure that the atomic batch length is 1.
-            assert_eq!(map.atomic_batch.lock().len(), 1);
+            assert_eq!(map.atomic_batch.lock().log.len(), 1);
             // Ensure that the database atomic batch is empty.
             assert!(map.database.atomic_batch.lock().is_empty());
             // Ensure that the database atomic depth is 1.

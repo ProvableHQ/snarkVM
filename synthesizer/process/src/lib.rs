@@ -180,19 +180,32 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
         self.process.old_stacks.write().clear();
     }
 
+    /// Inserts the given stacks into the committed program map.
+    /// An existing stack for the same program ID is replaced.
+    #[inline]
+    pub fn commit_staged_stacks(&self, staged: IndexMap<ProgramID<N>, Arc<Stack<N>>>) {
+        if staged.is_empty() {
+            return;
+        }
+        let mut stacks = self.process.stacks.write();
+        for (program_id, stack) in staged {
+            stacks.insert(program_id, stack);
+        }
+    }
+
     /// Reverts the staged stacks, restoring the previous state of the process.
     /// This will remove the new stacks and restore the old stacks.
     #[inline]
     pub fn revert_stacks(&self) {
-        // Restore the old stacks.
         let mut stacks = self.process.stacks.write();
-        for (program_id, stack) in self.process.old_stacks.write().drain(..) {
-            // If the stack is `None`, remove the program from the process.
-            // Otherwise, insert the old stack back into the process.
-            if let Some(stack) = stack {
-                stacks.insert(program_id, stack);
-            } else {
-                stacks.shift_remove(&program_id);
+        for (program_id, old_stack) in self.process.old_stacks.write().drain(..) {
+            match old_stack {
+                Some(old_stack) => {
+                    stacks.insert(program_id, old_stack);
+                }
+                None => {
+                    stacks.shift_remove(&program_id);
+                }
             }
         }
     }
