@@ -169,6 +169,16 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Returns whether mapping updates and staking rewards are written to the history tables.
     fn record_history(&self) -> &AtomicBool;
 
+    /// Returns the next block height history indexing will process.
+    ///
+    /// A height `h` is indexed when `h` is strictly less than this value.
+    fn history_synced_height(&self) -> u32;
+
+    /// Stores the next block height history indexing will process.
+    ///
+    /// This write is outside the finalize atomic batch.
+    fn set_history_synced_height(&self, height: u32) -> Result<()>;
+
     /// Sequence number of the next history event in the block currently being finalized.
     fn history_event_seq(&self) -> &AtomicU32;
 
@@ -803,6 +813,16 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     /// Returns whether history recording is enabled.
     pub fn record_history(&self) -> bool {
         self.storage.record_history().load(Ordering::SeqCst)
+    }
+
+    /// Returns the next block height history indexing will process.
+    pub fn history_synced_height(&self) -> u32 {
+        self.storage.history_synced_height()
+    }
+
+    /// Stores the next block height history indexing will process.
+    pub fn set_history_synced_height(&self, height: u32) -> Result<()> {
+        self.storage.set_history_synced_height(height)
     }
 
     /// Resets the per-block history event sequence to zero.

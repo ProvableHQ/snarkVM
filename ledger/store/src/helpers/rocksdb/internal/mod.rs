@@ -121,6 +121,18 @@ impl Clone for RocksDB {
     }
 }
 
+impl RocksDB {
+    /// Returns the next block height history indexing will process.
+    pub(crate) fn history_synced_height(&self) -> Result<u32> {
+        schema::read_history_synced_height(self, self.network_id)
+    }
+
+    /// Stores the next block height history indexing will process.
+    pub(crate) fn set_history_synced_height(&self, height: u32) -> Result<()> {
+        schema::set_history_synced_height(self, self.network_id, height)
+    }
+}
+
 impl Deref for RocksDB {
     type Target = Arc<rocksdb::DB>;
 

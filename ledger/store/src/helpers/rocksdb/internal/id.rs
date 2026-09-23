@@ -357,7 +357,7 @@ enum DataID {
     // Track rejection reasons for rejected transactions
     RejectedReasonMap,
 
-    // Storage metadata, including the schema version.
+    // Storage metadata: the schema version and the history sync cursor.
     StorageMetadataMap,
     // Per-block log of history records, keyed by `(height, sequence)`.
     HistoryEventMap,

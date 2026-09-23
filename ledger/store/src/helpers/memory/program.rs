@@ -36,7 +36,7 @@ use aleo_std_storage::StorageMode;
 use indexmap::IndexSet;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU32},
+    atomic::{AtomicBool, AtomicU32, Ordering},
 };
 
 /// An in-memory finalize storage.
@@ -62,6 +62,8 @@ pub struct FinalizeMemory<N: Network> {
     record_history: Arc<AtomicBool>,
     /// Sequence number of the next history event in the current block.
     history_event_seq: Arc<AtomicU32>,
+    /// The next block height history indexing will process.
+    history_synced_height: Arc<AtomicU32>,
     /// The storage mode.
     storage_mode: StorageMode,
 }
@@ -97,6 +99,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
             block_height: Arc::new(AtomicU32::new(initial_height)),
             record_history: Arc::new(AtomicBool::new(false)),
             history_event_seq: Arc::new(AtomicU32::new(0)),
+            history_synced_height: Arc::new(AtomicU32::new(0)),
             storage_mode: storage,
         })
     }
@@ -149,6 +152,17 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     /// Returns the per-block history event sequence.
     fn history_event_seq(&self) -> &AtomicU32 {
         &self.history_event_seq
+    }
+
+    /// Returns the next block height history indexing will process.
+    fn history_synced_height(&self) -> u32 {
+        self.history_synced_height.load(Ordering::SeqCst)
+    }
+
+    /// Stores the next block height history indexing will process.
+    fn set_history_synced_height(&self, height: u32) -> Result<()> {
+        self.history_synced_height.store(height, Ordering::SeqCst);
+        Ok(())
     }
 
     /// Returns the current block height.
