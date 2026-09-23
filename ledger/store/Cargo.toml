@@ -18,6 +18,7 @@ edition = "2024"
 
 [features]
 default = [ "indexmap/rayon" ]
+dev_genesis_state_root = [ ]
 history = [ ]
 history-staking-rewards = [ ]
 locktick = [ "dep:locktick", "snarkvm-ledger-puzzle/locktick" ]
