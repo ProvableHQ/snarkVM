@@ -22,6 +22,9 @@ pub use map::*;
 mod nested_map;
 pub use nested_map::*;
 
+mod schema;
+pub use schema::{STORAGE_VERSION, StorageVersion};
+
 #[cfg(test)]
 mod tests;
 
@@ -158,6 +161,9 @@ impl Database for RocksDB {
 
                 Arc::new(rocksdb::DB::open(&options, &db_path)?)
             };
+            // Record the schema version, and refuse a database written by a newer build, before
+            // any map is opened on this database.
+            schema::migrate_storage(&rocksdb, network_id)?;
 
             let db = RocksDB {
                 rocksdb,
