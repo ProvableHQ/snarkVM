@@ -15,28 +15,29 @@
 
 #![allow(clippy::type_complexity)]
 
-#[cfg(feature = "history")]
-use crate::program::HeightBytes;
 use crate::{
     CommitteeStorage,
     CommitteeStore,
     FinalizeStorage,
+    HeightBytes,
+    HistoricalMappingValue,
+    HistoryEvent,
     helpers::rocksdb::{self, CommitteeMap, DataMap, Database, MapID, NestedDataMap, ProgramMap},
 };
-#[cfg(feature = "history-staking-rewards")]
-use console::types::Address;
 use console::{
     prelude::*,
     program::{Identifier, Plaintext, ProgramID, Value},
-    types::Field,
+    types::{Address, Field},
 };
 use snarkvm_ledger_block::RejectedReason;
 use snarkvm_ledger_committee::Committee;
 
 use aleo_std_storage::StorageMode;
 use indexmap::IndexSet;
-#[cfg(feature = "history")]
-use std::sync::{Arc, atomic::AtomicU32};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU32},
+};
 
 /// A RocksDB finalize storage.
 #[derive(Clone)]
@@ -50,17 +51,17 @@ pub struct FinalizeDB<N: Network> {
     /// The rejection reason map.
     rejected_reason_map: DataMap<Field<N>, RejectedReason<N>>,
     /// The historical mapping value map (keyed by big-endian block height).
-    #[cfg(feature = "history")]
-    mapping_update_map: DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>,
-    /// The legacy heights index; present only for keys written before the BE schema change.
-    #[cfg(feature = "history")]
-    mapping_update_heights_map: DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>,
-    /// The current block height.
-    #[cfg(feature = "history")]
-    block_height: Arc<AtomicU32>,
+    mapping_update_map: DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), HistoricalMappingValue<N>>,
     /// The historical staking rewards map.
-    #[cfg(feature = "history-staking-rewards")]
     staking_rewards_map: DataMap<(Address<N>, u32), (Address<N>, u64, u64)>,
+    /// The per-block history event log.
+    history_event_map: DataMap<(HeightBytes, HeightBytes), HistoryEvent<N>>,
+    /// The current block height.
+    block_height: Arc<AtomicU32>,
+    /// Whether mapping updates and staking rewards are written to the history tables.
+    record_history: Arc<AtomicBool>,
+    /// Sequence number of the next history event in the current block.
+    history_event_seq: Arc<AtomicU32>,
     /// The storage mode.
     storage_mode: StorageMode,
 }
@@ -71,12 +72,10 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     type ProgramIDMap = DataMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedDataMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
     type RejectedReasonMap = DataMap<Field<N>, RejectedReason<N>>;
-    #[cfg(feature = "history")]
-    type MappingUpdateMap = DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>;
-    #[cfg(feature = "history")]
-    type MappingUpdateHeightsMap = DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>;
-    #[cfg(feature = "history-staking-rewards")]
+    type MappingUpdateMap =
+        DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), HistoricalMappingValue<N>>;
     type StakingRewardsMap = DataMap<(Address<N>, u32), (Address<N>, u64, u64)>;
+    type HistoryEventMap = DataMap<(HeightBytes, HeightBytes), HistoryEvent<N>>;
 
     /// Initializes the finalize storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -87,7 +86,6 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
         // historical REST queries succeed immediately after node startup (before the
         // first new block arrives and re-seeds the value via `atomic_finalize`).
         // Returns 0 for a fresh database that has no committee data yet.
-        #[cfg(feature = "history")]
         let initial_height = committee_store.current_height().unwrap_or(0);
         // Return the finalize storage.
         Ok(Self {
@@ -95,14 +93,12 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
             program_id_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::ProgramID))?,
             key_value_map: rocksdb::RocksDB::open_nested_map(N::ID, storage.clone(), MapID::Program(ProgramMap::KeyValueID))?,
             rejected_reason_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::RejectedReason))?,
-            #[cfg(feature = "history")]
             mapping_update_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::MappingUpdate))?,
-            #[cfg(feature = "history")]
-            mapping_update_heights_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::MappingUpdateHeights))?,
-            #[cfg(feature = "history")]
-            block_height: Arc::new(AtomicU32::new(initial_height)),
-            #[cfg(feature = "history-staking-rewards")]
             staking_rewards_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::StakingRewards))?,
+            history_event_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::HistoryEvent))?,
+            block_height: Arc::new(AtomicU32::new(initial_height)),
+            record_history: Arc::new(AtomicBool::new(false)),
+            history_event_seq: Arc::new(AtomicU32::new(0)),
             storage_mode: storage,
         })
     }
@@ -128,20 +124,18 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     }
 
     /// Returns the historical value map.
-    #[cfg(feature = "history")]
     fn mapping_update_map(&self) -> &Self::MappingUpdateMap {
         &self.mapping_update_map
     }
 
-    #[cfg(feature = "history")]
-    fn mapping_update_heights_map(&self) -> &Self::MappingUpdateHeightsMap {
-        &self.mapping_update_heights_map
-    }
-
     /// Returns the historical staking rewards map.
-    #[cfg(feature = "history-staking-rewards")]
     fn staking_rewards_map(&self) -> &Self::StakingRewardsMap {
         &self.staking_rewards_map
+    }
+
+    /// Returns the per-block history event log.
+    fn history_event_map(&self) -> &Self::HistoryEventMap {
+        &self.history_event_map
     }
 
     /// Returns the storage mode.
@@ -149,8 +143,17 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
         &self.storage_mode
     }
 
+    /// Returns whether history recording is enabled.
+    fn record_history(&self) -> &AtomicBool {
+        &self.record_history
+    }
+
+    /// Returns the per-block history event sequence.
+    fn history_event_seq(&self) -> &AtomicU32 {
+        &self.history_event_seq
+    }
+
     /// Returns the current block height.
-    #[cfg(feature = "history")]
     fn current_block_height(&self) -> &AtomicU32 {
         &self.block_height
     }

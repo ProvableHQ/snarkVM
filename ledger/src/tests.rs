@@ -31,12 +31,9 @@ use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{Block, ConfirmedTransaction, Execution, Ratify, Rejected, Transaction};
 use snarkvm_ledger_committee::{Committee, MIN_VALIDATOR_STAKE};
 use snarkvm_ledger_narwhal::{BatchHeader, Data, Subdag, Transmission, TransmissionID};
-use snarkvm_ledger_store::ConsensusStore;
-#[cfg(feature = "history-staking-rewards")]
-use snarkvm_ledger_store::helpers::MapRead;
-#[cfg(feature = "history-staking-rewards")]
-use snarkvm_synthesizer::bonded_map_into_stakers;
+use snarkvm_ledger_store::{ConsensusStore, helpers::MapRead};
 use snarkvm_synthesizer::{
+    bonded_map_into_stakers,
     program::Program,
     vm::{TransactionCacheKey, VM},
 };
@@ -653,8 +650,7 @@ fn test_bond_and_unbond_validator() {
         Plaintext::<CurrentNetwork>::from_str("aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc")
             .unwrap();
 
-    // Check the initial historical mapping values.
-    #[cfg(feature = "history")]
+    // Check the initial historical mapping values. Heights above the current block are not served.
     {
         let initial_mapping_value = ledger
             .vm()
@@ -664,13 +660,14 @@ fn test_bond_and_unbond_validator() {
             .unwrap();
         assert_eq!(&*initial_mapping_value, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
 
-        let initial_mapping_value_overshot = ledger
-            .vm()
-            .finalize_store()
-            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 10)
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*initial_mapping_value_overshot, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
+        assert!(
+            ledger
+                .vm()
+                .finalize_store()
+                .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 10)
+                .unwrap()
+                .is_none()
+        );
 
         let initial_mapping_heights = ledger
             .vm()
@@ -716,7 +713,6 @@ fn test_bond_and_unbond_validator() {
     ledger.advance_to_next_block(&bond_validator_block).unwrap();
 
     // Check the historical mapping values after the bonding.
-    #[cfg(feature = "history")]
     {
         let initial_mapping_value = ledger
             .vm()
@@ -742,13 +738,14 @@ fn test_bond_and_unbond_validator() {
             .unwrap();
         assert_eq!(&*post_bond_mapping_value, &Value::<CurrentNetwork>::try_from("5u32").unwrap());
 
-        let post_bond_mapping_value_overshot = ledger
-            .vm()
-            .finalize_store()
-            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 5)
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*post_bond_mapping_value_overshot, &Value::<CurrentNetwork>::try_from("5u32").unwrap());
+        assert!(
+            ledger
+                .vm()
+                .finalize_store()
+                .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 5)
+                .unwrap()
+                .is_none()
+        );
 
         let post_bond_mapping_heights = ledger
             .vm()
@@ -807,7 +804,6 @@ fn test_bond_and_unbond_validator() {
     ledger.advance_to_next_block(&unbond_public_block).unwrap();
 
     // Check the historical mapping values after the unbonding.
-    #[cfg(feature = "history")]
     {
         let store = ledger.vm().finalize_store();
         let initial_mapping_value = store
@@ -834,11 +830,12 @@ fn test_bond_and_unbond_validator() {
             .unwrap();
         assert_eq!(&*post_unbond_mapping_value, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
 
-        let post_unbond_mapping_value_overshot = store
-            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 100)
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*post_unbond_mapping_value_overshot, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
+        assert!(
+            store
+                .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 100)
+                .unwrap()
+                .is_none()
+        );
 
         let post_unbond_mapping_heights = store
             .get_mapping_update_heights(program_id, metadata_mapping_name, metadata_mapping_key.clone())
@@ -848,7 +845,6 @@ fn test_bond_and_unbond_validator() {
     }
 
     // Check the historical rewards after the (un)bonding operations.
-    #[cfg(feature = "history-staking-rewards")]
     {
         let store = ledger.vm().finalize_store();
         let program_id = ProgramID::from_str("credits.aleo").unwrap();

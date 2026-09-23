@@ -18,7 +18,6 @@ use console::{
     network::prelude::*,
     program::{Identifier, Value},
 };
-#[cfg(feature = "history")]
 use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore};
 use snarkvm_synthesizer_program::{
     FinalizeGlobalState,
@@ -32,9 +31,6 @@ use snarkvm_synthesizer_program::{
 ///
 /// Evaluates whatever `stack` it is given; the caller must supply the stack for the edition live
 /// at `height`. Prefer `VM::evaluate_view_at_height`, which resolves the edition.
-///
-/// Available only with `--features history`.
-#[cfg(feature = "history")]
 pub fn evaluate_view_with_stack_at_height<N: Network, P: FinalizeStorage<N>>(
     state: FinalizeGlobalState,
     store: &FinalizeStore<N, P>,
@@ -51,13 +47,11 @@ pub fn evaluate_view_with_stack_at_height<N: Network, P: FinalizeStorage<N>>(
 /// store's historical update map at a fixed `height`. Writes bail — they are unreachable on
 /// the view path (views reject `set` / `remove` at construction), but bailing here
 /// preserves that invariant if the adapter is ever passed to other code.
-#[cfg(feature = "history")]
 struct HistoricFinalizeStore<'a, N: Network, P: FinalizeStorage<N>> {
     store: &'a FinalizeStore<N, P>,
     height: u32,
 }
 
-#[cfg(feature = "history")]
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinalizeStore<'_, N, P> {
     fn contains_mapping_confirmed(
         &self,
@@ -232,10 +226,9 @@ pub(crate) fn evaluate_view_inner<N: Network>(
     Ok(outputs)
 }
 
-// All existing view tests exercise the external `evaluate_view_with_stack_at_height` path, which is
-// gated on `--features history`. Tests for the new in-block call path live at the v15 VM-tests
-// level (where deploying a program with a finalize-calling-view function is straightforward).
-#[cfg(all(test, feature = "history"))]
+// Tests for the in-block call path live at the v15 VM-tests level (where deploying a program
+// with a finalize-calling-view function is straightforward).
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::Process;
@@ -291,6 +284,7 @@ view total_balance:
 
         // Initialize the finalize store and seed mapping values.
         let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None))?;
+        finalize_store.set_record_history(true);
 
         let program_id = *program.id();
         finalize_store.initialize_mapping(program_id, Identifier::from_str("balances")?)?;
@@ -622,6 +616,7 @@ view lookup:
         let process = Process::<CurrentNetwork>::load()?;
         let stack = Stack::new(&process, &program)?;
         let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None))?;
+        finalize_store.set_record_history(true);
 
         let program_id = *program.id();
         let mapping_name = Identifier::from_str("balances")?;
@@ -632,8 +627,8 @@ view lookup:
         let address = console::account::Address::try_from(&private_key)?;
         let address_key = Plaintext::from(Literal::Address(address));
 
-        // Write V1 at height 1, then V2 at height 5. The historic update map is populated
-        // automatically because the `--features history` build path is enabled.
+        // Write V1 at height 1, then V2 at height 5. Recording is enabled, so each write is stored
+        // under that height.
         finalize_store.current_block_height().store(1, Ordering::SeqCst);
         finalize_store.update_key_value(
             program_id,

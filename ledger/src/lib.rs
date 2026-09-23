@@ -337,6 +337,10 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         // Initialize a new VM.
         let vm = VM::from(store)?;
+        // Library tests record history from genesis. Production leaves recording off until a
+        // caller enables it.
+        #[cfg(test)]
+        vm.finalize_store().set_record_history(true);
         lap!(timer, "Initialize a new VM");
 
         // Retrieve the current committee.

@@ -314,7 +314,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// cumulative weights, and the previous-block hash from the actual block — so any
     /// operand or opcode that reads from `FinalizeGlobalState` (block.height,
     /// block.timestamp, random_seed via rand.chacha, etc.) sees real values.
-    #[cfg(feature = "history")]
     fn finalize_state_for_block(&self, height: u32) -> Result<FinalizeGlobalState> {
         let block_hash =
             self.block_store().get_block_hash(height)?.ok_or_else(|| anyhow!("No block exists at height {height}"))?;
@@ -346,14 +345,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Returns the typed outputs.
     ///
     /// Mapping reads are pinned to `height` via the per-key historical update map, and the
-    /// `FinalizeGlobalState` is reconstructed from the block at `height`. Available only with
-    /// `--features history`.
+    /// `FinalizeGlobalState` is reconstructed from the block at `height`.
     ///
     /// snarkOS calls this with `current_block_height()` for "latest", or any earlier height
-    /// for historic views. `height` must satisfy `height <= current_block_height()`.
+    /// for historic views. `height` must satisfy `height <= current_block_height()`. A height
+    /// is only reliable once history recording has stored that block.
     ///
     /// The view body is taken from the program edition live at `height`.
-    #[cfg(feature = "history")]
     #[inline]
     pub fn evaluate_view_at_height(
         &self,
@@ -395,7 +393,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
     /// Returns the program edition live at block `height`: the newest edition whose original
     /// deployment was confirmed at or before `height`. Editions deploy in increasing block order.
-    #[cfg(feature = "history")]
     fn resolve_program_edition_at_height(&self, program_id: &ProgramID<N>, height: u32) -> Result<u16> {
         let deployment_store = self.transaction_store().deployment_store();
         let block_store = self.block_store();
@@ -752,7 +749,10 @@ pub(crate) mod test_helpers {
 
     pub(crate) fn sample_vm() -> VM<CurrentNetwork, LedgerType> {
         // Initialize a new VM.
-        VM::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap()
+        let vm = VM::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap();
+        // Test VMs record mapping and staking history, including the genesis block added later.
+        vm.finalize_store().set_record_history(true);
+        vm
     }
 
     #[cfg(feature = "test")]

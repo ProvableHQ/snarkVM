@@ -218,6 +218,7 @@ pub enum ProgramMap {
     MappingUpdateHeights = DataID::MappingUpdateHeightsMap as u16,
     StakingRewards = DataID::StakingRewardsMap as u16,
     RejectedReason = DataID::RejectedReasonMap as u16,
+    HistoryEvent = DataID::HistoryEventMap as u16,
 }
 
 /// The RocksDB map prefix for storage metadata.
@@ -356,8 +357,10 @@ enum DataID {
     // Track rejection reasons for rejected transactions
     RejectedReasonMap,
 
-    // Storage metadata: the schema version and the history sync cursor.
+    // Storage metadata, including the schema version.
     StorageMetadataMap,
+    // Per-block log of history records, keyed by `(height, sequence)`.
+    HistoryEventMap,
 
     // Testing
     #[cfg(test)]
