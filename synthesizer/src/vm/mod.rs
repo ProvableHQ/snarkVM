@@ -102,15 +102,15 @@ use anyhow::Context;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Either;
 #[cfg(feature = "locktick")]
-use locktick::parking_lot::{Mutex, RwLock};
+use locktick::parking_lot::RwLock;
 use lru::LruCache;
 #[cfg(not(feature = "locktick"))]
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use rand::{SeedableRng, rngs::StdRng};
 use std::{
     collections::{HashMap, HashSet},
     num::NonZeroUsize,
-    sync::{Arc, mpsc},
+    sync::{Arc, OnceLock, mpsc},
     thread,
 };
 
@@ -138,9 +138,9 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     /// TODO: it would be cleaner if these are passed along as an argument to `add_next_block`, but this requires a bigger refactor.
     pending_rejected_reasons: Arc<RwLock<HashMap<N::TransactionID, RejectedReason<N>>>>,
     /// A sender to the channel for operations that must be performed sequentially.
-    sequential_ops_tx: Arc<RwLock<Option<mpsc::Sender<SequentialOperationRequest<N>>>>>,
-    /// The handle to the thread which processes operations sequentially.
-    sequential_ops_thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
+    sequential_ops_tx: Option<Arc<SequentialOperationQueue<N>>>,
+    /// The identity of the thread which processes operations sequentially.
+    sequential_ops_thread_id: Arc<OnceLock<thread::ThreadId>>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -230,7 +230,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         // Construct the VM object.
-        let vm = Self {
+        let mut vm = Self {
             process: Arc::new(process),
             puzzle: Self::new_puzzle()?,
             store,
@@ -240,7 +240,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             restrictions: Restrictions::load()?,
             sequential_ops_tx: Default::default(),
             pending_rejected_reasons: Default::default(),
-            sequential_ops_thread: Default::default(),
+            sequential_ops_thread_id: Default::default(),
         };
 
         // Spawn a thread for sequential operations.
@@ -248,8 +248,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let sequential_ops_thread = vm.start_sequential_queue(sequential_ops_rx);
 
         // Populate the fields related to the sequential operations.
-        *vm.sequential_ops_tx.write() = Some(sequential_ops_tx);
-        *vm.sequential_ops_thread.lock() = Some(sequential_ops_thread);
+        let _ = vm.sequential_ops_thread_id.set(sequential_ops_thread.thread().id());
+        vm.sequential_ops_tx = Some(Arc::new(SequentialOperationQueue {
+            sender: Some(sequential_ops_tx),
+            thread: Some(sequential_ops_thread),
+        }));
 
         // Return the new VM.
         Ok(vm)
@@ -693,24 +696,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 }
                 // Return the finalize error.
                 Err(finalize_error)
-            }
-        }
-    }
-}
-
-impl<N: Network, C: ConsensusStorage<N>> Drop for VM<N, C> {
-    fn drop(&mut self) {
-        // Check if this the final external reference to `VM`.
-        if Arc::strong_count(&self.sequential_ops_tx) == 1 {
-            // If the background thread exists, shut it down.
-            if let Some(thread) = self.sequential_ops_thread.lock().take() {
-                // First, close the channel.
-                self.sequential_ops_tx.write().take();
-                // Wait for the thread to terminate.
-                trace!("Waiting for sequential ops thread to terminate");
-                thread.join().expect("Sequential ops thread had an error");
-            } else {
-                debug!("No sequential ops background thread existed durign shutdown");
             }
         }
     }
