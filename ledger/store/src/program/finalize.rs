@@ -75,6 +75,8 @@ pub enum HistoryEvent<N: Network> {
         /// Value at this height, or a deletion.
         value: Box<HistoricalMappingValue<N>>,
     },
+    /// The block's history was committed. Present even when the block changed no mappings.
+    Indexed,
     /// A staking reward paid at this height.
     Staking {
         /// Account that received the reward.
@@ -299,6 +301,19 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         for (key, _) in entries {
             self.record_historical(program_id, mapping_name, key, HistoricalMappingValue::Absent)?;
         }
+        Ok(())
+    }
+
+    /// Writes the marker that this block's history was committed.
+    ///
+    /// The marker is the first event at the block height, inside the caller's atomic batch.
+    fn record_history_block(&self) -> Result<()> {
+        if !self.record_history().load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        let height = self.current_block_height().load(Ordering::SeqCst);
+        let seq = self.history_event_seq().fetch_add(1, Ordering::SeqCst);
+        self.history_event_map().insert((height.to_be_bytes(), seq.to_be_bytes()), HistoryEvent::Indexed)?;
         Ok(())
     }
 
@@ -830,6 +845,11 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         self.storage.history_event_seq().store(0, Ordering::SeqCst);
     }
 
+    /// Writes the marker that this block's history was committed, when recording is enabled.
+    pub fn record_history_block(&self) -> Result<()> {
+        self.storage.record_history_block()
+    }
+
     /// Records a staking reward when history recording is enabled.
     pub fn record_staking_reward(
         &self,
@@ -849,8 +869,8 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     /// Returns the historical value of a mapping at or before the given block height.
     ///
     /// The lookup is a floor seek on `mapping_update_map`. A deletion (`Absent`) at or before
-    /// `height` means the key has no value. Heights above [`Self::current_block_height`] return
-    /// `None`, because a later block can still change the key.
+    /// `height` means the key has no value. `height` must be strictly below
+    /// [`Self::history_synced_height`]; a later height is not indexed yet.
     pub fn get_historical_mapping_value(
         &self,
         program_id: ProgramID<N>,
@@ -858,9 +878,9 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         mapping_key: Plaintext<N>,
         height: u32,
     ) -> Result<Option<Cow<'_, Value<N>>>, Error> {
-        // Return nothing for future heights, as the mapping value might change by then.
-        if height > self.current_block_height().load(Ordering::SeqCst) {
-            return Ok(None);
+        let synced = self.history_synced_height();
+        if height >= synced {
+            bail!("Block {height} is not in the history index (history is indexed before height {synced})");
         }
 
         let seek_key = (program_id, mapping_name, mapping_key.clone(), height.to_be_bytes());
@@ -931,6 +951,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     pub fn import_history_events(&self, height: u32, events: &[HistoryEvent<N>]) -> Result<()> {
         for event in events {
             match event {
+                HistoryEvent::Indexed => {}
                 HistoryEvent::Mapping { program_id, mapping_name, key, value } => {
                     self.storage
                         .mapping_update_map()
@@ -1799,8 +1820,9 @@ mod tests {
         let program_memory = FinalizeMemory::open(StorageMode::Test(None)).unwrap();
         let finalize_store = FinalizeStore::from(program_memory).unwrap();
 
-        // Initialize program and mapping.
+        // Initialize program and mapping. The cursor covers every height this test queries.
         finalize_store.set_record_history(true);
+        finalize_store.set_history_synced_height(201).unwrap();
         finalize_store.initialize_mapping(program_id, mapping_name).unwrap();
 
         // Insert at block height 10.

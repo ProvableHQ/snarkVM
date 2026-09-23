@@ -48,6 +48,7 @@ mod check_transaction_basic;
 mod contains;
 mod find;
 mod get;
+mod history;
 mod is_solution_limit_reached;
 mod iterators;
 
@@ -85,7 +86,14 @@ use lru::LruCache;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use rand::prelude::IteratorRandom;
-use std::{borrow::Cow, collections::HashSet, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::HashSet,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 use time::OffsetDateTime;
 
 #[cfg(not(feature = "serial"))]
@@ -218,6 +226,10 @@ pub struct InnerLedger<N: Network, C: ConsensusStorage<N>> {
     committee_cache: Mutex<LruCache<u64, Committee<N>>>,
     /// The cache that holds the provers and the number of solutions they have submitted for the current epoch.
     epoch_provers_cache: Arc<RwLock<IndexMap<Address<N>, u32>>>,
+    /// When set, each new block is applied to the history-replay ledger after it is committed here.
+    record_history: AtomicBool,
+    /// Side ledger that re-executes blocks to rebuild mapping and staking history.
+    history_replay: Mutex<Option<Ledger<N, C>>>,
 
     /// Optional dev committee, returned for any round `>= committee.starting_round()`.
     ///
@@ -265,9 +277,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     pub fn load_unchecked(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
         cfg_if! {
             if #[cfg(feature="dev-committee")] {
-                Self::load_unchecked_inner(genesis_block, storage_mode, None)
+                Self::load_unchecked_inner(genesis_block, storage_mode, None, cfg!(test))
             } else {
-                Self::load_unchecked_inner(genesis_block, storage_mode)
+                Self::load_unchecked_inner(genesis_block, storage_mode, cfg!(test))
             }
         }
     }
@@ -317,13 +329,14 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         storage_mode: StorageMode,
         dev_committee_opts: DevCommitteeOptions,
     ) -> Result<Self> {
-        Self::load_unchecked_inner(genesis_block, storage_mode, Some(dev_committee_opts))
+        Self::load_unchecked_inner(genesis_block, storage_mode, Some(dev_committee_opts), cfg!(test))
     }
 
     fn load_unchecked_inner(
         genesis_block: Block<N>,
         storage_mode: StorageMode,
         #[cfg(feature = "dev-committee")] dev_committee_opts: Option<DevCommitteeOptions>,
+        record_genesis_history: bool,
     ) -> Result<Self> {
         let timer = timer!("Ledger::load_unchecked");
 
@@ -337,10 +350,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         // Initialize a new VM.
         let vm = VM::from(store)?;
-        // Library tests record history from genesis. Production leaves recording off until a
-        // caller enables it.
-        #[cfg(test)]
-        vm.finalize_store().set_record_history(true);
+        // Record genesis mapping writes when the caller asked for them. The history-replay ledger
+        // passes false once genesis is already indexed on the primary ledger.
+        if record_genesis_history {
+            vm.finalize_store().set_record_history(true);
+        }
         lap!(timer, "Initialize a new VM");
 
         // Retrieve the current committee.
@@ -388,6 +402,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             current_block: RwLock::new(genesis_block.clone()),
             committee_cache,
             epoch_provers_cache: Default::default(),
+            record_history: AtomicBool::new(false),
+            history_replay: Mutex::new(None),
             #[cfg(feature = "dev-committee")]
             dev_committee,
         }));

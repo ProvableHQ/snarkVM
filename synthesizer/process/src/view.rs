@@ -285,6 +285,7 @@ view total_balance:
         // Initialize the finalize store and seed mapping values.
         let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None))?;
         finalize_store.set_record_history(true);
+        finalize_store.set_history_synced_height(1)?;
 
         let program_id = *program.id();
         finalize_store.initialize_mapping(program_id, Identifier::from_str("balances")?)?;
@@ -355,6 +356,7 @@ view fetch_balance:
         let stack = Stack::new(&process, &program)?;
 
         let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None))?;
+        finalize_store.set_history_synced_height(1)?;
         finalize_store.initialize_mapping(*program.id(), Identifier::from_str("balances")?)?;
 
         let mut rng = console::prelude::TestRng::default();
@@ -407,6 +409,7 @@ view fetch_balance:
 
         // Open an empty finalize store. Note: `initialize_mapping` is deliberately NOT called.
         let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None))?;
+        finalize_store.set_history_synced_height(1)?;
 
         let mut rng = console::prelude::TestRng::default();
         let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng)?;
@@ -500,6 +503,7 @@ view lookup:
         let process = Process::<CurrentNetwork>::load()?;
         let stack = Stack::new(&process, &program)?;
         let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None))?;
+        finalize_store.set_history_synced_height(1)?;
 
         let program_id = *program.id();
         let mapping_name = Identifier::from_str("balances")?;
@@ -617,6 +621,7 @@ view lookup:
         let stack = Stack::new(&process, &program)?;
         let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None))?;
         finalize_store.set_record_history(true);
+        finalize_store.set_history_synced_height(6)?;
 
         let program_id = *program.id();
         let mapping_name = Identifier::from_str("balances")?;

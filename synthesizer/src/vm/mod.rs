@@ -665,6 +665,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 }) {
                     self.partially_verified_transactions().write().clear();
                 }
+                // Advance the history cursor only for the next height that is not indexed yet.
+                // A gap stays unindexed until backfill fills it.
+                if self.finalize_store().record_history()
+                    && block.height() == self.finalize_store().history_synced_height()
+                {
+                    self.finalize_store().set_history_synced_height(block.height() + 1)?;
+                }
                 Ok(())
             }
             Err(finalize_error) => {

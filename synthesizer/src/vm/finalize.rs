@@ -958,6 +958,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Perform the finalize operation on the preset finalize mode.
         let finalize_result = atomic_finalize!(self.finalize_store(), FinalizeMode::RealRun, {
+            // First event at this height, so an empty block is still distinguishable from one
+            // whose history was not recorded.
+            if let Err(error) = self.finalize_store().record_history_block() {
+                return Err(format!("Failed to record history block - {error}"));
+            }
+
             // Initialize an iterator for ratifications before finalize.
             let pre_ratifications = ratifications.iter().filter(|r| match r {
                 Ratify::Genesis(_, _, _) => true,

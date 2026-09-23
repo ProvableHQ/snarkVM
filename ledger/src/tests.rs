@@ -665,8 +665,9 @@ fn test_bond_and_unbond_validator() {
                 .vm()
                 .finalize_store()
                 .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 10)
-                .unwrap()
-                .is_none()
+                .unwrap_err()
+                .to_string()
+                .contains("not in the history index")
         );
 
         let initial_mapping_heights = ledger
@@ -743,8 +744,9 @@ fn test_bond_and_unbond_validator() {
                 .vm()
                 .finalize_store()
                 .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 5)
-                .unwrap()
-                .is_none()
+                .unwrap_err()
+                .to_string()
+                .contains("not in the history index")
         );
 
         let post_bond_mapping_heights = ledger
@@ -833,8 +835,9 @@ fn test_bond_and_unbond_validator() {
         assert!(
             store
                 .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 100)
-                .unwrap()
-                .is_none()
+                .unwrap_err()
+                .to_string()
+                .contains("not in the history index")
         );
 
         let post_unbond_mapping_heights = store
