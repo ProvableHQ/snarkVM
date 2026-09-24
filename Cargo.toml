@@ -439,11 +439,15 @@ path = "wasm"
 version = "=4.10.0"
 
 [workspace.dependencies.aleo-std]
-version = "1.0.1"
+#version = "1.0.1"
+git = "https://github.com/ProvableHQ/aleo-std"
+rev = "a97494191cb4bffbbaaf918b269ac5c4fb90c805"
 
 [workspace.dependencies.aleo-std-storage]
 default-features=false
-version = "1.0.1"
+# version = "1.0.1"
+git = "https://github.com/ProvableHQ/aleo-std"
+rev = "a97494191cb4bffbbaaf918b269ac5c4fb90c805"
 
 [workspace.dependencies.anyhow]
 version = "1.0.73"
