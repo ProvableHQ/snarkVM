@@ -144,6 +144,15 @@ impl RocksDB {
     pub(crate) fn set_history_synced_height(&self, height: u32) -> Result<()> {
         schema::set_history_synced_height(self, self.network_id, height)
     }
+
+    /// Deletes every entry of the map `map_id` whose serialized key is in `[start, end)`, with one
+    /// range deletion outside any atomic batch.
+    pub(crate) fn delete_map_range(&self, map_id: MapID, start: &[u8], end: &[u8]) -> Result<()> {
+        let prefix = schema::map_prefix(self.network_id, map_id);
+        let mut batch = rocksdb::WriteBatch::default();
+        batch.delete_range([&prefix[..], start].concat(), [&prefix[..], end].concat());
+        Ok(self.rocksdb.write(batch)?)
+    }
 }
 
 impl Deref for RocksDB {

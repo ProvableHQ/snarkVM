@@ -208,6 +208,11 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Sequence number of the next history event in the block currently being finalized.
     fn history_event_seq(&self) -> &AtomicU32;
 
+    /// Deletes the history events of every height below `height`.
+    ///
+    /// The deletion is outside any atomic batch; call it while no batch on this store is open.
+    fn prune_history_events_below(&self, height: u32) -> Result<()>;
+
     /// Starts an atomic batch write operation.
     fn start_atomic(&self) {
         self.committee_store().start_atomic();
@@ -985,27 +990,39 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         Ok(events)
     }
 
-    /// Writes history events for `height` into this store's history tables, in one write batch.
+    /// Writes the history events of each given height into this store's history tables, in one
+    /// write batch.
     ///
-    /// Used to copy one block's history from the replay ledger into the ledger that serves reads.
-    /// Existing records at the same keys are overwritten.
-    pub fn import_history_events(&self, height: u32, events: Vec<HistoryEvent<N>>) -> Result<()> {
+    /// Used to copy blocks' history from the replay into the ledger that serves reads. Existing
+    /// records at the same keys are overwritten.
+    pub fn import_history_events(&self, blocks: Vec<(u32, Vec<HistoryEvent<N>>)>) -> Result<()> {
         atomic_batch_scope!(self.storage, {
-            for event in events {
-                match event {
-                    HistoryEvent::Indexed => {}
-                    HistoryEvent::Mapping { program_id, mapping_name, key, value } => {
-                        self.storage
-                            .mapping_update_map()
-                            .insert((program_id, mapping_name, key, height.to_be_bytes()), *value)?;
-                    }
-                    HistoryEvent::Staking { staker, validator, reward, new_stake } => {
-                        self.storage.staking_rewards_map().insert((staker, height), (validator, reward, new_stake))?;
+            for (height, events) in blocks {
+                for event in events {
+                    match event {
+                        HistoryEvent::Indexed => {}
+                        HistoryEvent::Mapping { program_id, mapping_name, key, value } => {
+                            self.storage
+                                .mapping_update_map()
+                                .insert((program_id, mapping_name, key, height.to_be_bytes()), *value)?;
+                        }
+                        HistoryEvent::Staking { staker, validator, reward, new_stake } => {
+                            self.storage
+                                .staking_rewards_map()
+                                .insert((staker, height), (validator, reward, new_stake))?;
+                        }
                     }
                 }
             }
             Ok(())
         })
+    }
+
+    /// Deletes the history events of every height below `height`.
+    ///
+    /// The deletion is outside any atomic batch; call it while no batch on this store is open.
+    pub fn prune_history_events_below(&self, height: u32) -> Result<()> {
+        self.storage.prune_history_events_below(height)
     }
 
     /// Returns the historical staking rewards map.
@@ -1956,6 +1973,56 @@ mod tests {
         let heights =
             finalize_store.get_mapping_update_heights(program_id, mapping_name, key.clone()).unwrap().unwrap();
         assert_eq!(&*heights, &[10, 20, 50, 100, 120]);
+    }
+
+    /// Writes events at heights 1 to 3, then checks that pruning below 3 keeps only height 3 and
+    /// leaves the history tables alone.
+    fn check_prune_history_events_below<P: FinalizeStorage<CurrentNetwork>>(
+        finalize_store: FinalizeStore<CurrentNetwork, P>,
+    ) {
+        use std::sync::atomic::Ordering;
+
+        let staker = Address::<CurrentNetwork>::zero();
+        finalize_store.set_record_history(true);
+        finalize_store.current_block_height().store(1, Ordering::SeqCst);
+        finalize_store.record_staking_reward(staker, staker, 9, 9).unwrap();
+
+        finalize_store.set_history_recording(HistoryRecording::Events);
+        for height in 1..=3u32 {
+            finalize_store.current_block_height().store(height, Ordering::SeqCst);
+            finalize_store.reset_history_event_seq();
+            finalize_store.record_history_block().unwrap();
+            finalize_store.record_staking_reward(staker, staker, u64::from(height), 0).unwrap();
+        }
+        let height_3 =
+            vec![HistoryEvent::Indexed, HistoryEvent::Staking { staker, validator: staker, reward: 3, new_stake: 0 }];
+
+        finalize_store.prune_history_events_below(0).unwrap();
+        assert_eq!(finalize_store.history_events(1).unwrap().len(), 2);
+
+        finalize_store.prune_history_events_below(3).unwrap();
+        assert!(finalize_store.history_events(1).unwrap().is_empty());
+        assert!(finalize_store.history_events(2).unwrap().is_empty());
+        assert_eq!(finalize_store.history_events(3).unwrap(), height_3);
+        assert!(finalize_store.staking_rewards_map().get_confirmed(&(staker, 1)).unwrap().is_some());
+    }
+
+    #[test]
+    fn test_prune_history_events_below() {
+        check_prune_history_events_below(
+            FinalizeStore::from(FinalizeMemory::open(StorageMode::Test(None)).unwrap()).unwrap(),
+        );
+    }
+
+    #[cfg(feature = "rocks")]
+    #[test]
+    fn test_prune_history_events_below_rocks() {
+        check_prune_history_events_below(
+            FinalizeStore::<CurrentNetwork, crate::helpers::rocksdb::FinalizeDB<CurrentNetwork>>::open(
+                StorageMode::new_test(None),
+            )
+            .unwrap(),
+        );
     }
 
     /// Verifies `replace_mapping` records only changed and removed keys, and only where recording

@@ -23,7 +23,11 @@ use crate::{
     HistoricalMappingValue,
     HistoryEvent,
     HistoryRecording,
-    helpers::memory::{MemoryMap, NestedMemoryMap},
+    helpers::{
+        Map,
+        MapRead,
+        memory::{MemoryMap, NestedMemoryMap},
+    },
 };
 use console::{
     prelude::*,
@@ -153,6 +157,17 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     /// Returns the per-block history event sequence.
     fn history_event_seq(&self) -> &AtomicU32 {
         &self.history_event_seq
+    }
+
+    /// Deletes the history events of every height below `height`.
+    fn prune_history_events_below(&self, height: u32) -> Result<()> {
+        let keys = self
+            .history_event_map
+            .keys_confirmed()
+            .filter(|key| u32::from_be_bytes(key.0) < height)
+            .map(|key| key.into_owned())
+            .collect::<Vec<_>>();
+        keys.iter().try_for_each(|key| self.history_event_map.remove(key))
     }
 
     /// Returns the next block height history indexing will process.

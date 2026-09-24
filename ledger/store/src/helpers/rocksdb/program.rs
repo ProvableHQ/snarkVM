@@ -163,6 +163,13 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
         &self.history_event_seq
     }
 
+    /// Deletes the history events of every height below `height`, with one range deletion.
+    fn prune_history_events_below(&self, height: u32) -> Result<()> {
+        // Event keys serialize as the big-endian height followed by the big-endian sequence.
+        let end = [height.to_be_bytes(), [0u8; 4]].concat();
+        self.database.delete_map_range(MapID::Program(ProgramMap::HistoryEvent), &[], &end)
+    }
+
     /// Returns the next block height history indexing will process.
     fn history_synced_height(&self) -> u32 {
         self.history_synced_height.load(Ordering::SeqCst)
