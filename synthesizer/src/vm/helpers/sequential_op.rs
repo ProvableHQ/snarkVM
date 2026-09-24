@@ -51,12 +51,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         let announcement = (block.height(), bincode::serialize(&block));
                         let ret = vm.add_next_block_inner(block);
                         #[cfg(feature = "announce-blocks")]
-                        if ret.is_ok() {
-                            if let Err(e) = announce_block(&mut stream, announcement) {
-                                error!("Block announcement error: {e}");
-                                // Attempt to restart the stream.
-                                stream = start_block_announcement_stream();
-                            }
+                        if ret.is_ok()
+                            && let Err(e) = announce_block(&mut stream, announcement)
+                        {
+                            error!("Block announcement error: {e}");
+                            // Attempt to restart the stream.
+                            stream = start_block_announcement_stream();
                         }
                         SequentialOperationResult::AddNextBlock(ret)
                     }
