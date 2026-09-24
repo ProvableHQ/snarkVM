@@ -16,6 +16,10 @@
 use super::*;
 
 use aleo_std::aleo_ledger_dir;
+use std::time::{Duration, Instant};
+
+/// Time between two backfill progress logs.
+const PROGRESS_INTERVAL: Duration = Duration::from_secs(60);
 
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns the next block height history indexing will process.
@@ -44,16 +48,20 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.import_recorded_heights(&replay)?;
 
         let tip = self.latest_height();
+        let mut progress = BackfillProgress::new(tip);
         while replay.latest_height() < tip {
             let next = replay.latest_height() + 1;
             let record = self.history_synced_height() == next;
             replay.vm.finalize_store().set_record_history(record);
+            let started = Instant::now();
             let block = self.get_block(next)?;
+            let read = started.elapsed();
             replay.advance_to_next_block(&block)?;
+            let apply = started.elapsed() - read;
             replay.vm.finalize_store().set_record_history(false);
-            if record {
-                self.import_recorded_heights(&replay)?;
-            }
+            let events = if record { self.import_recorded_heights(&replay)? } else { 0 };
+            progress.record(read, apply, started.elapsed() - read - apply, events);
+            progress.log_if_due(next);
         }
         Ok(())
     }
@@ -72,10 +80,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         Ok(())
     }
 
-    /// Copies recorded history events from the replay ledger onto this ledger.
+    /// Copies recorded history events from the replay ledger onto this ledger, and returns how many
+    /// events were copied.
     ///
     /// Stops at the first height that has no events. That height was applied for state only.
-    fn import_recorded_heights(&self, replay: &Ledger<N, C>) -> Result<()> {
+    fn import_recorded_heights(&self, replay: &Ledger<N, C>) -> Result<u64> {
+        let mut imported = 0u64;
         loop {
             let cursor = self.history_synced_height();
             if cursor > replay.latest_height() {
@@ -87,8 +97,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             }
             self.vm.finalize_store().import_history_events(cursor, &events)?;
             self.vm.finalize_store().set_history_synced_height(cursor + 1)?;
+            imported += events.len() as u64;
         }
-        Ok(())
+        Ok(imported)
     }
 
     /// Returns the history-replay ledger, opening it on the first call.
@@ -114,6 +125,77 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         replay.vm.finalize_store().set_record_history(false);
         Ok(replay)
     }
+}
+
+/// Throughput and per-phase time of a history backfill since the last progress log.
+struct BackfillProgress {
+    /// Height the backfill stops at.
+    tip: u32,
+    /// Start of the current window.
+    window_start: Instant,
+    /// Blocks applied in the current window.
+    blocks: u32,
+    /// History events imported in the current window.
+    events: u64,
+    /// Time spent reading blocks from the primary ledger in the current window.
+    read: Duration,
+    /// Time spent applying blocks to the replay in the current window.
+    apply: Duration,
+    /// Time spent importing history onto the primary ledger in the current window.
+    import: Duration,
+}
+
+impl BackfillProgress {
+    /// Starts a progress window for a backfill that stops at `tip`.
+    fn new(tip: u32) -> Self {
+        Self {
+            tip,
+            window_start: Instant::now(),
+            blocks: 0,
+            events: 0,
+            read: Duration::ZERO,
+            apply: Duration::ZERO,
+            import: Duration::ZERO,
+        }
+    }
+
+    /// Adds one applied block to the current window.
+    fn record(&mut self, read: Duration, apply: Duration, import: Duration, events: u64) {
+        self.blocks += 1;
+        self.events += events;
+        self.read += read;
+        self.apply += apply;
+        self.import += import;
+    }
+
+    /// Logs throughput and per-block phase times once [`PROGRESS_INTERVAL`] has passed, then
+    /// starts a new window.
+    fn log_if_due(&mut self, height: u32) {
+        let elapsed = self.window_start.elapsed();
+        if elapsed < PROGRESS_INTERVAL || self.blocks == 0 {
+            return;
+        }
+        let blocks = f64::from(self.blocks);
+        let rate = blocks / elapsed.as_secs_f64();
+        let eta = Duration::from_secs_f64(f64::from(self.tip.saturating_sub(height)) / rate);
+        let per_block_ms = |total: Duration| total.as_secs_f64() * 1000.0 / blocks;
+        info!(
+            "Backfilled history to block {height}/{} ({rate:.1} blocks/s, ETA {}); per block: read {:.1} ms, apply {:.1} ms, import {:.1} ms, {:.0} events",
+            self.tip,
+            format_eta(eta),
+            per_block_ms(self.read),
+            per_block_ms(self.apply),
+            per_block_ms(self.import),
+            self.events as f64 / blocks,
+        );
+        *self = Self::new(self.tip);
+    }
+}
+
+/// Formats a remaining duration as hours and minutes.
+fn format_eta(eta: Duration) -> String {
+    let minutes = eta.as_secs() / 60;
+    format!("{}h{:02}m", minutes / 60, minutes % 60)
 }
 
 /// Returns storage for the history-replay ledger beside `mode`'s ledger directory.
@@ -166,5 +248,12 @@ mod tests {
         // A second call does not move the cursor.
         ledger.backfill_history().unwrap();
         assert_eq!(ledger.history_synced_height(), 2);
+    }
+
+    #[test]
+    fn test_format_eta() {
+        assert_eq!(format_eta(Duration::from_secs(59)), "0h00m");
+        assert_eq!(format_eta(Duration::from_secs(3 * 3600 + 7 * 60 + 5)), "3h07m");
+        assert_eq!(format_eta(Duration::from_secs(1190 * 3600)), "1190h00m");
     }
 }
