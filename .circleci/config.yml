@@ -1162,21 +1162,21 @@ jobs:
       - clear_environment:
           cache_key: v4.7.3-rust-1.96.0-machete-cache
 
-  check-cargo-audit:
+  check-cargo-deny:
     executor: rust-docker
     resource_class: << pipeline.parameters.medium >>
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.7.3-rust-1.96.0-cargo-audit-cache
+          cache_key: v4.7.3-rust-1.96.0-cargo-deny-cache
       - run:
-          name:  Check for security vulnerabilities
+          name: Check advisories, licenses, bans, and sources
           no_output_timeout: 10m
           command: |
-            cargo install cargo-audit@0.22.0 --locked --force
-            cargo audit -D warnings
+            cargo install cargo-deny@0.20.2 --locked
+            cargo deny check
       - clear_environment:
-          cache_key: v4.7.3-rust-1.96.0-cargo-audit-cache
+          cache_key: v4.7.3-rust-1.96.0-cargo-deny-cache
 
   check-cargo-semver-checks:
     executor: rust-docker
@@ -1249,7 +1249,7 @@ workflows:
     jobs:
       - check-fmt
       - check-clippy
-      - check-cargo-audit
+      - check-cargo-deny
       - check-all-targets
 
   circuit-workflow:
