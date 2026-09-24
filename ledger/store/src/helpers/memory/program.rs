@@ -22,6 +22,7 @@ use crate::{
     HeightBytes,
     HistoricalMappingValue,
     HistoryEvent,
+    HistoryRecording,
     helpers::memory::{MemoryMap, NestedMemoryMap},
 };
 use console::{
@@ -36,7 +37,7 @@ use aleo_std_storage::StorageMode;
 use indexmap::IndexSet;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU32, Ordering},
+    atomic::{AtomicU8, AtomicU32, Ordering},
 };
 
 /// An in-memory finalize storage.
@@ -58,8 +59,8 @@ pub struct FinalizeMemory<N: Network> {
     history_event_map: MemoryMap<(HeightBytes, HeightBytes), HistoryEvent<N>>,
     /// The current block height.
     block_height: Arc<AtomicU32>,
-    /// Whether mapping updates and staking rewards are written to the history tables.
-    record_history: Arc<AtomicBool>,
+    /// Where mapping updates and staking rewards are recorded.
+    history_recording: Arc<AtomicU8>,
     /// Sequence number of the next history event in the current block.
     history_event_seq: Arc<AtomicU32>,
     /// The next block height history indexing will process.
@@ -97,7 +98,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
             staking_rewards_map: MemoryMap::default(),
             history_event_map: MemoryMap::default(),
             block_height: Arc::new(AtomicU32::new(initial_height)),
-            record_history: Arc::new(AtomicBool::new(false)),
+            history_recording: Arc::new(AtomicU8::new(HistoryRecording::Off as u8)),
             history_event_seq: Arc::new(AtomicU32::new(0)),
             history_synced_height: Arc::new(AtomicU32::new(0)),
             storage_mode: storage,
@@ -144,9 +145,9 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
         &self.storage_mode
     }
 
-    /// Returns whether history recording is enabled.
-    fn record_history(&self) -> &AtomicBool {
-        &self.record_history
+    /// Returns where history is recorded.
+    fn history_recording(&self) -> &AtomicU8 {
+        &self.history_recording
     }
 
     /// Returns the per-block history event sequence.

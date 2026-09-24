@@ -66,7 +66,7 @@ use snarkvm_ledger_committee::Committee;
 use snarkvm_ledger_narwhal::{BatchCertificate, Subdag, Transmission, TransmissionID};
 use snarkvm_ledger_puzzle::{Puzzle, PuzzleSolutions, Solution, SolutionID};
 use snarkvm_ledger_query::QueryTrait;
-use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore};
+use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore, HistoryRecording};
 use snarkvm_synthesizer::{
     program::{FinalizeGlobalState, Program},
     vm::VM,
@@ -103,6 +103,12 @@ pub type RecordMap<N> = IndexMap<Field<N>, Record<N, Plaintext<N>>>;
 
 /// The capacity of the LRU cache holding the recently queried committees.
 const COMMITTEE_CACHE_SIZE: usize = 16;
+
+/// Where [`Ledger::load_unchecked`] records genesis history: its tables in this crate's unit
+/// tests, and nowhere otherwise.
+const fn test_genesis_history() -> HistoryRecording {
+    if cfg!(test) { HistoryRecording::Tables } else { HistoryRecording::Off }
+}
 
 /// Options describing the deterministic dev committee to install on a [`Ledger`].
 ///
@@ -277,9 +283,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     pub fn load_unchecked(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
         cfg_if! {
             if #[cfg(feature="dev-committee")] {
-                Self::load_unchecked_inner(genesis_block, storage_mode, None, cfg!(test))
+                Self::load_unchecked_inner(genesis_block, storage_mode, None, test_genesis_history())
             } else {
-                Self::load_unchecked_inner(genesis_block, storage_mode, cfg!(test))
+                Self::load_unchecked_inner(genesis_block, storage_mode, test_genesis_history())
             }
         }
     }
@@ -329,14 +335,14 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         storage_mode: StorageMode,
         dev_committee_opts: DevCommitteeOptions,
     ) -> Result<Self> {
-        Self::load_unchecked_inner(genesis_block, storage_mode, Some(dev_committee_opts), cfg!(test))
+        Self::load_unchecked_inner(genesis_block, storage_mode, Some(dev_committee_opts), test_genesis_history())
     }
 
     fn load_unchecked_inner(
         genesis_block: Block<N>,
         storage_mode: StorageMode,
         #[cfg(feature = "dev-committee")] dev_committee_opts: Option<DevCommitteeOptions>,
-        record_genesis_history: bool,
+        genesis_history: HistoryRecording,
     ) -> Result<Self> {
         let timer = timer!("Ledger::load_unchecked");
 
@@ -350,11 +356,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         // Initialize a new VM.
         let vm = VM::from(store)?;
-        // Record genesis mapping writes when the caller asked for them. The history-replay ledger
-        // passes false once genesis is already indexed on the primary ledger.
-        if record_genesis_history {
-            vm.finalize_store().set_record_history(true);
-        }
+        // Record genesis mapping writes where the caller asked for them. The history-replay ledger
+        // passes `Off` once genesis is already indexed on the primary ledger.
+        vm.finalize_store().set_history_recording(genesis_history);
         lap!(timer, "Initialize a new VM");
 
         // Retrieve the current committee.

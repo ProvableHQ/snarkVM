@@ -52,13 +52,14 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         while replay.latest_height() < tip {
             let next = replay.latest_height() + 1;
             let record = self.history_synced_height() == next;
-            replay.vm.finalize_store().set_record_history(record);
+            let recording = if record { HistoryRecording::Events } else { HistoryRecording::Off };
+            replay.vm.finalize_store().set_history_recording(recording);
             let started = Instant::now();
             let block = self.get_block(next)?;
             let read = started.elapsed();
             replay.advance_to_next_block(&block)?;
             let apply = started.elapsed() - read;
-            replay.vm.finalize_store().set_record_history(false);
+            replay.vm.finalize_store().set_history_recording(HistoryRecording::Off);
             let events = if record { self.import_recorded_heights(&replay)? } else { 0 };
             progress.record(read, apply, started.elapsed() - read - apply, events);
             progress.log_if_due(next);
@@ -73,7 +74,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let replay = self.history_replay_ledger()?;
         while replay.latest_height() < block.height() {
             let next = replay.latest_height() + 1;
-            replay.vm.finalize_store().set_record_history(false);
+            replay.vm.finalize_store().set_history_recording(HistoryRecording::Off);
             let next_block = if next == block.height() { block.clone() } else { self.get_block(next)? };
             replay.advance_to_next_block(&next_block)?;
         }
@@ -95,9 +96,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             if events.is_empty() {
                 break;
             }
-            self.vm.finalize_store().import_history_events(cursor, &events)?;
-            self.vm.finalize_store().set_history_synced_height(cursor + 1)?;
             imported += events.len() as u64;
+            self.vm.finalize_store().import_history_events(cursor, events)?;
+            self.vm.finalize_store().set_history_synced_height(cursor + 1)?;
         }
         Ok(imported)
     }
@@ -116,13 +117,14 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Opens the history-replay ledger next to this ledger's directory.
     fn open_history_replay(&self) -> Result<Ledger<N, C>> {
         let storage = history_replay_storage(self.vm.finalize_store().storage_mode(), N::ID);
-        let record_genesis = self.history_synced_height() == 0;
+        let genesis_history =
+            if self.history_synced_height() == 0 { HistoryRecording::Events } else { HistoryRecording::Off };
         #[cfg(feature = "dev-committee")]
-        let replay = Ledger::load_unchecked_inner(self.genesis_block.clone(), storage, None, record_genesis)?;
+        let replay = Ledger::load_unchecked_inner(self.genesis_block.clone(), storage, None, genesis_history)?;
         #[cfg(not(feature = "dev-committee"))]
-        let replay = Ledger::load_unchecked_inner(self.genesis_block.clone(), storage, record_genesis)?;
+        let replay = Ledger::load_unchecked_inner(self.genesis_block.clone(), storage, genesis_history)?;
         // Later blocks are recorded one at a time by [`Self::backfill_history`].
-        replay.vm.finalize_store().set_record_history(false);
+        replay.vm.finalize_store().set_history_recording(HistoryRecording::Off);
         Ok(replay)
     }
 }
