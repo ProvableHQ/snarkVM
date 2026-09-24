@@ -40,6 +40,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         let ret = vm.add_next_block_inner(block);
                         SequentialOperationResult::AddNextBlock(ret)
                     }
+                    SequentialOperation::ReplayFinalize(block) => {
+                        let ret = vm.replay_finalize_inner(block);
+                        SequentialOperationResult::ReplayFinalize(ret)
+                    }
                     SequentialOperation::AtomicSpeculate(a, b, c, d, e, f) => {
                         let ret = vm.atomic_speculate_inner(a, b, c, d, e, f);
                         SequentialOperationResult::AtomicSpeculate(ret)
@@ -88,6 +92,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 /// An operation intended to be executed only in a sequential fashion.
 pub enum SequentialOperation<N: Network> {
     AddNextBlock(Block<N>),
+    ReplayFinalize(Block<N>),
     AtomicSpeculate(FinalizeGlobalState, i64, Option<u64>, Vec<Ratify<N>>, Solutions<N>, Vec<Transaction<N>>),
 }
 
@@ -96,6 +101,9 @@ impl<N: Network> fmt::Display for SequentialOperation<N> {
         match self {
             SequentialOperation::AddNextBlock(block) => {
                 write!(f, "add block ({})", block.hash())
+            }
+            SequentialOperation::ReplayFinalize(block) => {
+                write!(f, "replay finalize (height {})", block.height())
             }
             SequentialOperation::AtomicSpeculate(state, ..) => {
                 write!(f, "atomic speculate (height {}, round {})", state.block_height(), state.block_round())
@@ -113,6 +121,7 @@ pub struct SequentialOperationRequest<N: Network> {
 /// Represents the results of all the sequential operations.
 pub enum SequentialOperationResult<N: Network> {
     AddNextBlock(Result<()>),
+    ReplayFinalize(Result<()>),
     AtomicSpeculate(
         Result<(
             Ratifications<N>,

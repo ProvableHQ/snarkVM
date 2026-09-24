@@ -205,20 +205,21 @@ impl Database for RocksDB {
             db
         };
 
-        // Test databases may share the process with one history-replay database. Outside tests,
-        // there is one primary database and, when history backfill is running, one replay database
-        // whose directory name ends with `-history-replay`.
+        // Outside tests, there is one primary database and, when history backfill is running, one
+        // replay database whose directory name ends with `-history-replay`. Test databases may
+        // share the process with the replay databases of their test ledgers.
         let is_replay = |db: &RocksDB| db.is_history_replay();
+        let is_test = |db: &RocksDB| matches!(&db.storage_mode, StorageMode::Test(_));
         if matches!(storage, StorageMode::Test(_)) {
-            ensure!(databases.values().all(|db| matches!(&db.storage_mode, StorageMode::Test(_)) || is_replay(db)));
+            ensure!(databases.values().all(|db| is_test(db) || is_replay(db)));
         } else if is_history_replay_mode(network_id, &storage) {
             let replays = databases.values().filter(|db| is_replay(db)).count();
-            ensure!(replays <= 1, "There can only be one active history-replay database.");
+            ensure!(
+                replays <= 1 || databases.values().any(is_test),
+                "There can only be one active history-replay database."
+            );
         } else {
-            let primaries = databases
-                .values()
-                .filter(|db| !matches!(&db.storage_mode, StorageMode::Test(_)) && !is_replay(db))
-                .count();
+            let primaries = databases.values().filter(|db| !is_test(db) && !is_replay(db)).count();
             ensure!(primaries <= 1, "There can only be one active rocksDB database when not in test mode.");
         }
 

@@ -41,25 +41,23 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Rebuilds history from [`Self::history_synced_height`] through the current tip.
     ///
-    /// Blocks already indexed are skipped. The replay ledger is persistent, so a later call
+    /// Blocks already indexed are skipped. The replay store is persistent, so a later call
     /// continues at the stored height.
     pub fn backfill_history(&self) -> Result<()> {
-        let replay = self.history_replay_ledger()?;
+        let replay = self.history_replay()?;
         self.import_recorded_heights(&replay)?;
 
         let tip = self.latest_height();
         let mut progress = BackfillProgress::new(tip);
-        while replay.latest_height() < tip {
-            let next = replay.latest_height() + 1;
+        while replay.latest_height()? < tip {
+            let next = replay.latest_height()? + 1;
             let record = self.history_synced_height() == next;
             let recording = if record { HistoryRecording::Events } else { HistoryRecording::Off };
-            replay.vm.finalize_store().set_history_recording(recording);
             let started = Instant::now();
             let block = self.get_block(next)?;
             let read = started.elapsed();
-            replay.advance_to_next_block(&block)?;
+            replay.finalize(block, recording)?;
             let apply = started.elapsed() - read;
-            replay.vm.finalize_store().set_history_recording(HistoryRecording::Off);
             let events = if record { self.import_recorded_heights(&replay)? } else { 0 };
             progress.record(read, apply, started.elapsed() - read - apply, events);
             progress.log_if_due(next);
@@ -67,29 +65,28 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         Ok(())
     }
 
-    /// Applies `block` to the history-replay ledger without recording it.
+    /// Applies `block` to the history replay without recording it.
     ///
     /// Heights the replay has not applied yet are applied first, also without recording.
     pub(crate) fn sync_history_replay_state(&self, block: &Block<N>) -> Result<()> {
-        let replay = self.history_replay_ledger()?;
-        while replay.latest_height() < block.height() {
-            let next = replay.latest_height() + 1;
-            replay.vm.finalize_store().set_history_recording(HistoryRecording::Off);
+        let replay = self.history_replay()?;
+        while replay.latest_height()? < block.height() {
+            let next = replay.latest_height()? + 1;
             let next_block = if next == block.height() { block.clone() } else { self.get_block(next)? };
-            replay.advance_to_next_block(&next_block)?;
+            replay.finalize(next_block, HistoryRecording::Off)?;
         }
         Ok(())
     }
 
-    /// Copies recorded history events from the replay ledger onto this ledger, and returns how many
+    /// Copies recorded history events from the replay onto this ledger, and returns how many
     /// events were copied.
     ///
     /// Stops at the first height that has no events. That height was applied for state only.
-    fn import_recorded_heights(&self, replay: &Ledger<N, C>) -> Result<u64> {
+    fn import_recorded_heights(&self, replay: &HistoryReplay<N, C>) -> Result<u64> {
         let mut imported = 0u64;
         loop {
             let cursor = self.history_synced_height();
-            if cursor > replay.latest_height() {
+            if cursor > replay.latest_height()? {
                 break;
             }
             let events = replay.vm.finalize_store().history_events(cursor)?;
@@ -103,29 +100,67 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         Ok(imported)
     }
 
-    /// Returns the history-replay ledger, opening it on the first call.
-    fn history_replay_ledger(&self) -> Result<Ledger<N, C>> {
+    /// Returns the history replay, opening it on the first call.
+    fn history_replay(&self) -> Result<HistoryReplay<N, C>> {
         let mut slot = self.history_replay.lock();
         if let Some(replay) = slot.as_ref() {
             return Ok(replay.clone());
         }
-        let replay = self.open_history_replay()?;
+        let replay = HistoryReplay::open(self)?;
         *slot = Some(replay.clone());
         Ok(replay)
     }
+}
 
-    /// Opens the history-replay ledger next to this ledger's directory.
-    fn open_history_replay(&self) -> Result<Ledger<N, C>> {
-        let storage = history_replay_storage(self.vm.finalize_store().storage_mode(), N::ID);
-        let genesis_history =
-            if self.history_synced_height() == 0 { HistoryRecording::Events } else { HistoryRecording::Off };
-        #[cfg(feature = "dev-committee")]
-        let replay = Ledger::load_unchecked_inner(self.genesis_block.clone(), storage, None, genesis_history)?;
-        #[cfg(not(feature = "dev-committee"))]
-        let replay = Ledger::load_unchecked_inner(self.genesis_block.clone(), storage, genesis_history)?;
-        // Later blocks are recorded one at a time by [`Self::backfill_history`].
-        replay.vm.finalize_store().set_history_recording(HistoryRecording::Off);
+/// A VM that re-finalizes this ledger's blocks to rebuild mapping and staking history.
+///
+/// Its store, next to the ledger's directory, holds finalize state and the history event log but
+/// no blocks. The last finalized height is the height of its latest committee, which finalize
+/// writes in the same batch as the block's other state.
+#[derive(Clone)]
+pub(crate) struct HistoryReplay<N: Network, C: ConsensusStorage<N>> {
+    /// The replay VM.
+    vm: VM<N, C>,
+}
+
+impl<N: Network, C: ConsensusStorage<N>> HistoryReplay<N, C> {
+    /// Opens the replay for `ledger`, finalizing the genesis block when the replay is new.
+    ///
+    /// Programs deployed up to the replay's height are loaded from `ledger`.
+    fn open(ledger: &Ledger<N, C>) -> Result<Self> {
+        let storage = history_replay_storage(ledger.vm.finalize_store().storage_mode(), N::ID);
+        let store = ConsensusStore::<N, C>::open(storage)?;
+        let height = store.finalize_store().committee_store().current_height().ok();
+        let replay = Self { vm: VM::from_history_replay(store, &ledger.vm, height)? };
+        if height.is_none() {
+            let recording =
+                if ledger.history_synced_height() == 0 { HistoryRecording::Events } else { HistoryRecording::Off };
+            replay.finalize(ledger.genesis_block.clone(), recording)?;
+        }
         Ok(replay)
+    }
+
+    /// Returns the height of the last block the replay finalized.
+    fn latest_height(&self) -> Result<u32> {
+        self.vm.finalize_store().committee_store().current_height()
+    }
+
+    /// Finalizes the next block, recording its history as `recording` selects.
+    fn finalize(&self, block: Block<N>, recording: HistoryRecording) -> Result<()> {
+        let height = block.height();
+        let expected = match self.latest_height() {
+            Ok(latest) => latest + 1,
+            Err(_) => 0,
+        };
+        ensure!(height == expected, "The history replay expected block {expected}, found block {height}");
+
+        self.vm.finalize_store().set_history_recording(recording);
+        let result = self.vm.replay_finalize(block);
+        self.vm.finalize_store().set_history_recording(HistoryRecording::Off);
+        result.with_context(|| format!("Failed to replay block {height} for history"))?;
+
+        ensure!(self.latest_height()? == height, "The history replay did not store the committee for block {height}");
+        Ok(())
     }
 }
 
@@ -212,8 +247,142 @@ fn history_replay_storage(mode: &StorageMode, network_id: u16) -> StorageMode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_helpers::sample_ledger;
+    use crate::test_helpers::{CurrentLedger, CurrentNetwork, sample_ledger};
     use console::prelude::TestRng;
+    use snarkvm_ledger_store::helpers::MapRead;
+
+    /// A program whose finalize writes a mapping and rejects a zero value.
+    const PARITY_PROGRAM: &str = r"
+program history_parity.aleo;
+
+mapping counter:
+    key as u8.public;
+    value as u64.public;
+
+function set:
+    input r0 as u8.public;
+    input r1 as u64.public;
+    async set r0 r1 into r2;
+    output r2 as history_parity.aleo/set.future;
+
+finalize set:
+    input r0 as u8.public;
+    input r1 as u64.public;
+    assert.neq r1 0u64;
+    set r1 into counter[r0];
+";
+
+    /// Returns every recorded update of a key that is currently mapped, and every staking reward.
+    fn recorded_history(ledger: &CurrentLedger) -> (Vec<String>, Vec<String>) {
+        let store = ledger.vm.finalize_store();
+        let mut mappings = Vec::new();
+        for program_id in ["credits.aleo", "history_parity.aleo"] {
+            let program_id = ProgramID::<CurrentNetwork>::from_str(program_id).unwrap();
+            for mapping_name in store.get_mapping_names_confirmed(&program_id).unwrap().unwrap() {
+                for (key, _) in store.get_mapping_confirmed(program_id, mapping_name).unwrap() {
+                    let heights = store.get_mapping_update_heights(program_id, mapping_name, key.clone()).unwrap();
+                    for height in heights.map(|heights| heights.into_owned()).unwrap_or_default() {
+                        let value = store
+                            .get_historical_mapping_value(program_id, mapping_name, key.clone(), height)
+                            .unwrap()
+                            .map(|value| value.into_owned());
+                        mappings.push(format!("{program_id}/{mapping_name}[{key}] at {height}: {value:?}"));
+                    }
+                }
+            }
+        }
+        let mut rewards = store
+            .staking_rewards_map()
+            .iter_confirmed()
+            .map(|(key, value)| format!("{key:?}: {value:?}"))
+            .collect_vec();
+        rewards.sort();
+        (mappings, rewards)
+    }
+
+    #[test]
+    fn test_backfill_matches_live_recording() {
+        let rng = &mut TestRng::default();
+        let private_key = console::account::PrivateKey::new(rng).unwrap();
+        // `live` records every block when it is added. `backfilled` records genesis only.
+        let live = sample_ledger(private_key, rng);
+        let backfilled = CurrentLedger::load(live.get_block(0).unwrap(), StorageMode::new_test(None)).unwrap();
+        backfilled.set_record_history(false);
+
+        let advance = |transactions: Vec<Transaction<CurrentNetwork>>, rng: &mut TestRng| {
+            let block =
+                live.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], transactions, rng).unwrap();
+            live.advance_to_next_block(&block).unwrap();
+            backfilled.advance_to_next_block(&block).unwrap();
+            block
+        };
+        let execute = |key: &str, value: &str, rng: &mut TestRng| {
+            let inputs = [Value::<CurrentNetwork>::from_str(key).unwrap(), Value::from_str(value).unwrap()];
+            live.vm().execute(&private_key, ("history_parity.aleo", "set"), inputs.iter(), None, 0, None, rng).unwrap()
+        };
+
+        let program = Program::<CurrentNetwork>::from_str(PARITY_PROGRAM).unwrap();
+        let deployment = live.vm().deploy(&private_key, &program, None, 0, None, rng).unwrap();
+        advance(vec![deployment], rng);
+        let accepted = execute("1u8", "5u64", rng);
+        let rejected = execute("2u8", "0u64", rng);
+        let block = advance(vec![accepted, rejected], rng);
+        assert_eq!(block.transactions().iter().filter(|transaction| transaction.is_rejected()).count(), 1);
+        let update = execute("1u8", "6u64", rng);
+        advance(vec![update], rng);
+
+        assert_eq!(backfilled.history_synced_height(), 1);
+        backfilled.backfill_history().unwrap();
+        assert_eq!(backfilled.history_synced_height(), 4);
+        assert_eq!(live.history_synced_height(), 4);
+
+        // The replay's finalize state matches the ledger it replayed.
+        let replay = backfilled.history_replay().unwrap();
+        assert_eq!(replay.latest_height().unwrap(), 3);
+        assert_eq!(
+            replay.vm.finalize_store().get_checksum_confirmed().unwrap(),
+            backfilled.vm.finalize_store().get_checksum_confirmed().unwrap()
+        );
+        assert_eq!(
+            replay.vm.finalize_store().committee_store().current_committee().unwrap(),
+            backfilled.latest_committee().unwrap()
+        );
+
+        // Backfilled history matches history recorded while the blocks were added.
+        let (mappings, rewards) = recorded_history(&backfilled);
+        assert!(mappings.iter().any(|update| update.contains("history_parity.aleo/counter[1u8] at 3")));
+        assert!(!rewards.is_empty());
+        assert_eq!((mappings, rewards), recorded_history(&live));
+
+        // The replay only accepts the block after its latest height.
+        let error = replay.finalize(live.get_block(2).unwrap(), HistoryRecording::Off).unwrap_err().to_string();
+        assert!(error.contains("expected block 4, found block 2"), "{error}");
+
+        // A replay VM loads the programs deployed up to its height.
+        let program_id = ProgramID::from_str("history_parity.aleo").unwrap();
+        let open_at = |height: Option<u32>| {
+            let store = ConsensusStore::open(StorageMode::new_test(None)).unwrap();
+            VM::from_history_replay(store, &backfilled.vm, height).unwrap().contains_program(&program_id)
+        };
+        assert!(!open_at(None));
+        assert!(!open_at(Some(0)));
+        assert!(open_at(Some(1)));
+
+        // A reopened replay resumes, then finalizes a later call into the deployed program.
+        drop(replay);
+        *backfilled.history_replay.lock() = None;
+        backfilled.set_record_history(true);
+        let update = execute("2u8", "7u64", rng);
+        advance(vec![update], rng);
+        let replay = backfilled.history_replay().unwrap();
+        assert_eq!(replay.latest_height().unwrap(), 4);
+        assert_eq!(
+            replay.vm.finalize_store().get_checksum_confirmed().unwrap(),
+            backfilled.vm.finalize_store().get_checksum_confirmed().unwrap()
+        );
+        assert_eq!(backfilled.history_synced_height(), 5);
+        assert_eq!(recorded_history(&backfilled), recorded_history(&live));
+    }
 
     #[test]
     fn test_backfill_resumes_after_unrecorded_blocks() {

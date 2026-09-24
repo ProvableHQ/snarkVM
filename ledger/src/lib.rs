@@ -104,12 +104,6 @@ pub type RecordMap<N> = IndexMap<Field<N>, Record<N, Plaintext<N>>>;
 /// The capacity of the LRU cache holding the recently queried committees.
 const COMMITTEE_CACHE_SIZE: usize = 16;
 
-/// Where [`Ledger::load_unchecked`] records genesis history: its tables in this crate's unit
-/// tests, and nowhere otherwise.
-const fn test_genesis_history() -> HistoryRecording {
-    if cfg!(test) { HistoryRecording::Tables } else { HistoryRecording::Off }
-}
-
 /// Options describing the deterministic dev committee to install on a [`Ledger`].
 ///
 /// Installs an override that is returned by [`Ledger::get_committee_for_round`]
@@ -232,10 +226,10 @@ pub struct InnerLedger<N: Network, C: ConsensusStorage<N>> {
     committee_cache: Mutex<LruCache<u64, Committee<N>>>,
     /// The cache that holds the provers and the number of solutions they have submitted for the current epoch.
     epoch_provers_cache: Arc<RwLock<IndexMap<Address<N>, u32>>>,
-    /// When set, each new block is applied to the history-replay ledger after it is committed here.
+    /// When set, each new block is applied to the history replay after it is committed here.
     record_history: AtomicBool,
-    /// Side ledger that re-executes blocks to rebuild mapping and staking history.
-    history_replay: Mutex<Option<Ledger<N, C>>>,
+    /// Side VM that re-finalizes blocks to rebuild mapping and staking history.
+    history_replay: Mutex<Option<history::HistoryReplay<N, C>>>,
 
     /// Optional dev committee, returned for any round `>= committee.starting_round()`.
     ///
@@ -283,9 +277,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     pub fn load_unchecked(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
         cfg_if! {
             if #[cfg(feature="dev-committee")] {
-                Self::load_unchecked_inner(genesis_block, storage_mode, None, test_genesis_history())
+                Self::load_unchecked_inner(genesis_block, storage_mode, None)
             } else {
-                Self::load_unchecked_inner(genesis_block, storage_mode, test_genesis_history())
+                Self::load_unchecked_inner(genesis_block, storage_mode)
             }
         }
     }
@@ -335,14 +329,13 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         storage_mode: StorageMode,
         dev_committee_opts: DevCommitteeOptions,
     ) -> Result<Self> {
-        Self::load_unchecked_inner(genesis_block, storage_mode, Some(dev_committee_opts), test_genesis_history())
+        Self::load_unchecked_inner(genesis_block, storage_mode, Some(dev_committee_opts))
     }
 
     fn load_unchecked_inner(
         genesis_block: Block<N>,
         storage_mode: StorageMode,
         #[cfg(feature = "dev-committee")] dev_committee_opts: Option<DevCommitteeOptions>,
-        genesis_history: HistoryRecording,
     ) -> Result<Self> {
         let timer = timer!("Ledger::load_unchecked");
 
@@ -356,9 +349,10 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         // Initialize a new VM.
         let vm = VM::from(store)?;
-        // Record genesis mapping writes where the caller asked for them. The history-replay ledger
-        // passes `Off` once genesis is already indexed on the primary ledger.
-        vm.finalize_store().set_history_recording(genesis_history);
+        // This crate's unit tests record history from genesis on.
+        if cfg!(test) {
+            vm.finalize_store().set_record_history(true);
+        }
         lap!(timer, "Initialize a new VM");
 
         // Retrieve the current committee.
