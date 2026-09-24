@@ -24,7 +24,7 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-announce-blocks = [ "dep:bincode", "dep:interprocess" ]
+announce-blocks = [ "dep:bincode" ]
 locktick = [
   "dep:locktick",
   "snarkvm-ledger-puzzle/locktick",
@@ -146,10 +146,6 @@ optional = true
 [dependencies.indexmap]
 workspace = true
 features = [ "serde", "rayon" ]
-
-[dependencies.interprocess]
-version = "2.2.3"
-optional = true
 
 [dependencies.itertools]
 workspace = true

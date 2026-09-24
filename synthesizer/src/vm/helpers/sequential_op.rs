@@ -17,7 +17,7 @@ use crate::vm::*;
 use console::network::prelude::Network;
 
 #[cfg(feature = "announce-blocks")]
-use interprocess::local_socket::{self, Stream, prelude::*};
+use std::net::{SocketAddr, TcpStream};
 use std::{fmt, thread};
 use tokio::sync::oneshot;
 #[cfg(feature = "announce-blocks")]
@@ -48,12 +48,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let ret = match op {
                     SequentialOperation::AddNextBlock(block) => {
                         #[cfg(feature = "announce-blocks")]
-                        let ipc_payload = (block.height(), bincode::serialize(&block));
+                        let announcement = (block.height(), bincode::serialize(&block));
                         let ret = vm.add_next_block_inner(block);
                         #[cfg(feature = "announce-blocks")]
                         if ret.is_ok() {
-                            if let Err(e) = announce_block(&mut stream, ipc_payload) {
-                                error!("IPC error: {e}");
+                            if let Err(e) = announce_block(&mut stream, announcement) {
+                                error!("Block announcement error: {e}");
                                 // Attempt to restart the stream.
                                 stream = start_block_announcement_stream();
                             }
@@ -169,22 +169,26 @@ impl<N: Network> Drop for SequentialOperationQueue<N> {
 }
 
 #[cfg(feature = "announce-blocks")]
-fn start_block_announcement_stream() -> Option<Stream> {
-    let path = std::env::var("BLOCK_ANNOUNCE_PATH")
+fn start_block_announcement_stream() -> Option<TcpStream> {
+    let addr = std::env::var("BLOCK_ANNOUNCE_ADDR")
         .map_err(|_| {
-            warn!("BLOCK_ANNOUNCE_PATH env variable must be set in order to publish blocks via IPC");
+            warn!("BLOCK_ANNOUNCE_ADDR env variable must be set in order to publish blocks via TCP");
         })
         .ok()?
-        .to_fs_name::<local_socket::GenericFilePath>()
-        .expect("Invalid path provided as the BLOCK_ANNOUNCE_PATH");
+        .parse::<SocketAddr>()
+        .expect("Invalid socket address provided as the BLOCK_ANNOUNCE_ADDR");
 
-    match Stream::connect(path) {
+    match TcpStream::connect(addr) {
         Ok(stream) => {
-            debug!("Successfully (re)started the IPC stream for block announcements");
+            // Avoid Nagle-induced delays in delivering announcements.
+            if let Err(e) = stream.set_nodelay(true) {
+                warn!("Couldn't set TCP_NODELAY on the block announcement stream: {e}");
+            }
+            debug!("Successfully (re)started the TCP stream for block announcements");
             Some(stream)
         }
         Err(e) => {
-            warn!("Couldn't (re)start the IPC stream for block announcements: {e}");
+            warn!("Couldn't (re)start the TCP stream for block announcements: {e}");
             None
         }
     }
@@ -192,13 +196,13 @@ fn start_block_announcement_stream() -> Option<Stream> {
 
 #[cfg(feature = "announce-blocks")]
 fn announce_block(
-    stream: &mut Option<Stream>,
+    stream: &mut Option<TcpStream>,
     payload: (u32, Result<Vec<u8>, Box<bincode::ErrorKind>>),
 ) -> Result<bool> {
     if let Some(stream) = stream {
         let (block_height, serialized_block) = payload;
         let block_bytes = serialized_block?;
-        debug!("Announcing block {block_height} to the IPC stream");
+        debug!("Announcing block {block_height} to the TCP stream");
         let payload_size = u32::try_from(std::mem::size_of::<u32>() + block_bytes.len()).unwrap(); // Safe - blocks are smaller than 4GiB.
         stream.write_all(&payload_size.to_le_bytes())?;
         stream.write_all(&block_height.to_le_bytes())?;
