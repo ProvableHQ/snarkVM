@@ -49,7 +49,7 @@ use snarkvm_synthesizer_program::{FinalizeOperation, Program};
 
 use aleo_std_storage::StorageMode;
 #[cfg(feature = "rocks")]
-use aleo_std_storage::aleo_ledger_dir;
+use aleo_std_storage::{aleo_ledger_dir, aleo_secondary_ledger_dir};
 use anyhow::{Context, Result};
 #[cfg(feature = "locktick")]
 use locktick::{LockGuard, parking_lot::RwLock};
@@ -119,9 +119,16 @@ fn to_confirmed_transaction<N: Network>(
 #[cfg(feature = "rocks")]
 pub(crate) const BLOCK_TREE_CACHE_PREFIX: &[u8; 12] = b"aleo.tree.01";
 
+/// Returns the path to the block tree cache file, or `None` if the block tree is not to be cached.
 pub(crate) fn block_tree_cache_path<N: Network, B: BlockStorage<N>>(storage: &B) -> Option<std::path::PathBuf> {
     #[cfg(feature = "rocks")]
     {
+        // A secondary instance must not touch the primary's cache, and it can't keep one of its own
+        // either, as it catches up with the primary on startup, which would make its cache stale.
+        if aleo_secondary_ledger_dir(N::ID, storage.storage_mode()).is_some() {
+            return None;
+        }
+
         let mut path = aleo_ledger_dir(N::ID, storage.storage_mode());
         path.push("block_tree");
         Some(path)
@@ -1053,6 +1060,10 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     #[cfg(feature = "rocks")]
     fn backup_database<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), String>;
 
+    /// Catches up with the primary instance; only applicable to secondary instances.
+    #[cfg(feature = "rocks")]
+    fn catch_up_with_primary(&self) -> Result<()>;
+
     fn create_block_tree(&self) -> Result<BlockTree<N>>;
 }
 
@@ -1261,12 +1272,24 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         self.storage.backup_database(path)
     }
 
+    /// Catches up with the primary instance, making all the blocks it has inserted so far
+    /// readable from storage; only applicable to storage opened in secondary mode.
+    ///
+    /// # Note
+    /// This only refreshes the contents of the database, and not any in-memory state (e.g. the
+    /// block tree), so the latest block height should be obtained via [`Self::max_height`].
+    #[cfg(feature = "rocks")]
+    pub fn catch_up_with_primary(&self) -> Result<()> {
+        self.storage.catch_up_with_primary()
+    }
+
     /// Serializes and persists the current block tree.
     #[cfg(feature = "rocks")]
     pub fn cache_block_tree(&self) -> Result<()> {
         // Prepare the path for the target file.
         let Some(path) = block_tree_cache_path::<N, _>(&self.storage) else {
-            bail!("Failed to determine the block tree cache path");
+            // The block tree is not cached for this storage.
+            return Ok(());
         };
 
         // Take an owned snapshot of the tree, so that the read lock is released before the write

@@ -140,44 +140,11 @@ impl Database for RocksDB {
         let primary_path = aleo_std_storage::aleo_ledger_dir(network_id, &storage);
         // Obtain the path to the secondary instance, if applicable.
         let secondary_path = aleo_std_storage::aleo_secondary_ledger_dir(network_id, &storage);
+        // A secondary instance is registered under its own path.
+        let db_path = secondary_path.as_ref().unwrap_or(&primary_path);
 
-        // If the secondary path is given, open the database in secondary mode.
-        if let Some(secondary_path) = secondary_path {
-            let mut databases = DATABASES.lock();
-            let database = if let Some(db) = databases.get(&secondary_path) {
-                db.clone()
-            } else {
-                // Customize database options.
-                let mut db_opts = rocksdb::Options::default();
-                db_opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
-
-                // Register the prefix length.
-                let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN);
-                db_opts.set_prefix_extractor(prefix_extractor);
-
-                let rocksdb = Arc::new(rocksdb::DB::open_as_secondary(&db_opts, &primary_path, &secondary_path)?);
-
-                let db = RocksDB {
-                    rocksdb,
-                    network_id,
-                    storage_mode: storage.clone(),
-                    atomic_batch: Default::default(),
-                    atomic_depth: Default::default(),
-                    atomic_writes_paused: Default::default(),
-                    default_readopts: Default::default(),
-                };
-
-                databases.insert(secondary_path.clone(), db.clone());
-
-                db
-            };
-
-            return Ok(database);
-        }
-
-        // Open the database in primary mode.
         let mut databases = DATABASES.lock();
-        let database = if let Some(db) = databases.get(&primary_path) {
+        let database = if let Some(db) = databases.get(db_path) {
             db.clone()
         } else {
             // Customize database options.
@@ -188,7 +155,13 @@ impl Database for RocksDB {
             let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN);
             options.set_prefix_extractor(prefix_extractor);
 
-            let rocksdb = {
+            let rocksdb = if let Some(secondary_path) = &secondary_path {
+                // Keep all the files open, so that the ones removed by the primary's compactions
+                // remain readable until the next catch-up with the primary.
+                options.set_max_open_files(-1);
+
+                Arc::new(rocksdb::DB::open_as_secondary(&options, &primary_path, secondary_path)?)
+            } else {
                 options.increase_parallelism(2);
                 options.set_max_background_jobs(4);
                 options.create_if_missing(true);
@@ -207,7 +180,7 @@ impl Database for RocksDB {
                 default_readopts: Default::default(),
             };
 
-            databases.insert(primary_path.clone(), db.clone());
+            databases.insert(db_path.clone(), db.clone());
 
             db
         };
