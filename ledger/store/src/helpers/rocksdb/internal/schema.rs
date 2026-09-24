@@ -124,15 +124,18 @@ pub(crate) fn set_history_synced_height(database: &rocksdb::DB, network_id: u16,
     Ok(database.put(metadata_key(network_id, MetadataKey::HistorySyncedHeight), height.to_le_bytes())?)
 }
 
-/// The mapping-history prefixes written by storage schema v0.
-const LEGACY_MAPPING_HISTORY: [ProgramMap; 2] = [ProgramMap::MappingUpdate, ProgramMap::MappingUpdateHeights];
+/// History prefixes written by storage schema v0. This build deletes them on the way to v1.
+const LEGACY_HISTORY: [ProgramMap; 3] =
+    [ProgramMap::MappingUpdate, ProgramMap::MappingUpdateHeights, ProgramMap::StakingRewards];
+
+/// Keys removed per write batch while dropping one prefix.
+const DELETE_BATCH_LEN: usize = 10_000;
 
 /// Brings `database` up to [`STORAGE_VERSION`].
 ///
 /// A version newer than this build is an error. [`StorageVersion::V0`] advances to
-/// [`StorageVersion::V1`] when the legacy mapping-history prefixes are empty: the history sync
-/// cursor is set to `0`, so no height is indexed yet. A v0 database that still has those keys is
-/// refused and left unchanged.
+/// [`StorageVersion::V1`]: unread v0 history keys are deleted, and the history sync cursor is set
+/// to `0`, so no height is indexed yet.
 pub(crate) fn migrate_storage(database: &rocksdb::DB, network_id: u16) -> Result<()> {
     let version = read_storage_version(database, network_id)?;
     if version > STORAGE_VERSION as u32 {
@@ -144,37 +147,64 @@ pub(crate) fn migrate_storage(database: &rocksdb::DB, network_id: u16) -> Result
     }
     let version = get_storage_version(database, network_id)?;
     if version == StorageVersion::V0 {
-        ensure_no_legacy_mapping_history(database, network_id)?;
+        drop_legacy_history(database, network_id)?;
         set_history_synced_height(database, network_id, 0)?;
         set_storage_version(database, network_id, StorageVersion::V1)?;
     }
     Ok(())
 }
 
-/// Returns an error when a v0 mapping-history prefix still holds keys.
-fn ensure_no_legacy_mapping_history(database: &rocksdb::DB, network_id: u16) -> Result<()> {
-    for map in LEGACY_MAPPING_HISTORY {
-        if !is_prefix_empty(database, &map_prefix(network_id, MapID::Program(map)))? {
-            bail!(
-                "Refusing to open this ledger: it still has mapping history from storage schema v0, which this build \
-                 does not read. Delete the ledger and sync again."
-            );
-        }
+/// Deletes every key in the v0 history prefixes for `network_id`.
+///
+/// Other networks and every other prefix are left in place. The number of deleted keys is logged
+/// when it is not zero.
+fn drop_legacy_history(database: &rocksdb::DB, network_id: u16) -> Result<()> {
+    let mut counts = [0u64; LEGACY_HISTORY.len()];
+    for (count, map) in counts.iter_mut().zip(LEGACY_HISTORY) {
+        *count = delete_prefix(database, &map_prefix(network_id, MapID::Program(map)))?;
+    }
+    let dropped = counts.iter().sum::<u64>();
+    if dropped > 0 {
+        tracing::info!(
+            "Dropped {dropped} unread history keys from storage schema v0 ({} mapping updates, {} mapping-update heights, {} staking rewards)",
+            counts[0],
+            counts[1],
+            counts[2],
+        );
     }
     Ok(())
 }
 
-/// Returns whether no key starts with `prefix`.
-fn is_prefix_empty(database: &rocksdb::DB, prefix: &[u8; PREFIX_LEN]) -> Result<bool> {
-    let mut iterator = database.raw_iterator();
-    iterator.seek(prefix);
-    match iterator.key() {
-        Some(key) => Ok(!key.starts_with(prefix)),
-        None => {
-            iterator.status()?;
-            Ok(true)
+/// Deletes every key that starts with `prefix`, in batches of [`DELETE_BATCH_LEN`].
+fn delete_prefix(database: &rocksdb::DB, prefix: &[u8; PREFIX_LEN]) -> Result<u64> {
+    let mut dropped = 0u64;
+    loop {
+        let mut batch = rocksdb::WriteBatch::default();
+        let mut batch_len = 0usize;
+        {
+            let iterator = database.prefix_iterator(prefix);
+            for entry in iterator {
+                let (key, _) = entry?;
+                if !key.starts_with(prefix) {
+                    break;
+                }
+                batch.delete(key);
+                batch_len += 1;
+                if batch_len == DELETE_BATCH_LEN {
+                    break;
+                }
+            }
+        }
+        if batch_len == 0 {
+            break;
+        }
+        database.write(batch)?;
+        dropped += batch_len as u64;
+        if batch_len < DELETE_BATCH_LEN {
+            break;
         }
     }
+    Ok(dropped)
 }
 
 #[cfg(test)]
@@ -183,6 +213,7 @@ mod tests {
     use crate::helpers::rocksdb::{Database, RocksDB};
 
     use aleo_std::StorageMode;
+    use tracing_test::traced_test;
 
     const NETWORK_ID: u16 = 0;
 
@@ -221,31 +252,35 @@ mod tests {
     }
 
     #[test]
-    fn test_v0_without_mapping_history_migrates_to_v1() {
+    #[traced_test]
+    fn test_v0_drops_legacy_history_and_migrates_to_v1() {
         let db = RocksDB::open(NETWORK_ID, StorageMode::new_test(None)).unwrap();
         db.put(metadata_key(NETWORK_ID, MetadataKey::StorageVersion), 0u32.to_le_bytes()).unwrap();
-        // Staking-reward rows are not the v0 mapping-history layout.
-        db.put(raw_key(ProgramMap::StakingRewards, 1), b"reward").unwrap();
+        set_history_synced_height(&db, NETWORK_ID, 7).unwrap();
+
+        // A non-history prefix stays. The three v0 history prefixes are removed.
+        let kept = raw_key(ProgramMap::ProgramID, 1);
+        db.put(&kept, b"program").unwrap();
+        let legacy = [
+            raw_key(ProgramMap::MappingUpdate, 1),
+            raw_key(ProgramMap::MappingUpdate, 2),
+            raw_key(ProgramMap::MappingUpdateHeights, 1),
+            raw_key(ProgramMap::StakingRewards, 1),
+        ];
+        for key in &legacy {
+            db.put(key, b"old").unwrap();
+        }
+
         migrate_storage(&db, NETWORK_ID).unwrap();
         assert_eq!(get_storage_version(&db, NETWORK_ID).unwrap(), StorageVersion::V1);
         assert_eq!(read_history_synced_height(&db, NETWORK_ID).unwrap(), 0);
-        assert!(db.get(raw_key(ProgramMap::StakingRewards, 1)).unwrap().is_some());
-    }
-
-    #[test]
-    fn test_v0_with_mapping_history_is_refused() {
-        for map in [ProgramMap::MappingUpdate, ProgramMap::MappingUpdateHeights] {
-            let db = RocksDB::open(NETWORK_ID, StorageMode::new_test(None)).unwrap();
-            db.put(metadata_key(NETWORK_ID, MetadataKey::StorageVersion), 0u32.to_le_bytes()).unwrap();
-            set_history_synced_height(&db, NETWORK_ID, 7).unwrap();
-            let key = raw_key(map, 1);
-            db.put(&key, b"old").unwrap();
-            let error = migrate_storage(&db, NETWORK_ID).unwrap_err().to_string();
-            assert!(error.contains("storage schema v0"), "{error}");
-            assert_eq!(read_storage_version(&db, NETWORK_ID).unwrap(), 0);
-            assert_eq!(read_history_synced_height(&db, NETWORK_ID).unwrap(), 7);
-            assert_eq!(db.get(&key).unwrap().unwrap(), b"old");
+        assert_eq!(db.get(&kept).unwrap().unwrap(), b"program");
+        for key in &legacy {
+            assert!(db.get(key).unwrap().is_none(), "{key:?}");
         }
+        assert!(logs_contain(
+            "Dropped 4 unread history keys from storage schema v0 (2 mapping updates, 1 mapping-update heights, 1 staking rewards)"
+        ));
     }
 
     #[test]
