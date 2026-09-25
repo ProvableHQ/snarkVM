@@ -1110,8 +1110,13 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         if block.height() != u32::try_from(updated_tree.number_of_leaves())? - 1 {
             bail!("Attempted to insert a block at the incorrect height into storage")
         }
+        // A fixed genesis state root facilitates deterministic creation of transactions for easier testing.
+        #[cfg(feature = "dev_genesis_state_root")]
+        let state_root = if block.height() == 0 { Field::<N>::one().into() } else { (*updated_tree.root()).into() };
+        #[cfg(not(feature = "dev_genesis_state_root"))]
+        let state_root = (*updated_tree.root()).into();
         // Insert the (state root, block height) pair.
-        self.storage.insert((*updated_tree.root()).into(), block)?;
+        self.storage.insert(state_root, block)?;
         // Update the block tree, preserving the previous Merkle tree allocation for performance.
         updated_tree.preserve_tree_allocation(&mut tree);
         *tree = updated_tree;
