@@ -23,6 +23,8 @@ use crate::{
     HistoricalMappingValue,
     HistoryEvent,
     HistoryRecording,
+    HistoryRow,
+    HistoryTable,
     helpers::rocksdb::{self, CommitteeMap, DataMap, Database, MapID, NestedDataMap, ProgramMap},
 };
 use console::{
@@ -168,6 +170,17 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
         // Event keys serialize as the big-endian height followed by the big-endian sequence.
         let end = [height.to_be_bytes(), [0u8; 4]].concat();
         self.database.delete_map_range(MapID::Program(ProgramMap::HistoryEvent), &[], &end)
+    }
+
+    /// Writes serialized history-table records in one write batch.
+    fn put_history_rows(&self, rows: Vec<HistoryRow>) -> Result<()> {
+        self.database.put_map_rows(rows.into_iter().map(|(table, key, value)| {
+            let map = match table {
+                HistoryTable::MappingUpdates => ProgramMap::MappingUpdate,
+                HistoryTable::StakingRewards => ProgramMap::StakingRewards,
+            };
+            (MapID::Program(map), key, value)
+        }))
     }
 
     /// Returns the next block height history indexing will process.

@@ -153,6 +153,17 @@ impl RocksDB {
         batch.delete_range([&prefix[..], start].concat(), [&prefix[..], end].concat());
         Ok(self.rocksdb.write(batch)?)
     }
+
+    /// Writes each `(map_id, key, value)` in one write batch outside any atomic batch. `key` and
+    /// `value` are serialized as the map with ID `map_id` serializes them.
+    pub(crate) fn put_map_rows(&self, rows: impl IntoIterator<Item = (MapID, Vec<u8>, Vec<u8>)>) -> Result<()> {
+        let mut batch = rocksdb::WriteBatch::default();
+        for (map_id, key, value) in rows {
+            let prefix = schema::map_prefix(self.network_id, map_id);
+            batch.put([&prefix[..], &key].concat(), value);
+        }
+        Ok(self.rocksdb.write(batch)?)
+    }
 }
 
 impl Deref for RocksDB {

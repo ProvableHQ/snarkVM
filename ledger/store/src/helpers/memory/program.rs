@@ -23,6 +23,8 @@ use crate::{
     HistoricalMappingValue,
     HistoryEvent,
     HistoryRecording,
+    HistoryRow,
+    HistoryTable,
     helpers::{
         Map,
         MapRead,
@@ -36,6 +38,7 @@ use console::{
 };
 use snarkvm_ledger_block::RejectedReason;
 use snarkvm_ledger_committee::Committee;
+use snarkvm_utilities::bytes::unchecked_deserialize;
 
 use aleo_std_storage::StorageMode;
 use indexmap::IndexSet;
@@ -168,6 +171,21 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
             .map(|key| key.into_owned())
             .collect::<Vec<_>>();
         keys.iter().try_for_each(|key| self.history_event_map.remove(key))
+    }
+
+    /// Writes serialized history-table records.
+    fn put_history_rows(&self, rows: Vec<HistoryRow>) -> Result<()> {
+        for (table, key, value) in rows {
+            match table {
+                HistoryTable::MappingUpdates => {
+                    self.mapping_update_map.insert(unchecked_deserialize(&key)?, unchecked_deserialize(&value)?)?
+                }
+                HistoryTable::StakingRewards => {
+                    self.staking_rewards_map.insert(unchecked_deserialize(&key)?, unchecked_deserialize(&value)?)?
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Returns the next block height history indexing will process.

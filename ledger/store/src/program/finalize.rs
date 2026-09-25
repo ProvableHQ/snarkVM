@@ -80,10 +80,27 @@ impl HistoryRecording {
     }
 }
 
+/// A table that serves historical reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HistoryTable {
+    /// The map of `(program ID, mapping name, key, height)` to [`HistoricalMappingValue`].
+    MappingUpdates,
+    /// The map of `(staker address, height)` to `(validator address, block reward, new stake)`.
+    StakingRewards,
+}
+
+/// A history-table record: the table, and a key and value serialized as that table's map
+/// serializes them.
+pub type HistoryRow = (HistoryTable, Vec<u8>, Vec<u8>);
+
 /// One history record written while a block was finalized.
 ///
 /// Records for a single height are stored under `(height, sequence)` so a later pass can copy
 /// that block's history without scanning every key.
+///
+/// Recording writes [`Self::Indexed`] and [`Self::Row`]. Event logs written by earlier builds
+/// may also hold [`Self::Mapping`] and [`Self::Staking`]; the variant order must stay fixed so
+/// those logs still decode.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound(serialize = "N: Network", deserialize = "N: Network"))]
 pub enum HistoryEvent<N: Network> {
@@ -111,6 +128,38 @@ pub enum HistoryEvent<N: Network> {
         /// Stake after the reward was applied, in microcredits.
         new_stake: u64,
     },
+    /// A record for a history table, as that table's serialized key and value.
+    ///
+    /// Copying it into the table needs no decoding of the addresses it holds.
+    Row {
+        /// The table the record belongs to.
+        table: HistoryTable,
+        /// The serialized key.
+        key: Vec<u8>,
+        /// The serialized value.
+        value: Vec<u8>,
+    },
+}
+
+impl<N: Network> HistoryEvent<N> {
+    /// Returns the history-table record this event writes at `height`, as a serialized key and
+    /// value, or `None` for [`Self::Indexed`].
+    fn into_row(self, height: u32) -> Result<Option<HistoryRow>> {
+        Ok(match self {
+            Self::Indexed => None,
+            Self::Mapping { program_id, mapping_name, key, value } => Some((
+                HistoryTable::MappingUpdates,
+                bincode::serialize(&(program_id, mapping_name, key, height.to_be_bytes()))?,
+                bincode::serialize(&*value)?,
+            )),
+            Self::Staking { staker, validator, reward, new_stake } => Some((
+                HistoryTable::StakingRewards,
+                bincode::serialize(&(staker, height))?,
+                bincode::serialize(&(validator, reward, new_stake))?,
+            )),
+            Self::Row { table, key, value } => Some((table, key, value)),
+        })
+    }
 }
 
 /// TODO (howardwu): Remove this.
@@ -212,6 +261,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     ///
     /// The deletion is outside any atomic batch; call it while no batch on this store is open.
     fn prune_history_events_below(&self, height: u32) -> Result<()>;
+
+    /// Writes serialized history-table records, in one write outside any atomic batch.
+    fn put_history_rows(&self, rows: Vec<HistoryRow>) -> Result<()>;
 
     /// Starts an atomic batch write operation.
     fn start_atomic(&self) {
@@ -318,12 +370,14 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
                 let height = self.current_block_height().load(Ordering::SeqCst);
                 self.mapping_update_map().insert((program_id, mapping_name, key, height.to_be_bytes()), value)
             }
-            HistoryRecording::Events => self.record_history_event(HistoryEvent::Mapping {
-                program_id,
-                mapping_name,
-                key,
-                value: Box::new(value),
-            }),
+            HistoryRecording::Events => {
+                let height = self.current_block_height().load(Ordering::SeqCst);
+                self.record_history_event(HistoryEvent::Row {
+                    table: HistoryTable::MappingUpdates,
+                    key: bincode::serialize(&(program_id, mapping_name, key, height.to_be_bytes()))?,
+                    value: bincode::serialize(&value)?,
+                })
+            }
         }
     }
 
@@ -364,7 +418,12 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
                 self.staking_rewards_map().insert((staker, height), (validator, reward, new_stake))
             }
             HistoryRecording::Events => {
-                self.record_history_event(HistoryEvent::Staking { staker, validator, reward, new_stake })
+                let height = self.current_block_height().load(Ordering::SeqCst);
+                self.record_history_event(HistoryEvent::Row {
+                    table: HistoryTable::StakingRewards,
+                    key: bincode::serialize(&(staker, height))?,
+                    value: bincode::serialize(&(validator, reward, new_stake))?,
+                })
             }
         }
     }
@@ -991,31 +1050,18 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     }
 
     /// Writes the history events of each given height into this store's history tables, in one
-    /// write batch.
+    /// write outside any atomic batch.
     ///
     /// Used to copy blocks' history from the replay into the ledger that serves reads. Existing
     /// records at the same keys are overwritten.
     pub fn import_history_events(&self, blocks: Vec<(u32, Vec<HistoryEvent<N>>)>) -> Result<()> {
-        atomic_batch_scope!(self.storage, {
-            for (height, events) in blocks {
-                for event in events {
-                    match event {
-                        HistoryEvent::Indexed => {}
-                        HistoryEvent::Mapping { program_id, mapping_name, key, value } => {
-                            self.storage
-                                .mapping_update_map()
-                                .insert((program_id, mapping_name, key, height.to_be_bytes()), *value)?;
-                        }
-                        HistoryEvent::Staking { staker, validator, reward, new_stake } => {
-                            self.storage
-                                .staking_rewards_map()
-                                .insert((staker, height), (validator, reward, new_stake))?;
-                        }
-                    }
-                }
+        let mut rows = Vec::with_capacity(blocks.iter().map(|(_, events)| events.len()).sum());
+        for (height, events) in blocks {
+            for event in events {
+                rows.extend(event.into_row(height)?);
             }
-            Ok(())
-        })
+        }
+        self.storage.put_history_rows(rows)
     }
 
     /// Deletes the history events of every height below `height`.
@@ -1994,8 +2040,10 @@ mod tests {
             finalize_store.record_history_block().unwrap();
             finalize_store.record_staking_reward(staker, staker, u64::from(height), 0).unwrap();
         }
-        let height_3 =
-            vec![HistoryEvent::Indexed, HistoryEvent::Staking { staker, validator: staker, reward: 3, new_stake: 0 }];
+        let height_3 = vec![
+            HistoryEvent::Indexed,
+            as_row(HistoryEvent::Staking { staker, validator: staker, reward: 3, new_stake: 0 }, 3),
+        ];
 
         finalize_store.prune_history_events_below(0).unwrap();
         assert_eq!(finalize_store.history_events(1).unwrap().len(), 2);
@@ -2084,13 +2132,98 @@ mod tests {
         assert_eq!(heights(&k2), Some(vec![1, 2]));
         assert!(finalize_store.staking_rewards_map().get_confirmed(&(staker, 5)).unwrap().is_none());
         assert_eq!(finalize_store.history_events(5).unwrap(), vec![
+            as_row(
+                HistoryEvent::Mapping {
+                    program_id,
+                    mapping_name,
+                    key: k2.clone(),
+                    value: Box::new(HistoricalMappingValue::Present(value("6u64"))),
+                },
+                5,
+            ),
+            as_row(HistoryEvent::Staking { staker, validator: staker, reward: 7, new_stake: 8 }, 5),
+        ]);
+    }
+
+    /// Returns `event` as the [`HistoryEvent::Row`] it writes at `height`.
+    fn as_row(event: HistoryEvent<CurrentNetwork>, height: u32) -> HistoryEvent<CurrentNetwork> {
+        let (table, key, value) = event.into_row(height).unwrap().unwrap();
+        HistoryEvent::Row { table, key, value }
+    }
+
+    /// Checks that importing recorded rows, or typed events from an earlier build's log, writes
+    /// the records that recording into the tables writes. `open` returns a new, empty store.
+    fn check_import_history_events<P: FinalizeStorage<CurrentNetwork>>(
+        open: impl Fn() -> FinalizeStore<CurrentNetwork, P>,
+    ) {
+        use std::sync::atomic::Ordering;
+
+        let program_id = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
+        let mapping_name = Identifier::from_str("account").unwrap();
+        let key =
+            Plaintext::<CurrentNetwork>::from_str("aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc")
+                .unwrap();
+        let value = Value::<CurrentNetwork>::from_str("6u64").unwrap();
+        let staker = Address::<CurrentNetwork>::zero();
+        let height = 5u32;
+
+        let record = |recording: HistoryRecording| {
+            let store = open();
+            store.set_history_synced_height(height + 1).unwrap();
+            store.initialize_mapping(program_id, mapping_name).unwrap();
+            store.set_history_recording(recording);
+            store.current_block_height().store(height, Ordering::SeqCst);
+            store.reset_history_event_seq();
+            store.update_key_value(program_id, mapping_name, key.clone(), value.clone()).unwrap();
+            store.record_staking_reward(staker, staker, 7, 8).unwrap();
+            store
+        };
+        let recorded = |store: &FinalizeStore<CurrentNetwork, P>| {
+            (
+                store
+                    .get_historical_mapping_value(program_id, mapping_name, key.clone(), height)
+                    .unwrap()
+                    .map(Cow::into_owned),
+                store.staking_rewards_map().get_confirmed(&(staker, height)).unwrap().map(Cow::into_owned),
+            )
+        };
+        let expected = recorded(&record(HistoryRecording::Tables));
+        assert_eq!(expected, (Some(value.clone()), Some((staker, 7, 8))));
+
+        let rows = record(HistoryRecording::Events).history_events(height).unwrap();
+        assert!(rows.iter().all(|event| matches!(event, HistoryEvent::Row { .. })));
+        let typed = vec![
             HistoryEvent::Mapping {
                 program_id,
                 mapping_name,
-                key: k2.clone(),
-                value: Box::new(HistoricalMappingValue::Present(value("6u64"))),
+                key: key.clone(),
+                value: Box::new(HistoricalMappingValue::Present(value.clone())),
             },
             HistoryEvent::Staking { staker, validator: staker, reward: 7, new_stake: 8 },
-        ]);
+        ];
+        for events in [rows, typed] {
+            let store = open();
+            store.set_history_synced_height(height + 1).unwrap();
+            store.import_history_events(vec![(height, events)]).unwrap();
+            assert_eq!(recorded(&store), expected);
+        }
+    }
+
+    #[test]
+    fn test_import_history_events() {
+        check_import_history_events(|| {
+            FinalizeStore::from(FinalizeMemory::open(StorageMode::Test(None)).unwrap()).unwrap()
+        });
+    }
+
+    #[cfg(feature = "rocks")]
+    #[test]
+    fn test_import_history_events_rocks() {
+        check_import_history_events(|| {
+            FinalizeStore::<CurrentNetwork, crate::helpers::rocksdb::FinalizeDB<CurrentNetwork>>::open(
+                StorageMode::new_test(None),
+            )
+            .unwrap()
+        });
     }
 }
