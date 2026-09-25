@@ -3,8 +3,9 @@ name: Run snarkVM Benchmarks
 on:
   push:
     branches:
-      - 'staging'
-      - 'fix/benchmark-ci'
+      - 'canary'
+      - 'testnet'
+      - 'mainnet'
   workflow_dispatch:
 
 jobs:
@@ -131,7 +132,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ./cache
-          key: ${{ runner.os }}-benchmark
+          key: ${{ runner.os }}-benchmark-${{ github.ref_name }}
 
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
@@ -140,6 +141,8 @@ jobs:
           tool: 'cargo'
           output-file-path: output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Keep canary/testnet/mainnet histories independent on gh-pages.
+          benchmark-data-dir-path: dev/bench/${{ github.ref_name }}
           alert-threshold: '200%'
           comment-on-alert: true
           fail-on-alert: true
