@@ -62,12 +62,13 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Blocks already indexed are skipped. The replay store is persistent, so a later call
     /// continues at the stored height.
     ///
-    /// A prefetch thread reads blocks from this ledger in parallel, this thread finalizes them on
-    /// the replay in order, and an importer thread copies each recorded block's history onto this
-    /// ledger.
+    /// A prefetch thread reads blocks from this ledger on its own thread pool, this thread
+    /// finalizes them on the replay in order, and an importer thread copies each recorded block's
+    /// history onto this ledger.
     pub fn backfill_history(&self) -> Result<()> {
         let replay = self.history_replay()?;
-        self.import_recorded_heights(&replay, replay.latest_height()?)?;
+        let import_stats = ImportStats::default();
+        self.import_recorded_heights(&replay, replay.latest_height()?, &import_stats)?;
         replay.vm.finalize_store().prune_history_events_below(self.history_synced_height())?;
 
         let tip = self.latest_height();
@@ -80,15 +81,31 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let cursor = self.history_synced_height();
         let record_from = if cursor >= first { cursor } else { u32::MAX };
 
-        let import_stats = ImportStats::default();
+        // Finalize runs parallel work on the global pool, so the prefetch gets a pool of its own.
+        let prefetch_threads = thread::available_parallelism().map_or(1, |threads| (threads.get() / 2).max(1));
+        let prefetch_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(prefetch_threads)
+            .thread_name(|index| format!("history-prefetch-{index}"))
+            .build()?;
+        let mut progress = BackfillProgress::new(tip, record_from != u32::MAX, cursor);
         let result = thread::scope(|scope| {
-            let (replay, import_stats) = (&replay, &import_stats);
+            let (replay, import_stats, prefetch_pool) = (&replay, &import_stats, &prefetch_pool);
             let (block_tx, block_rx) = mpsc::sync_channel(1);
-            scope.spawn(move || self.prefetch_blocks(replay, first..=tip, block_tx));
+            thread::Builder::new().name("history-prefetch".to_string()).spawn_scoped(scope, move || {
+                prefetch_pool.install(|| self.prefetch_blocks(replay, first..=tip, block_tx))
+            })?;
             let (committed_tx, committed_rx) = mpsc::channel();
-            let importer = scope.spawn(move || self.import_committed_heights(replay, committed_rx, import_stats));
+            let importer = thread::Builder::new()
+                .name("history-import".to_string())
+                .spawn_scoped(scope, move || self.import_committed_heights(replay, committed_rx, import_stats))?;
 
-            let applied = self.apply_prefetched_blocks(replay, block_rx, tip, record_from, committed_tx, import_stats);
+            let applied =
+                self.apply_prefetched_blocks(replay, block_rx, record_from, committed_tx, &mut progress, import_stats);
+            // The applier dropped its sender, so the importer stops once the committed heights are imported.
+            while !importer.is_finished() {
+                thread::sleep(Duration::from_secs(1));
+                progress.log_if_due(replay.latest_height().unwrap_or(tip), self.history_synced_height(), import_stats);
+            }
             let imported = importer.join().map_err(|_| anyhow!("The history importer panicked"))?;
             // An importer error also stops the applier, so it is the cause to report.
             imported.and(applied)
@@ -135,12 +152,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         &self,
         replay: &HistoryReplay<N, C>,
         chunks: mpsc::Receiver<Result<Vec<Block<N>>>>,
-        tip: u32,
         record_from: u32,
         committed: mpsc::Sender<u32>,
+        progress: &mut BackfillProgress,
         import_stats: &ImportStats,
     ) -> Result<()> {
-        let mut progress = BackfillProgress::new(tip);
         let mut waiting = Instant::now();
         for chunk in chunks {
             for block in chunk? {
@@ -172,9 +188,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     ) -> Result<()> {
         while let Ok(latest) = committed.recv() {
             let latest = committed.try_iter().last().unwrap_or(latest);
-            let started = Instant::now();
-            let events = self.import_recorded_heights(replay, latest)?;
-            import_stats.record(started.elapsed(), events);
+            self.import_recorded_heights(replay, latest, import_stats)?;
         }
         Ok(())
     }
@@ -193,16 +207,21 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Copies recorded history events from the replay onto this ledger, for heights from the
-    /// cursor through `latest`, and returns how many events were copied.
+    /// cursor through `latest`.
     ///
     /// Each write batch holds about [`IMPORT_BATCH_EVENTS`] events, and the cursor moves past a
-    /// batch once it is written. Stops at the first height that has no events. That height was
-    /// applied for state only.
-    fn import_recorded_heights(&self, replay: &HistoryReplay<N, C>, latest: u32) -> Result<u64> {
-        let mut imported = 0u64;
+    /// batch once it is written. Each batch's time and events are added to `import_stats`. Stops
+    /// at the first height that has no events. That height was applied for state only.
+    fn import_recorded_heights(
+        &self,
+        replay: &HistoryReplay<N, C>,
+        latest: u32,
+        import_stats: &ImportStats,
+    ) -> Result<()> {
         let mut next = self.history_synced_height();
         let mut exhausted = false;
         while !exhausted {
+            let started = Instant::now();
             let mut blocks = Vec::new();
             let mut batch_events = 0;
             while batch_events < IMPORT_BATCH_EVENTS {
@@ -224,9 +243,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             }
             self.vm.finalize_store().import_history_events(blocks)?;
             self.vm.finalize_store().set_history_synced_height(next)?;
-            imported += batch_events as u64;
+            import_stats.record(started.elapsed(), batch_events as u64);
         }
-        Ok(imported)
+        Ok(())
     }
 
     /// Returns the history replay, opening it on the first call.
@@ -319,8 +338,12 @@ impl ImportStats {
 struct BackfillProgress {
     /// Height the backfill stops at.
     tip: u32,
+    /// Whether the backfill records history, so the history cursor is expected to reach the tip.
+    indexing: bool,
     /// Start of the current window.
     window_start: Instant,
+    /// The history cursor at the start of the current window.
+    window_cursor: u32,
     /// Blocks applied in the current window.
     blocks: u32,
     /// Time spent waiting for blocks from the prefetch in the current window.
@@ -330,9 +353,18 @@ struct BackfillProgress {
 }
 
 impl BackfillProgress {
-    /// Starts a progress window for a backfill that stops at `tip`.
-    fn new(tip: u32) -> Self {
-        Self { tip, window_start: Instant::now(), blocks: 0, read: Duration::ZERO, apply: Duration::ZERO }
+    /// Starts a progress window for a backfill that stops at `tip`, with the history cursor at
+    /// `cursor`.
+    fn new(tip: u32, indexing: bool, cursor: u32) -> Self {
+        Self {
+            tip,
+            indexing,
+            window_start: Instant::now(),
+            window_cursor: cursor,
+            blocks: 0,
+            read: Duration::ZERO,
+            apply: Duration::ZERO,
+        }
     }
 
     /// Adds one applied block to the current window.
@@ -342,35 +374,65 @@ impl BackfillProgress {
         self.apply += apply;
     }
 
-    /// Logs throughput and per-block phase times once [`PROGRESS_INTERVAL`] has passed, then
-    /// starts a new window. Import time is the importer's, which runs beside the applier.
-    fn log_if_due(&mut self, height: u32, indexed_below: u32, import_stats: &ImportStats) {
+    /// Logs throughput and phase times once [`PROGRESS_INTERVAL`] has passed, then starts a new
+    /// window. `height` is the replay's latest block and `cursor` the history cursor.
+    ///
+    /// The ETA is the later of the applier's and the importer's, each at its rate in this window.
+    fn log_if_due(&mut self, height: u32, cursor: u32, import_stats: &ImportStats) {
         let elapsed = self.window_start.elapsed();
-        if elapsed < PROGRESS_INTERVAL || self.blocks == 0 {
+        if elapsed < PROGRESS_INTERVAL {
             return;
         }
         let (import, events) = import_stats.take();
-        let blocks = f64::from(self.blocks);
-        let rate = blocks / elapsed.as_secs_f64();
-        let eta = Duration::from_secs_f64(f64::from(self.tip.saturating_sub(height)) / rate);
-        let per_block_ms = |total: Duration| total.as_secs_f64() * 1000.0 / blocks;
+        let seconds = elapsed.as_secs_f64();
+        let applied = f64::from(self.blocks);
+        let indexed = f64::from(cursor.saturating_sub(self.window_cursor));
+        let (apply_rate, index_rate) = (applied / seconds, indexed / seconds);
+        let apply_eta = time_to_finish(self.tip.saturating_sub(height), apply_rate);
+        let index_eta = match self.indexing {
+            true => time_to_finish(self.tip.saturating_add(1).saturating_sub(cursor), index_rate),
+            false => Some(Duration::ZERO),
+        };
+        let eta = apply_eta.zip(index_eta).map(|(apply_eta, index_eta)| apply_eta.max(index_eta));
+        let per_ms = |total: Duration, count: f64| match count > 0.0 {
+            true => total.as_secs_f64() * 1000.0 / count,
+            false => 0.0,
+        };
         info!(
-            "Backfilled history to block {height}/{} ({rate:.1} blocks/s, ETA {}, indexed below block {indexed_below}); per block: read {:.1} ms, apply {:.1} ms, import {:.1} ms, {:.0} events",
+            "Backfilled history to block {height}/{} ({apply_rate:.1} blocks/s applied, {index_rate:.1} blocks/s indexed, indexed below block {cursor}, ETA {}); per applied block: read {:.1} ms, apply {:.1} ms; per indexed block: import {:.1} ms, {:.0} events",
             self.tip,
             format_eta(eta),
-            per_block_ms(self.read),
-            per_block_ms(self.apply),
-            per_block_ms(import),
-            events as f64 / blocks,
+            per_ms(self.read, applied),
+            per_ms(self.apply, applied),
+            per_ms(import, indexed),
+            match indexed > 0.0 {
+                true => events as f64 / indexed,
+                false => 0.0,
+            },
         );
-        *self = Self::new(self.tip);
+        *self = Self::new(self.tip, self.indexing, cursor);
     }
 }
 
-/// Formats a remaining duration as hours and minutes.
-fn format_eta(eta: Duration) -> String {
-    let minutes = eta.as_secs() / 60;
-    format!("{}h{:02}m", minutes / 60, minutes % 60)
+/// Returns the time to process `remaining` blocks at `rate` blocks per second, or `None` if
+/// blocks remain and the rate is zero.
+fn time_to_finish(remaining: u32, rate: f64) -> Option<Duration> {
+    match (remaining, rate > 0.0) {
+        (0, _) => Some(Duration::ZERO),
+        (_, true) => Some(Duration::from_secs_f64(f64::from(remaining) / rate)),
+        (_, false) => None,
+    }
+}
+
+/// Formats a remaining duration as hours and minutes, or `unknown`.
+fn format_eta(eta: Option<Duration>) -> String {
+    match eta {
+        Some(eta) => {
+            let minutes = eta.as_secs() / 60;
+            format!("{}h{:02}m", minutes / 60, minutes % 60)
+        }
+        None => "unknown".to_string(),
+    }
 }
 
 /// Returns storage for the history-replay ledger beside `mode`'s ledger directory.
@@ -594,8 +656,16 @@ finalize set:
 
     #[test]
     fn test_format_eta() {
-        assert_eq!(format_eta(Duration::from_secs(59)), "0h00m");
-        assert_eq!(format_eta(Duration::from_secs(3 * 3600 + 7 * 60 + 5)), "3h07m");
-        assert_eq!(format_eta(Duration::from_secs(1190 * 3600)), "1190h00m");
+        assert_eq!(format_eta(Some(Duration::from_secs(59))), "0h00m");
+        assert_eq!(format_eta(Some(Duration::from_secs(3 * 3600 + 7 * 60 + 5))), "3h07m");
+        assert_eq!(format_eta(Some(Duration::from_secs(1190 * 3600))), "1190h00m");
+        assert_eq!(format_eta(None), "unknown");
+    }
+
+    #[test]
+    fn test_time_to_finish() {
+        assert_eq!(time_to_finish(0, 0.0), Some(Duration::ZERO));
+        assert_eq!(time_to_finish(100, 50.0), Some(Duration::from_secs(2)));
+        assert_eq!(time_to_finish(100, 0.0), None);
     }
 }
