@@ -67,6 +67,9 @@ workspace = true
 workspace = true
 optional = true
 
+[dependencies.ahash]
+version = "0.8"
+
 [dependencies.aleo-std]
 workspace = true
 
@@ -79,9 +82,6 @@ default-features = true
 
 [dependencies.cfg-if]
 workspace = true
-
-[dependencies.fxhash]
-version = "0.2.1"
 
 [dependencies.hashbrown]
 version = "0.15"
