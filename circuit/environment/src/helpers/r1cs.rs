@@ -266,3 +266,57 @@ impl<F: PrimeField> Display for R1CS<F> {
         write!(f, "{output}")
     }
 }
+
+/// Captures the circuit environment state preserved across a temporary R1CS ejection.
+#[derive(Debug)]
+pub struct EjectedR1cs<F: PrimeField> {
+    pub(crate) r1cs: R1CS<F>,
+    pub(crate) variable_limit: Option<u64>,
+    pub(crate) constraint_limit: Option<u64>,
+    pub(crate) non_zero_limit: Option<(u64, u64, u64)>,
+    pub(crate) in_witness: bool,
+}
+
+impl<F: PrimeField> EjectedR1cs<F> {
+    /// Returns the ejected R1CS without restoring the environment state.
+    pub fn into_r1cs(self) -> R1CS<F> {
+        self.r1cs
+    }
+
+    /// Returns the preserved variable limit.
+    pub const fn variable_limit(&self) -> Option<u64> {
+        self.variable_limit
+    }
+
+    /// Returns the preserved constraint limit.
+    pub const fn constraint_limit(&self) -> Option<u64> {
+        self.constraint_limit
+    }
+
+    /// Resets the non-zero limits.
+    // This is only used in ConsensusVersion::V18, where density limits were introduced and before
+    // re-injection limit behaviour was corrected in V19.
+    pub fn remove_nonzero_limit(&mut self) {
+        self.non_zero_limit = None;
+    }
+
+    /// Returns the preserved non-zero limit.
+    pub const fn non_zero_limit(&self) -> Option<(u64, u64, u64)> {
+        self.non_zero_limit
+    }
+
+    /// Returns the preserved witness mode.
+    pub const fn in_witness(&self) -> bool {
+        self.in_witness
+    }
+
+    pub(crate) fn new(
+        r1cs: R1CS<F>,
+        variable_limit: Option<u64>,
+        constraint_limit: Option<u64>,
+        non_zero_limit: Option<(u64, u64, u64)>,
+        in_witness: bool,
+    ) -> Self {
+        Self { r1cs, variable_limit, constraint_limit, non_zero_limit, in_witness }
+    }
+}
