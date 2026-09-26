@@ -31,7 +31,7 @@ use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{Block, ConfirmedTransaction, Execution, Ratify, Rejected, Transaction};
 use snarkvm_ledger_committee::{Committee, MIN_VALIDATOR_STAKE};
 use snarkvm_ledger_narwhal::{BatchHeader, Data, Subdag, Transmission, TransmissionID};
-use snarkvm_ledger_store::{ConsensusStore, helpers::MapRead};
+use snarkvm_ledger_store::ConsensusStore;
 use snarkvm_synthesizer::{
     bonded_map_into_stakers,
     program::Program,
@@ -859,8 +859,7 @@ fn test_bond_and_unbond_validator() {
         let mut cumulative_reward = 0;
         for height in 1..=3 {
             for (i, staker) in stakers.keys().enumerate() {
-                let (validator, reward, new_stake) =
-                    store.staking_rewards_map().get_confirmed(&(*staker, height)).unwrap().unwrap().into_owned();
+                let (validator, reward, new_stake) = store.get_staking_reward(*staker, height).unwrap().unwrap();
                 if i == 0 {
                     cumulative_reward += reward;
                 }

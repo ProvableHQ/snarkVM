@@ -145,6 +145,34 @@ impl RocksDB {
         schema::set_history_synced_height(self, self.network_id, height)
     }
 
+    /// Returns the stored history program list, as the finalize store serialized it.
+    pub(crate) fn history_programs(&self) -> Result<Option<Vec<u8>>> {
+        schema::read_history_programs(self, self.network_id)
+    }
+
+    /// Stores the history program list, as the finalize store serialized it.
+    pub(crate) fn set_history_programs(&self, programs: &[u8]) -> Result<()> {
+        schema::set_history_programs(self, self.network_id, programs)
+    }
+
+    /// Deletes the stored history program list.
+    pub(crate) fn delete_history_programs(&self) -> Result<()> {
+        schema::delete_history_programs(self, self.network_id)
+    }
+
+    /// Deletes every entry of the map `map_id`, with one range deletion outside any atomic batch.
+    pub(crate) fn delete_map(&self, map_id: MapID) -> Result<()> {
+        let prefix = schema::map_prefix(self.network_id, map_id);
+        // The first key after every key that starts with `prefix`.
+        let end = u32::from_be_bytes(prefix)
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("Map prefix {prefix:?} has no successor"))?
+            .to_be_bytes();
+        let mut batch = rocksdb::WriteBatch::default();
+        batch.delete_range(prefix, end);
+        Ok(self.rocksdb.write(batch)?)
+    }
+
     /// Deletes every entry of the map `map_id` whose serialized key is in `[start, end)`, with one
     /// range deletion outside any atomic batch.
     pub(crate) fn delete_map_range(&self, map_id: MapID, start: &[u8], end: &[u8]) -> Result<()> {

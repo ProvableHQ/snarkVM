@@ -1869,8 +1869,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         store.replace_mapping(program_id, committee_mapping, next_committee_map)?,
                         // Replace the delegated mapping in storage.
                         store.replace_mapping(program_id, delegated_mapping, next_delegated_map)?,
-                        // Replace the bonded mapping in storage.
-                        store.replace_mapping(program_id, bonded_mapping, next_bonded_map)?,
+                        // Replace the bonded mapping in storage. Each staker's new bond is its
+                        // staking reward, which history records instead.
+                        store.replace_mapping_without_history(program_id, bonded_mapping, next_bonded_map)?,
                     ]);
 
                     // Set the block reward ratification flag.

@@ -42,6 +42,10 @@ use snarkvm_utilities::bytes::unchecked_deserialize;
 
 use aleo_std_storage::StorageMode;
 use indexmap::IndexSet;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::RwLock;
 use std::sync::{
     Arc,
     atomic::{AtomicU8, AtomicU32, Ordering},
@@ -60,14 +64,18 @@ pub struct FinalizeMemory<N: Network> {
     rejected_reason_map: MemoryMap<Field<N>, RejectedReason<N>>,
     /// The historical mapping value map (keyed by big-endian block height).
     mapping_update_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), HistoricalMappingValue<N>>,
-    /// The historical staking rewards map.
-    staking_rewards_map: MemoryMap<(Address<N>, u32), (Address<N>, u64, u64)>,
+    /// The historical staking rewards map (keyed by big-endian block height).
+    staking_rewards_map: MemoryMap<(Address<N>, HeightBytes), (Address<N>, u64, u64)>,
     /// The per-block history event log.
     history_event_map: MemoryMap<(HeightBytes, HeightBytes), HistoryEvent<N>>,
     /// The current block height.
     block_height: Arc<AtomicU32>,
     /// Where mapping updates and staking rewards are recorded.
     history_recording: Arc<AtomicU8>,
+    /// The programs whose mapping history is recorded, or `None` for every program.
+    history_programs: Arc<RwLock<Option<IndexSet<ProgramID<N>>>>>,
+    /// The program list stored with this store's history.
+    stored_history_programs: Arc<RwLock<Option<IndexSet<ProgramID<N>>>>>,
     /// Sequence number of the next history event in the current block.
     history_event_seq: Arc<AtomicU32>,
     /// The next block height history indexing will process.
@@ -84,7 +92,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     type RejectedReasonMap = MemoryMap<Field<N>, RejectedReason<N>>;
     type MappingUpdateMap =
         MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), HistoricalMappingValue<N>>;
-    type StakingRewardsMap = MemoryMap<(Address<N>, u32), (Address<N>, u64, u64)>;
+    type StakingRewardsMap = MemoryMap<(Address<N>, HeightBytes), (Address<N>, u64, u64)>;
     type HistoryEventMap = MemoryMap<(HeightBytes, HeightBytes), HistoryEvent<N>>;
 
     /// Initializes the finalize storage.
@@ -106,6 +114,8 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
             history_event_map: MemoryMap::default(),
             block_height: Arc::new(AtomicU32::new(initial_height)),
             history_recording: Arc::new(AtomicU8::new(HistoryRecording::Off as u8)),
+            history_programs: Default::default(),
+            stored_history_programs: Default::default(),
             history_event_seq: Arc::new(AtomicU32::new(0)),
             history_synced_height: Arc::new(AtomicU32::new(0)),
             storage_mode: storage,
@@ -155,6 +165,35 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     /// Returns where history is recorded.
     fn history_recording(&self) -> &AtomicU8 {
         &self.history_recording
+    }
+
+    /// Returns the programs whose mapping history is recorded.
+    fn history_programs(&self) -> &RwLock<Option<IndexSet<ProgramID<N>>>> {
+        &self.history_programs
+    }
+
+    /// Returns the program list stored with this store's history.
+    fn stored_history_programs(&self) -> Result<Option<IndexSet<ProgramID<N>>>> {
+        Ok(self.stored_history_programs.read().clone())
+    }
+
+    /// Stores the program list this store's history is recorded for.
+    fn store_history_programs(&self, programs: &IndexSet<ProgramID<N>>) -> Result<()> {
+        *self.stored_history_programs.write() = Some(programs.clone());
+        Ok(())
+    }
+
+    /// Deletes the history tables, the event log, and the stored program list, and sets the
+    /// history cursor to 0.
+    fn reset_history(&self) -> Result<()> {
+        let updates = self.mapping_update_map.keys_confirmed().map(|key| key.into_owned()).collect::<Vec<_>>();
+        updates.iter().try_for_each(|key| self.mapping_update_map.remove(key))?;
+        let rewards = self.staking_rewards_map.keys_confirmed().map(|key| key.into_owned()).collect::<Vec<_>>();
+        rewards.iter().try_for_each(|key| self.staking_rewards_map.remove(key))?;
+        let events = self.history_event_map.keys_confirmed().map(|key| key.into_owned()).collect::<Vec<_>>();
+        events.iter().try_for_each(|key| self.history_event_map.remove(key))?;
+        *self.stored_history_programs.write() = None;
+        self.set_history_synced_height(0)
     }
 
     /// Returns the per-block history event sequence.

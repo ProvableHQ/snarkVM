@@ -16,6 +16,7 @@
 use super::*;
 
 use aleo_std::aleo_ledger_dir;
+use indexmap::IndexSet;
 use std::{
     ops::RangeInclusive,
     sync::{atomic::AtomicU64, mpsc},
@@ -45,6 +46,63 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// A height `h` can be served when `h` is strictly less than this value.
     pub fn history_synced_height(&self) -> u32 {
         self.vm.finalize_store().history_synced_height()
+    }
+
+    /// Records mapping history only for `programs` from now on, and stores the list with the
+    /// history. Staking rewards are recorded for every staker.
+    ///
+    /// Fails if the history was recorded for a different list. History that an earlier build
+    /// indexed without a list covers every program. Call [`Self::reset_history`] to change the
+    /// list.
+    pub fn configure_history(&self, programs: IndexSet<ProgramID<N>>) -> Result<()> {
+        let store = self.vm.finalize_store();
+        let names =
+            |programs: &IndexSet<ProgramID<N>>| programs.iter().map(ToString::to_string).collect_vec().join(", ");
+        match store.stored_history_programs()? {
+            Some(stored) => ensure!(
+                stored == programs,
+                "History is recorded for [{}], not [{}]; reset the history to change the programs",
+                names(&stored),
+                names(&programs)
+            ),
+            None => {
+                let cursor = self.history_synced_height();
+                ensure!(
+                    cursor == 0,
+                    "History below block {cursor} is recorded for every program, not [{}]; reset the history to change the programs",
+                    names(&programs)
+                );
+                store.store_history_programs(&programs)?;
+            }
+        }
+        store.set_history_programs(Some(programs.clone()));
+        if let Some(replay) = self.history_replay.lock().as_ref() {
+            replay.vm.finalize_store().set_history_programs(Some(programs));
+        }
+        Ok(())
+    }
+
+    /// Returns whether this ledger records mapping history for `program_id`.
+    pub fn records_history_of(&self, program_id: &ProgramID<N>) -> bool {
+        self.vm.finalize_store().records_history_of(program_id)
+    }
+
+    /// Deletes this ledger's history and its history replay, so a later backfill starts from
+    /// genesis. The history cursor becomes 0 and the stored program list is removed.
+    ///
+    /// Call it before this process opens the history replay.
+    pub fn reset_history(&self) -> Result<()> {
+        ensure!(self.history_replay.lock().is_none(), "The history replay is open, so history cannot be reset");
+        self.vm.finalize_store().reset_history()?;
+        let StorageMode::Custom(replay_path) = history_replay_storage(self.vm.finalize_store().storage_mode(), N::ID)
+        else {
+            bail!("The history replay has no directory of its own");
+        };
+        if replay_path.exists() {
+            std::fs::remove_dir_all(&replay_path)
+                .with_context(|| format!("Failed to delete the history replay at {}", replay_path.display()))?;
+        }
+        Ok(())
     }
 
     /// Enables or disables history recording for blocks committed after this call.
@@ -280,6 +338,7 @@ impl<N: Network, C: ConsensusStorage<N>> HistoryReplay<N, C> {
         let store = ConsensusStore::<N, C>::open(storage)?;
         let height = store.finalize_store().committee_store().current_height().ok();
         let replay = Self { vm: VM::from_history_replay(store, &ledger.vm, height)? };
+        replay.vm.finalize_store().set_history_programs(ledger.vm.finalize_store().history_programs());
         if height.is_none() {
             let recording =
                 if ledger.history_synced_height() == 0 { HistoryRecording::Events } else { HistoryRecording::Off };
@@ -557,6 +616,16 @@ finalize set:
         assert!(!rewards.is_empty());
         assert_eq!((mappings, rewards), recorded_history(&live));
 
+        // Bonded history at the latest block, taken from staking rewards, matches the current bonds.
+        let credits = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let bonded = Identifier::from_str("bonded").unwrap();
+        let current_bonds = backfilled.vm.finalize_store().get_mapping_confirmed(credits, bonded).unwrap();
+        assert!(!current_bonds.is_empty());
+        for (staker, bond) in current_bonds {
+            let historical = backfilled.vm.finalize_store().get_historical_mapping_value(credits, bonded, staker, 3);
+            assert_eq!(historical.unwrap().map(|value| value.into_owned()), Some(bond));
+        }
+
         // The replay only accepts the block after its latest height.
         let error = replay.finalize(live.get_block(2).unwrap(), HistoryRecording::Off).unwrap_err().to_string();
         assert!(error.contains("expected block 4, found block 2"), "{error}");
@@ -645,13 +714,53 @@ finalize set:
         assert_eq!(ledger.history_synced_height(), 3);
         assert_eq!(replay.latest_height().unwrap(), 2);
         let rewards_at = |height: u32| {
-            ledger.vm.finalize_store().staking_rewards_map().iter_confirmed().filter(|(key, _)| key.1 == height).count()
+            ledger
+                .vm
+                .finalize_store()
+                .staking_rewards_map()
+                .iter_confirmed()
+                .filter(|(key, _)| u32::from_be_bytes(key.1) == height)
+                .count()
         };
         assert!(rewards_at(1) > 0);
         assert_eq!(rewards_at(1), rewards_at(2));
         // Imported events are deleted from the replay.
         assert!(replay.vm.finalize_store().history_events(1).unwrap().is_empty());
         assert!(replay.vm.finalize_store().history_events(2).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_configure_history_requires_a_reset_to_change_programs() {
+        let rng = &mut TestRng::default();
+        let private_key = console::account::PrivateKey::new(rng).unwrap();
+        let ledger = sample_ledger(private_key, rng);
+        let credits = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let other = ProgramID::<CurrentNetwork>::from_str("other.aleo").unwrap();
+
+        // Genesis history was recorded for every program, without a stored list.
+        assert_eq!(ledger.history_synced_height(), 1);
+        let error = ledger.configure_history(IndexSet::from([credits])).unwrap_err().to_string();
+        assert!(error.contains("recorded for every program"), "{error}");
+
+        ledger.reset_history().unwrap();
+        assert_eq!(ledger.history_synced_height(), 0);
+        ledger.configure_history(IndexSet::from([credits])).unwrap();
+        ledger.configure_history(IndexSet::from([credits])).unwrap();
+        assert!(ledger.records_history_of(&credits));
+        assert!(!ledger.records_history_of(&other));
+        let error = ledger.configure_history(IndexSet::from([credits, other])).unwrap_err().to_string();
+        assert!(error.contains("History is recorded for [credits.aleo], not [credits.aleo, other.aleo]"), "{error}");
+
+        // The backfill records only the listed programs, and staking rewards.
+        ledger.set_record_history(false);
+        let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+        ledger.advance_to_next_block(&block).unwrap();
+        ledger.backfill_history().unwrap();
+        assert_eq!(ledger.history_synced_height(), 2);
+        assert!(ledger.vm.finalize_store().staking_rewards_map().iter_confirmed().next().is_some());
+
+        let error = ledger.reset_history().unwrap_err().to_string();
+        assert!(error.contains("The history replay is open"), "{error}");
     }
 
     #[test]

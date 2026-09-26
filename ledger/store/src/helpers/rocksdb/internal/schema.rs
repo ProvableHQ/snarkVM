@@ -53,6 +53,9 @@ pub(crate) enum MetadataKey {
     /// A height `h` is indexed when `h` is strictly less than this value. `0` means no height is
     /// indexed.
     HistorySyncedHeight = 1,
+    /// The programs whose mapping history is recorded, serialized by the finalize store. Absent
+    /// when no list was stored.
+    HistoryPrograms = 2,
 }
 
 impl StorageVersion {
@@ -122,6 +125,21 @@ pub(crate) fn read_history_synced_height(database: &rocksdb::DB, network_id: u16
 /// Writes the next history height. The write is not part of a finalize atomic batch.
 pub(crate) fn set_history_synced_height(database: &rocksdb::DB, network_id: u16, height: u32) -> Result<()> {
     Ok(database.put(metadata_key(network_id, MetadataKey::HistorySyncedHeight), height.to_le_bytes())?)
+}
+
+/// Reads the stored history program list, as the finalize store serialized it.
+pub(crate) fn read_history_programs(database: &rocksdb::DB, network_id: u16) -> Result<Option<Vec<u8>>> {
+    Ok(database.get(metadata_key(network_id, MetadataKey::HistoryPrograms))?)
+}
+
+/// Writes the history program list, as the finalize store serialized it.
+pub(crate) fn set_history_programs(database: &rocksdb::DB, network_id: u16, programs: &[u8]) -> Result<()> {
+    Ok(database.put(metadata_key(network_id, MetadataKey::HistoryPrograms), programs)?)
+}
+
+/// Deletes the stored history program list.
+pub(crate) fn delete_history_programs(database: &rocksdb::DB, network_id: u16) -> Result<()> {
+    Ok(database.delete(metadata_key(network_id, MetadataKey::HistoryPrograms))?)
 }
 
 /// History prefixes written by storage schema v0. This build deletes them on the way to v1.
