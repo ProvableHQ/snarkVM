@@ -22,6 +22,9 @@ pub use map::*;
 mod nested_map;
 pub use nested_map::*;
 
+mod schema;
+pub use schema::{STORAGE_VERSION, StorageVersion};
+
 #[cfg(test)]
 mod tests;
 
@@ -118,6 +121,79 @@ impl Clone for RocksDB {
     }
 }
 
+/// Returns whether `storage` is a history-replay ledger directory.
+fn is_history_replay_mode(network_id: u16, storage: &StorageMode) -> bool {
+    aleo_std_storage::aleo_ledger_dir(network_id, storage)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.ends_with("-history-replay"))
+}
+
+impl RocksDB {
+    /// Returns whether this database is a history-replay ledger.
+    fn is_history_replay(&self) -> bool {
+        is_history_replay_mode(self.network_id, &self.storage_mode)
+    }
+
+    /// Returns the next block height history indexing will process.
+    pub(crate) fn history_synced_height(&self) -> Result<u32> {
+        schema::read_history_synced_height(self, self.network_id)
+    }
+
+    /// Stores the next block height history indexing will process.
+    pub(crate) fn set_history_synced_height(&self, height: u32) -> Result<()> {
+        schema::set_history_synced_height(self, self.network_id, height)
+    }
+
+    /// Returns the stored history program list, as the finalize store serialized it.
+    pub(crate) fn history_programs(&self) -> Result<Option<Vec<u8>>> {
+        schema::read_history_programs(self, self.network_id)
+    }
+
+    /// Stores the history program list, as the finalize store serialized it.
+    pub(crate) fn set_history_programs(&self, programs: &[u8]) -> Result<()> {
+        schema::set_history_programs(self, self.network_id, programs)
+    }
+
+    /// Deletes the stored history program list.
+    pub(crate) fn delete_history_programs(&self) -> Result<()> {
+        schema::delete_history_programs(self, self.network_id)
+    }
+
+    /// Deletes every entry of the map `map_id`, with one range deletion outside any atomic batch.
+    pub(crate) fn delete_map(&self, map_id: MapID) -> Result<()> {
+        let prefix = schema::map_prefix(self.network_id, map_id);
+        // The first key after every key that starts with `prefix`.
+        let end = u32::from_be_bytes(prefix)
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("Map prefix {prefix:?} has no successor"))?
+            .to_be_bytes();
+        let mut batch = rocksdb::WriteBatch::default();
+        batch.delete_range(prefix, end);
+        Ok(self.rocksdb.write(batch)?)
+    }
+
+    /// Deletes every entry of the map `map_id` whose serialized key is in `[start, end)`, with one
+    /// range deletion outside any atomic batch.
+    pub(crate) fn delete_map_range(&self, map_id: MapID, start: &[u8], end: &[u8]) -> Result<()> {
+        let prefix = schema::map_prefix(self.network_id, map_id);
+        let mut batch = rocksdb::WriteBatch::default();
+        batch.delete_range([&prefix[..], start].concat(), [&prefix[..], end].concat());
+        Ok(self.rocksdb.write(batch)?)
+    }
+
+    /// Writes each `(map_id, key, value)` in one write batch outside any atomic batch. `key` and
+    /// `value` are serialized as the map with ID `map_id` serializes them.
+    pub(crate) fn put_map_rows(&self, rows: impl IntoIterator<Item = (MapID, Vec<u8>, Vec<u8>)>) -> Result<()> {
+        let mut batch = rocksdb::WriteBatch::default();
+        for (map_id, key, value) in rows {
+            let prefix = schema::map_prefix(self.network_id, map_id);
+            batch.put([&prefix[..], &key].concat(), value);
+        }
+        Ok(self.rocksdb.write(batch)?)
+    }
+}
+
 impl Deref for RocksDB {
     type Target = Arc<rocksdb::DB>;
 
@@ -158,6 +234,9 @@ impl Database for RocksDB {
 
                 Arc::new(rocksdb::DB::open(&options, &db_path)?)
             };
+            // Record the schema version, and refuse a database written by a newer build, before
+            // any map is opened on this database.
+            schema::migrate_storage(&rocksdb, network_id)?;
 
             let db = RocksDB {
                 rocksdb,
@@ -174,12 +253,22 @@ impl Database for RocksDB {
             db
         };
 
-        // Ensure that multiple database instances are possible only when using the test storage
-        // mode, and that in such scenarios, all of the instances are only using the test mode.
+        // Outside tests, there is one primary database and, when history backfill is running, one
+        // replay database whose directory name ends with `-history-replay`. Test databases may
+        // share the process with the replay databases of their test ledgers.
+        let is_replay = |db: &RocksDB| db.is_history_replay();
+        let is_test = |db: &RocksDB| matches!(&db.storage_mode, StorageMode::Test(_));
         if matches!(storage, StorageMode::Test(_)) {
-            ensure!(databases.values().all(|db| matches!(&db.storage_mode, StorageMode::Test(_))));
+            ensure!(databases.values().all(|db| is_test(db) || is_replay(db)));
+        } else if is_history_replay_mode(network_id, &storage) {
+            let replays = databases.values().filter(|db| is_replay(db)).count();
+            ensure!(
+                replays <= 1 || databases.values().any(is_test),
+                "There can only be one active history-replay database."
+            );
         } else {
-            ensure!(databases.len() == 1, "There can only be one active rocksDB database when not in test mode.");
+            let primaries = databases.values().filter(|db| !is_test(db) && !is_replay(db)).count();
+            ensure!(primaries <= 1, "There can only be one active rocksDB database when not in test mode.");
         }
 
         // Ensure the database network ID and storage mode match.

@@ -146,6 +146,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.vm.add_next_block(block).with_context(|| "Failed to add block to VM")?;
         // Update the current block.
         *current_block = block.clone();
+        // Keep the history-replay ledger at the same height, without recording: this block's
+        // history was written on this ledger when recording is enabled.
+        if self.record_history.load(Ordering::SeqCst) {
+            self.sync_history_replay_state(block)?;
+        }
         // Drop the write lock on the current block.
         drop(current_block);
 

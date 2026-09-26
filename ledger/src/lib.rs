@@ -48,6 +48,7 @@ mod check_transaction_basic;
 mod contains;
 mod find;
 mod get;
+mod history;
 mod is_solution_limit_reached;
 mod iterators;
 
@@ -65,7 +66,7 @@ use snarkvm_ledger_committee::Committee;
 use snarkvm_ledger_narwhal::{BatchCertificate, Subdag, Transmission, TransmissionID};
 use snarkvm_ledger_puzzle::{Puzzle, PuzzleSolutions, Solution, SolutionID};
 use snarkvm_ledger_query::QueryTrait;
-use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore};
+use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore, HistoryRecording};
 use snarkvm_synthesizer::{
     program::{FinalizeGlobalState, Program},
     vm::VM,
@@ -85,7 +86,14 @@ use lru::LruCache;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use rand::prelude::IteratorRandom;
-use std::{borrow::Cow, collections::HashSet, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::HashSet,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 use time::OffsetDateTime;
 
 #[cfg(not(feature = "serial"))]
@@ -218,6 +226,10 @@ pub struct InnerLedger<N: Network, C: ConsensusStorage<N>> {
     committee_cache: Mutex<LruCache<u64, Committee<N>>>,
     /// The cache that holds the provers and the number of solutions they have submitted for the current epoch.
     epoch_provers_cache: Arc<RwLock<IndexMap<Address<N>, u32>>>,
+    /// When set, each new block is applied to the history replay after it is committed here.
+    record_history: AtomicBool,
+    /// Side VM that re-finalizes blocks to rebuild mapping and staking history.
+    history_replay: Mutex<Option<history::HistoryReplay<N, C>>>,
 
     /// Optional dev committee, returned for any round `>= committee.starting_round()`.
     ///
@@ -337,6 +349,10 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         // Initialize a new VM.
         let vm = VM::from(store)?;
+        // This crate's unit tests record history from genesis on.
+        if cfg!(test) {
+            vm.finalize_store().set_record_history(true);
+        }
         lap!(timer, "Initialize a new VM");
 
         // Retrieve the current committee.
@@ -384,6 +400,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             current_block: RwLock::new(genesis_block.clone()),
             committee_cache,
             epoch_provers_cache: Default::default(),
+            record_history: AtomicBool::new(false),
+            history_replay: Mutex::new(None),
             #[cfg(feature = "dev-committee")]
             dev_committee,
         }));

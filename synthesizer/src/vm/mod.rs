@@ -147,38 +147,50 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Initializes the VM from storage.
     #[inline]
     pub fn from(store: ConsensusStore<N, C>) -> Result<Self> {
-        // Initialize the store for 'credits.aleo'.
-        let credits = Program::<N>::credits()?;
-        for mapping in credits.mappings().values() {
-            // Ensure that all mappings are initialized.
-            if !store.finalize_store().contains_mapping_confirmed(credits.id(), mapping.name())? {
-                // Initialize the mappings for 'credits.aleo'.
-                store.finalize_store().initialize_mapping(*credits.id(), *mapping.name())?;
-            }
+        let process = Self::process_at_height(store.block_store().current_block_height())?;
+        Self::load_deployments(&process, store.block_store(), store.transaction_store(), u32::MAX)?;
+        Self::from_store_and_process(store, process)
+    }
+
+    /// Initializes a history-replay VM, whose store holds finalize state but no blocks.
+    ///
+    /// `height` is the last block the replay finalized, or `None` before it finalizes genesis.
+    /// Programs deployed at or below `height` are loaded from `source`, the VM being replayed.
+    pub fn from_history_replay(store: ConsensusStore<N, C>, source: &Self, height: Option<u32>) -> Result<Self> {
+        let process = Self::process_at_height(height.unwrap_or(0))?;
+        if let Some(height) = height {
+            Self::load_deployments(&process, source.block_store(), source.transaction_store(), height)?;
         }
+        Self::from_store_and_process(store, process)
+    }
 
-        // Retrieve the transaction store.
-        let transaction_store = store.transaction_store();
-        // Retrieve the block store.
-        let block_store = store.block_store();
+    /// Returns a new process with the `credits.aleo` verifying keys used at `height`.
+    #[cfg(not(any(test, feature = "test")))]
+    fn process_at_height(height: u32) -> Result<Process<N>> {
+        // Determine the consensus version.
+        let consensus_version = N::CONSENSUS_VERSION(height)?; // TODO (raychu86): Record Commitment - Select the proper consensus version.
+        // Initialize a new process based on the consensus version.
+        if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version) {
+            Process::load_v0()
+        } else {
+            Process::load()
+        }
+    }
 
-        #[cfg(not(any(test, feature = "test")))]
-        let process = {
-            // Determine the latest block height.
-            let latest_block_height = block_store.current_block_height();
-            // Determine the consensus version.
-            let consensus_version = N::CONSENSUS_VERSION(latest_block_height)?; // TODO (raychu86): Record Commitment - Select the proper consensus version.
-            // Initialize a new process based on the consensus version.
-            if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version) {
-                Process::load_v0()?
-            } else {
-                Process::load()?
-            }
-        };
-        #[cfg(any(test, feature = "test"))]
-        // Initialize a new process.
-        let process = Process::load()?;
+    /// Returns a new process.
+    #[cfg(any(test, feature = "test"))]
+    fn process_at_height(_height: u32) -> Result<Process<N>> {
+        Process::load()
+    }
 
+    /// Loads into `process`, in block order, every deployment stored in `block_store` and
+    /// `transaction_store` whose block height is at most `max_height`.
+    fn load_deployments(
+        process: &Process<N>,
+        block_store: &BlockStore<N, C::BlockStorage>,
+        transaction_store: &TransactionStore<N, C::TransactionStorage>,
+        max_height: u32,
+    ) -> Result<()> {
         // Retrieve the list of deployment transaction IDs and their associated block heights.
         let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
         let mut deployment_ids = cfg_into_iter!(deployment_ids)
@@ -202,6 +214,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 Ok((transaction_id, (height, index)))
             })
             .collect::<Result<Vec<_>>>()?;
+        // Keep the deployments at or below the maximum height.
+        deployment_ids.retain(|(_, (height, _))| *height <= max_height);
         // Sort the deployment transaction IDs by their block heights.
         deployment_ids.sort_unstable_by_key(|(_, h)| *h);
 
@@ -227,6 +241,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Add the deployments to the process.
             // Note: This iterator must be serial, to ensure deployments are loaded in the order of their dependencies.
             deployments.iter().try_for_each(|deployment| process.load_deployment(deployment))?;
+        }
+        Ok(())
+    }
+
+    /// Initializes the VM from storage and a process that already holds the stored programs.
+    fn from_store_and_process(store: ConsensusStore<N, C>, process: Process<N>) -> Result<Self> {
+        // Initialize the store for 'credits.aleo'.
+        let credits = Program::<N>::credits()?;
+        for mapping in credits.mappings().values() {
+            // Ensure that all mappings are initialized.
+            if !store.finalize_store().contains_mapping_confirmed(credits.id(), mapping.name())? {
+                // Initialize the mappings for 'credits.aleo'.
+                store.finalize_store().initialize_mapping(*credits.id(), *mapping.name())?;
+            }
         }
 
         // Construct the VM object.
@@ -317,7 +345,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// cumulative weights, and the previous-block hash from the actual block — so any
     /// operand or opcode that reads from `FinalizeGlobalState` (block.height,
     /// block.timestamp, random_seed via rand.chacha, etc.) sees real values.
-    #[cfg(feature = "history")]
     fn finalize_state_for_block(&self, height: u32) -> Result<FinalizeGlobalState> {
         let block_hash =
             self.block_store().get_block_hash(height)?.ok_or_else(|| anyhow!("No block exists at height {height}"))?;
@@ -325,14 +352,21 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .block_store()
             .get_block(&block_hash)?
             .ok_or_else(|| anyhow!("Block hash for height {height} resolved but the block could not be loaded"))?;
-        // Match the consensus path's gating: the timestamp is only included from V12 onward.
+        Self::finalize_global_state(&block)
+    }
+
+    /// Returns the `FinalizeGlobalState` under which `block` is finalized.
+    fn finalize_global_state(block: &Block<N>) -> Result<FinalizeGlobalState> {
+        // Determine if the block timestamp should be included.
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
+        // Determine the block spend and synthesis limits.
         let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
             (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
         } else {
             Authority::<N>::beacon_limits(block.height())
         };
+        // Construct the finalize state.
         FinalizeGlobalState::new::<N>(
             block.round(),
             block.height(),
@@ -349,14 +383,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Returns the typed outputs.
     ///
     /// Mapping reads are pinned to `height` via the per-key historical update map, and the
-    /// `FinalizeGlobalState` is reconstructed from the block at `height`. Available only with
-    /// `--features history`.
+    /// `FinalizeGlobalState` is reconstructed from the block at `height`.
     ///
     /// snarkOS calls this with `current_block_height()` for "latest", or any earlier height
-    /// for historic views. `height` must satisfy `height <= current_block_height()`.
+    /// for historic views. `height` must satisfy `height <= current_block_height()`. A height
+    /// is only reliable once history recording has stored that block.
     ///
     /// The view body is taken from the program edition live at `height`.
-    #[cfg(feature = "history")]
     #[inline]
     pub fn evaluate_view_at_height(
         &self,
@@ -398,7 +431,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
     /// Returns the program edition live at block `height`: the newest edition whose original
     /// deployment was confirmed at or before `height`. Editions deploy in increasing block order.
-    #[cfg(feature = "history")]
     fn resolve_program_edition_at_height(&self, program_id: &ProgramID<N>, height: u32) -> Result<u16> {
         let deployment_store = self.transaction_store().deployment_store();
         let block_store = self.block_store();
@@ -612,26 +644,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     pub(crate) fn add_next_block_inner(&self, block: Block<N>) -> Result<()> {
         self.ensure_sequential_processing();
 
-        // Determine if the block timestamp should be included.
-        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
-            .then_some(block.timestamp());
-        // Determine the block spend and synthesis limits.
-        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
-            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
-        } else {
-            Authority::<N>::beacon_limits(block.height())
-        };
         // Construct the finalize state.
-        let state = FinalizeGlobalState::new::<N>(
-            block.round(),
-            block.height(),
-            block_timestamp,
-            block.cumulative_weight(),
-            block.cumulative_proof_target(),
-            block.previous_hash(),
-            block_spend_limit,
-            block_synthesis_limit,
-        )?;
+        let state = Self::finalize_global_state(&block)?;
 
         // Pause the atomic writes, so that both the insertion and finalization belong to a single batch.
         #[cfg(feature = "rocks")]
@@ -671,6 +685,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 }) {
                     self.partially_verified_transactions().write().clear();
                 }
+                // Advance the history cursor only for the next height that is not indexed yet.
+                // A gap stays unindexed until backfill fills it.
+                if self.finalize_store().record_history()
+                    && block.height() == self.finalize_store().history_synced_height()
+                {
+                    self.finalize_store().set_history_synced_height(block.height() + 1)?;
+                }
                 Ok(())
             }
             Err(finalize_error) => {
@@ -698,6 +719,44 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 Err(finalize_error)
             }
         }
+    }
+
+    /// Finalizes the given block into this VM's finalize store, without storing the block.
+    ///
+    /// A history-replay VM uses this to rebuild mapping state. The finalize inputs match
+    /// [`Self::add_next_block`], and finalize checks the resulting operations against the block's
+    /// confirmed transactions, so a replay that diverges from the chain fails.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
+    #[inline]
+    pub fn replay_finalize(&self, block: Block<N>) -> Result<()> {
+        let sequential_op = SequentialOperation::ReplayFinalize(block);
+        let Some(SequentialOperationResult::ReplayFinalize(ret)) = self.run_sequential_operation(sequential_op) else {
+            bail!("Already shutting down");
+        };
+
+        ret
+    }
+
+    /// Finalizes the given block into this VM's finalize store, without storing the block.
+    ///
+    /// # Note
+    /// This must only be called from the sequential operation thread.
+    ///
+    /// # Panics
+    /// This function panics if not called from the sequential operation thread.
+    #[inline]
+    pub(crate) fn replay_finalize_inner(&self, block: Block<N>) -> Result<()> {
+        self.ensure_sequential_processing();
+
+        let state = Self::finalize_global_state(&block)?;
+        self.finalize(state, block.ratifications(), block.solutions(), block.transactions())?;
+        // If the block advances to `ConsensusVersion::V8`, update the VKs used for the credits program.
+        if N::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap_or_default() == block.height() {
+            self.process.lock().update_credits_verifying_keys()?;
+        }
+        Ok(())
     }
 }
 
@@ -737,7 +796,10 @@ pub(crate) mod test_helpers {
 
     pub(crate) fn sample_vm() -> VM<CurrentNetwork, LedgerType> {
         // Initialize a new VM.
-        VM::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap()
+        let vm = VM::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap();
+        // Test VMs record mapping and staking history, including the genesis block added later.
+        vm.finalize_store().set_record_history(true);
+        vm
     }
 
     #[cfg(feature = "test")]

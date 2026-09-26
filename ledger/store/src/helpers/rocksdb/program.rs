@@ -15,28 +15,37 @@
 
 #![allow(clippy::type_complexity)]
 
-#[cfg(feature = "history")]
-use crate::program::HeightBytes;
 use crate::{
     CommitteeStorage,
     CommitteeStore,
     FinalizeStorage,
+    HeightBytes,
+    HistoricalMappingValue,
+    HistoryEvent,
+    HistoryRecording,
+    HistoryRow,
+    HistoryTable,
     helpers::rocksdb::{self, CommitteeMap, DataMap, Database, MapID, NestedDataMap, ProgramMap},
 };
-#[cfg(feature = "history-staking-rewards")]
-use console::types::Address;
 use console::{
     prelude::*,
     program::{Identifier, Plaintext, ProgramID, Value},
-    types::Field,
+    types::{Address, Field},
 };
 use snarkvm_ledger_block::RejectedReason;
 use snarkvm_ledger_committee::Committee;
 
 use aleo_std_storage::StorageMode;
 use indexmap::IndexSet;
-#[cfg(feature = "history")]
-use std::sync::{Arc, atomic::AtomicU32};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::RwLock;
+use snarkvm_utilities::bytes::unchecked_deserialize;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU8, AtomicU32, Ordering},
+};
 
 /// A RocksDB finalize storage.
 #[derive(Clone)]
@@ -50,17 +59,23 @@ pub struct FinalizeDB<N: Network> {
     /// The rejection reason map.
     rejected_reason_map: DataMap<Field<N>, RejectedReason<N>>,
     /// The historical mapping value map (keyed by big-endian block height).
-    #[cfg(feature = "history")]
-    mapping_update_map: DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>,
-    /// The legacy heights index; present only for keys written before the BE schema change.
-    #[cfg(feature = "history")]
-    mapping_update_heights_map: DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>,
+    mapping_update_map: DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), HistoricalMappingValue<N>>,
+    /// The historical staking rewards map (keyed by big-endian block height).
+    staking_rewards_map: DataMap<(Address<N>, HeightBytes), (Address<N>, u64, u64)>,
+    /// The per-block history event log.
+    history_event_map: DataMap<(HeightBytes, HeightBytes), HistoryEvent<N>>,
     /// The current block height.
-    #[cfg(feature = "history")]
     block_height: Arc<AtomicU32>,
-    /// The historical staking rewards map.
-    #[cfg(feature = "history-staking-rewards")]
-    staking_rewards_map: DataMap<(Address<N>, u32), (Address<N>, u64, u64)>,
+    /// Where mapping updates and staking rewards are recorded.
+    history_recording: Arc<AtomicU8>,
+    /// The programs whose mapping history is recorded, or `None` for every program.
+    history_programs: Arc<RwLock<Option<IndexSet<ProgramID<N>>>>>,
+    /// Sequence number of the next history event in the current block.
+    history_event_seq: Arc<AtomicU32>,
+    /// The next block height history indexing will process.
+    history_synced_height: Arc<AtomicU32>,
+    /// The database that stores the history sync cursor.
+    database: rocksdb::RocksDB,
     /// The storage mode.
     storage_mode: StorageMode,
 }
@@ -71,23 +86,23 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     type ProgramIDMap = DataMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedDataMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
     type RejectedReasonMap = DataMap<Field<N>, RejectedReason<N>>;
-    #[cfg(feature = "history")]
-    type MappingUpdateMap = DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>;
-    #[cfg(feature = "history")]
-    type MappingUpdateHeightsMap = DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>;
-    #[cfg(feature = "history-staking-rewards")]
-    type StakingRewardsMap = DataMap<(Address<N>, u32), (Address<N>, u64, u64)>;
+    type MappingUpdateMap =
+        DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), HistoricalMappingValue<N>>;
+    type StakingRewardsMap = DataMap<(Address<N>, HeightBytes), (Address<N>, u64, u64)>;
+    type HistoryEventMap = DataMap<(HeightBytes, HeightBytes), HistoryEvent<N>>;
 
     /// Initializes the finalize storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
         let storage = storage.into();
+        // Open the database first so the schema migration has stored the history cursor.
+        let database = rocksdb::RocksDB::open(N::ID, storage.clone())?;
+        let history_synced_height = Arc::new(AtomicU32::new(database.history_synced_height()?));
         // Initialize the committee store.
         let committee_store = CommitteeStore::<N, CommitteeDB<N>>::open(storage.clone())?;
         // Seed the history height guard from the last committed block height so that
         // historical REST queries succeed immediately after node startup (before the
         // first new block arrives and re-seeds the value via `atomic_finalize`).
         // Returns 0 for a fresh database that has no committee data yet.
-        #[cfg(feature = "history")]
         let initial_height = committee_store.current_height().unwrap_or(0);
         // Return the finalize storage.
         Ok(Self {
@@ -95,14 +110,15 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
             program_id_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::ProgramID))?,
             key_value_map: rocksdb::RocksDB::open_nested_map(N::ID, storage.clone(), MapID::Program(ProgramMap::KeyValueID))?,
             rejected_reason_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::RejectedReason))?,
-            #[cfg(feature = "history")]
             mapping_update_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::MappingUpdate))?,
-            #[cfg(feature = "history")]
-            mapping_update_heights_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::MappingUpdateHeights))?,
-            #[cfg(feature = "history")]
-            block_height: Arc::new(AtomicU32::new(initial_height)),
-            #[cfg(feature = "history-staking-rewards")]
             staking_rewards_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::StakingRewards))?,
+            history_event_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::HistoryEvent))?,
+            block_height: Arc::new(AtomicU32::new(initial_height)),
+            history_recording: Arc::new(AtomicU8::new(HistoryRecording::Off as u8)),
+            history_programs: Default::default(),
+            history_event_seq: Arc::new(AtomicU32::new(0)),
+            history_synced_height,
+            database,
             storage_mode: storage,
         })
     }
@@ -128,20 +144,18 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     }
 
     /// Returns the historical value map.
-    #[cfg(feature = "history")]
     fn mapping_update_map(&self) -> &Self::MappingUpdateMap {
         &self.mapping_update_map
     }
 
-    #[cfg(feature = "history")]
-    fn mapping_update_heights_map(&self) -> &Self::MappingUpdateHeightsMap {
-        &self.mapping_update_heights_map
-    }
-
     /// Returns the historical staking rewards map.
-    #[cfg(feature = "history-staking-rewards")]
     fn staking_rewards_map(&self) -> &Self::StakingRewardsMap {
         &self.staking_rewards_map
+    }
+
+    /// Returns the per-block history event log.
+    fn history_event_map(&self) -> &Self::HistoryEventMap {
+        &self.history_event_map
     }
 
     /// Returns the storage mode.
@@ -149,8 +163,75 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
         &self.storage_mode
     }
 
+    /// Returns where history is recorded.
+    fn history_recording(&self) -> &AtomicU8 {
+        &self.history_recording
+    }
+
+    /// Returns the programs whose mapping history is recorded.
+    fn history_programs(&self) -> &RwLock<Option<IndexSet<ProgramID<N>>>> {
+        &self.history_programs
+    }
+
+    /// Returns the program list stored with this store's history.
+    fn stored_history_programs(&self) -> Result<Option<IndexSet<ProgramID<N>>>> {
+        match self.database.history_programs()? {
+            Some(bytes) => Ok(Some(unchecked_deserialize(&bytes)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Stores the program list this store's history is recorded for.
+    fn store_history_programs(&self, programs: &IndexSet<ProgramID<N>>) -> Result<()> {
+        self.database.set_history_programs(&bincode::serialize(programs)?)
+    }
+
+    /// Deletes the history tables, the event log, and the stored program list, and sets the
+    /// history cursor to 0.
+    fn reset_history(&self) -> Result<()> {
+        for map in [ProgramMap::MappingUpdate, ProgramMap::StakingRewards, ProgramMap::HistoryEvent] {
+            self.database.delete_map(MapID::Program(map))?;
+        }
+        self.database.delete_history_programs()?;
+        self.set_history_synced_height(0)
+    }
+
+    /// Returns the per-block history event sequence.
+    fn history_event_seq(&self) -> &AtomicU32 {
+        &self.history_event_seq
+    }
+
+    /// Deletes the history events of every height below `height`, with one range deletion.
+    fn prune_history_events_below(&self, height: u32) -> Result<()> {
+        // Event keys serialize as the big-endian height followed by the big-endian sequence.
+        let end = [height.to_be_bytes(), [0u8; 4]].concat();
+        self.database.delete_map_range(MapID::Program(ProgramMap::HistoryEvent), &[], &end)
+    }
+
+    /// Writes serialized history-table records in one write batch.
+    fn put_history_rows(&self, rows: Vec<HistoryRow>) -> Result<()> {
+        self.database.put_map_rows(rows.into_iter().map(|(table, key, value)| {
+            let map = match table {
+                HistoryTable::MappingUpdates => ProgramMap::MappingUpdate,
+                HistoryTable::StakingRewards => ProgramMap::StakingRewards,
+            };
+            (MapID::Program(map), key, value)
+        }))
+    }
+
+    /// Returns the next block height history indexing will process.
+    fn history_synced_height(&self) -> u32 {
+        self.history_synced_height.load(Ordering::SeqCst)
+    }
+
+    /// Stores the next block height history indexing will process.
+    fn set_history_synced_height(&self, height: u32) -> Result<()> {
+        self.database.set_history_synced_height(height)?;
+        self.history_synced_height.store(height, Ordering::SeqCst);
+        Ok(())
+    }
+
     /// Returns the current block height.
-    #[cfg(feature = "history")]
     fn current_block_height(&self) -> &AtomicU32 {
         &self.block_height
     }
