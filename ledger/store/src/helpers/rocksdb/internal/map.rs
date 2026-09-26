@@ -58,6 +58,13 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> InnerData
         checkpoint.create_checkpoint(path).map_err(|e| e.into_string())
     }
 
+    /// Catches up with the primary instance; only applicable to secondary instances.
+    pub fn catch_up_with_primary(&self) -> Result<()> {
+        self.database
+            .try_catch_up_with_primary()
+            .map_err(|e| anyhow::anyhow!("Failed to catch up with the primary: {e}"))
+    }
+
     /// Reads RocksDB internal properties and publishes them to the metrics registry.
     /// Any map can be used since they all share the same underlying `RocksDB` instance.
     #[cfg(feature = "metrics")]
