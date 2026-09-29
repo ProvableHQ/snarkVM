@@ -13,6 +13,12 @@ name = "linear_combination"
 path = "benches/linear_combination.rs"
 harness = false
 
+[[bench]]
+name = "gungraun_linear_combination"
+path = "benches/gungraun_linear_combination.rs"
+harness = false
+bench = false
+
 [dependencies.anyhow]
 workspace = true
 
@@ -67,6 +73,9 @@ path = "../../circuit"
 workspace = true
 
 [dev-dependencies.criterion]
+workspace = true
+
+[dev-dependencies.gungraun]
 workspace = true
 
 [features]

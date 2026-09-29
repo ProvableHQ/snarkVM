@@ -33,6 +33,18 @@ name = "poseidon"
 path = "benches/poseidon.rs"
 harness = false
 
+[[bench]]
+name = "gungraun_poseidon"
+path = "benches/gungraun_poseidon.rs"
+harness = false
+bench = false
+
+[[bench]]
+name = "gungraun_elligator2"
+path = "benches/gungraun_elligator2.rs"
+harness = false
+bench = false
+
 [dependencies.snarkvm-console-types]
 workspace = true
 features = [ "field", "group", "integers", "scalar" ]
@@ -74,6 +86,9 @@ workspace = true
 workspace = true
 
 [dev-dependencies.criterion]
+workspace = true
+
+[dev-dependencies.gungraun]
 workspace = true
 
 [dev-dependencies.expect-test]

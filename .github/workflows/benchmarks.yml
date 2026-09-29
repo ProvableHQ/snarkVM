@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Run benchmarks and stores the output to a file
+  # Run Callgrind benchmarks and store instruction counts.
   benchmark:
     name: Benchmark
     # Pin to a specific image to reduce runner-image drift between comparisons.
@@ -19,12 +19,15 @@ jobs:
       # Override .cargo/config.toml's target-cpu=native. Cached proc-macros and
       # build scripts compiled for one runner CPU SIGILL on another. Keep lld.
       RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
+      # One Rayon worker. The benches set this too; the workflow covers setup.
+      RAYON_NUM_THREADS: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # Instruction counts move when rustc changes. Stay on the workspace toolchain.
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.96
 
       # RocksDB benches need libclang (via bindgen); match CircleCI rocks deps.
       - name: Install required Debian packages
@@ -40,91 +43,43 @@ jobs:
             ~/.cargo/git
             target
           # Bump the key suffix when RUSTFLAGS change to invalidate poisoned caches.
-          key: ${{ runner.os }}-cargo-bench-v2-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-bench-v3-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Benchmark algorithms
+      - name: Setup gungraun-runner and Valgrind
+        uses: gungraun/setup-gungraun@v1
+
+      - name: Benchmark with Gungraun
         run: |
-          set -o pipefail
-          cd algorithms
-          cargo bench --locked --bench variable_base -- --output-format bencher | tee -a ../output.txt
-          cargo bench --locked --bench poseidon_sponge -- --output-format bencher | tee -a ../output.txt
-          # Skip varuna: downloads multi-GB USRS params and regularly OOMs/kills the runner.
-          cd ..
+          set -euo pipefail
+          : > output.jsonl
+          run_one() {
+            local out
+            out="$(mktemp)"
+            cargo bench --locked "$@" -- --output-format=json >"$out"
+            if ! grep '^{' "$out" >> output.jsonl; then
+              echo "Gungraun produced no JSON summary for: cargo bench $*" >&2
+              cat "$out" >&2
+              exit 1
+            fi
+            rm -f "$out"
+          }
 
-      - name: Benchmark circuit/environment
-        run: |
-          set -o pipefail
-          cd circuit/environment
-          cargo bench --locked --bench linear_combination -- --output-format bencher | tee -a ../../output.txt
-          cd ../..
+          run_one -p snarkvm-algorithms --bench gungraun_variable_base
+          run_one -p snarkvm-algorithms --bench gungraun_poseidon_sponge
+          run_one -p snarkvm-circuit-environment --bench gungraun_linear_combination
+          run_one -p snarkvm-console-account --bench gungraun_account
+          run_one -p snarkvm-console-algorithms --bench gungraun_poseidon
+          run_one -p snarkvm-console-algorithms --bench gungraun_elligator2
+          run_one -p snarkvm-console-collections --bench gungraun_merkle_tree
+          run_one -p snarkvm-console-types --bench gungraun_group
+          run_one -p snarkvm-curves --bench gungraun_curves
+          run_one -p snarkvm-ledger --bench gungraun_block --features=rocks,test-helpers,test
+          run_one -p snarkvm-ledger --bench gungraun_dag --features=test-helpers
+          run_one -p snarkvm-ledger --bench gungraun_transaction
+          run_one -p snarkvm-ledger-puzzle --bench gungraun_puzzle --features=setup
 
-      - name: Benchmark console/account
-        run: |
-          set -o pipefail
-          cd console/account
-          cargo bench --locked --bench account -- --output-format bencher | tee -a ../../output.txt
-          cd ../..
-
-      - name: Benchmark console/algorithms
-        run: |
-          set -o pipefail
-          cd console/algorithms
-          cargo bench --locked --bench poseidon -- --output-format bencher | tee -a ../../output.txt
-          cargo bench --locked --bench elligator2 -- --output-format bencher | tee -a ../../output.txt
-          cd ../..
-
-      - name: Benchmark console/collections
-        run: |
-          set -o pipefail
-          cd console/collections
-          cargo bench --locked --bench merkle_tree -- --output-format bencher --sample-size 10 --measurement-time 2 | tee -a ../../output.txt
-          cd ../..
-
-      - name: Benchmark console/types
-        run: |
-          set -o pipefail
-          cd console/types
-          cargo bench --locked --bench group -- --output-format bencher | tee -a ../../output.txt
-          cd ../..
-
-      - name: Benchmark curves
-        run: |
-          set -o pipefail
-          cd curves
-          cargo bench --locked --bench curves -- --output-format bencher | tee -a ../output.txt
-          cd ..
-
-      - name: Benchmark ledger (block)
-        run: |
-          set -o pipefail
-          cargo bench --package=snarkvm-ledger --bench block --features=rocks,test-helpers,test -- --output-format bencher --sample-size 10 --measurement-time 2 | tee -a output.txt
-
-      - name: Benchmark ledger (dag)
-        run: |
-          set -o pipefail
-          cargo bench --package=snarkvm-ledger --bench dag --features=test-helpers -- --output-format bencher | tee -a output.txt
-
-      - name: Benchmark ledger (transaction)
-        run: |
-          set -o pipefail
-          cargo bench --package=snarkvm-ledger --bench transaction -- --output-format bencher | tee -a output.txt
-
-      # Skip store/advance: require a pre-generated `test-ledger/` fixture
-      # (see `snarkvm-testchain-generator --no-ledger`).
-
-      - name: Benchmark ledger/puzzle
-        run: |
-          set -o pipefail
-          # Puzzle::prove is high-variance at the crate's 10-sample default; the
-          # bencher median then trips the 200% alert. Collect it separately with
-          # more samples and longer windows. Filter so check_solutions stays cheap.
-          cargo bench --package=snarkvm-ledger-puzzle --bench puzzle --features=setup -- Puzzle::prove --output-format bencher --sample-size 100 --warm-up-time 3 --measurement-time 10 | tee -a output.txt
-          cargo bench --package=snarkvm-ledger-puzzle --bench puzzle --features=setup -- Puzzle::check_solutions --output-format bencher | tee -a output.txt
-
-      # Clean benchmark output to remove unnecessary lines
-      - name: Clean benchmark output
-        run: |
-          sed -n -i '/bench:/p' output.txt
+      - name: Convert Gungraun summaries
+        run: python3 .github/scripts/gungraun_to_bench_action.py output.jsonl output.json
 
       # Download previous benchmark result from cache (if exists)
       - name: Download previous benchmark data
@@ -136,14 +91,13 @@ jobs:
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          name: snarkVM Benchmarks
-          tool: 'cargo'
-          output-file-path: output.txt
+          name: snarkVM Gungraun
+          tool: 'customSmallerIsBetter'
+          output-file-path: output.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          alert-threshold: '200%'
+          alert-threshold: '10%'
           comment-on-alert: true
           fail-on-alert: true
           alert-comment-cc-users: '@vicsn,@snarkworld,@cbeck88'
           auto-push: true
-          # Enable Job Summary for PRs
           summary-always: true

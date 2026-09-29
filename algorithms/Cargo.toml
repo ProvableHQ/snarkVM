@@ -34,6 +34,18 @@ path = "benches/crypto_hash/poseidon.rs"
 harness = false
 
 [[bench]]
+name = "gungraun_variable_base"
+path = "benches/gungraun_variable_base.rs"
+harness = false
+bench = false
+
+[[bench]]
+name = "gungraun_poseidon_sponge"
+path = "benches/gungraun_poseidon_sponge.rs"
+harness = false
+bench = false
+
+[[bench]]
 name = "fft"
 path = "benches/fft/fft.rs"
 harness = false
@@ -127,6 +139,9 @@ workspace = true
 workspace = true
 
 [dev-dependencies.criterion]
+workspace = true
+
+[dev-dependencies.gungraun]
 workspace = true
 
 [dev-dependencies.serde_json]
