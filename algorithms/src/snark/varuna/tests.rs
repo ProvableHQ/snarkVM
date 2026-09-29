@@ -59,7 +59,8 @@ mod varuna {
 
                     let wrong_varuna_version = match varuna_version {
                         VarunaVersion::V1 => VarunaVersion::V2,
-                        VarunaVersion::V2 => VarunaVersion::V1,
+                        VarunaVersion::V2 => VarunaVersion::V3,
+                        VarunaVersion::V3 => VarunaVersion::V1,
                     };
 
                     for i in 0..5 {
@@ -132,11 +133,11 @@ mod varuna {
                                 $snark_inst::prove_batch(universal_prover, &fs_parameters, varuna_version, &pks_to_constraints, rng).unwrap();
                             println!("Called prover");
 
-                            if varuna_version == VarunaVersion::V2 {
+                            if matches!(varuna_version, VarunaVersion::V2 | VarunaVersion::V3) {
                                 let batch_sizes = proof.batch_sizes();
                                 let mut proof_bytes = vec![];
                                 proof.serialize_compressed(&mut proof_bytes).unwrap();
-                                let actual_size = proof_size::<Bls12_377>(&batch_sizes, VarunaVersion::V2, $snark_mode::ZK).unwrap();
+                                let actual_size = proof_size::<Bls12_377>(&batch_sizes, varuna_version, $snark_mode::ZK).unwrap();
                                 assert_eq!(proof_bytes.len(), actual_size);
                                 println!("Compressed size is as expected ({actual_size} B)");
                             }
@@ -387,7 +388,8 @@ mod varuna_hiding {
 
         let wrong_varuna_version = match varuna_version {
             VarunaVersion::V1 => VarunaVersion::V2,
-            VarunaVersion::V2 => VarunaVersion::V1,
+            VarunaVersion::V2 => VarunaVersion::V3,
+            VarunaVersion::V3 => VarunaVersion::V1,
         };
 
         for _ in 0..num_times {
@@ -571,10 +573,11 @@ mod varuna_hiding {
         let universal_prover = &universal_srs.to_universal_prover().unwrap();
         let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
         let fs_parameters = FS::sample_parameters();
-        for varuna_version in [VarunaVersion::V1, VarunaVersion::V2] {
+        for varuna_version in [VarunaVersion::V1, VarunaVersion::V2, VarunaVersion::V3] {
             let wrong_varuna_version = match varuna_version {
                 VarunaVersion::V1 => VarunaVersion::V2,
-                VarunaVersion::V2 => VarunaVersion::V1,
+                VarunaVersion::V2 => VarunaVersion::V3,
+                VarunaVersion::V3 => VarunaVersion::V1,
             };
             let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
             println!("Called circuit setup");
