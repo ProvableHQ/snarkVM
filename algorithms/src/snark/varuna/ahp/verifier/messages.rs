@@ -177,17 +177,17 @@ pub fn select_third_round_challenges<F: PrimeField>(
             }
             Ok((*alpha, first_round_batch_combiners.clone(), *eta_b, *eta_c))
         }
-        VarunaVersion::V2 => {
+        VarunaVersion::V2 | VarunaVersion::V3 => {
             let SecondMessage { alpha, eta_b, eta_c } = verifier_second_message;
             if eta_b.is_some() || eta_c.is_some() {
                 return Err(anyhow::anyhow!(
-                    "Did not expect SecondMessage to contain eta_b,c in VarunaVersion::V2 third round."
+                    "Did not expect SecondMessage to contain eta_b,c in {varuna_version:?} third round."
                 ));
             }
             let Some(PrepareThirdMessage { third_round_batch_combiners, eta_b, eta_c }) =
                 verifier_prepare_third_message
             else {
-                return Err(anyhow::anyhow!("Expected PrepareThirdMessage in VarunaVersion::V2 third round."));
+                return Err(anyhow::anyhow!("Expected PrepareThirdMessage in {varuna_version:?} third round."));
             };
             Ok((*alpha, third_round_batch_combiners.clone(), *eta_b, *eta_c))
         }

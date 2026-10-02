@@ -76,7 +76,8 @@ pub enum ConsensusVersion {
     /// V20: Adds more accurate type checking for the root call, bounds the size of every
     /// `PlaintextType` declared in a deployed program, and updates the number of validators.
     V20 = 20,
-    /// V21: Increases the maximum number of mappings in a program to 128.
+    /// V21: Increases the maximum number of mappings in a program to 128
+    ///      and activates Varuna V3.
     V21 = 21,
 }
 
@@ -360,7 +361,13 @@ macro_rules! consensus_config_value_by_version {
 /// Returns the Varuna version for the specified consensus version.
 pub fn varuna_version_from_consensus(consensus_version: ConsensusVersion) -> VarunaVersion {
     // If new varuna versions are added, test_varuna_version_from_consensus below must be updated accordingly.
-    if consensus_version >= ConsensusVersion::V4 { VarunaVersion::V2 } else { VarunaVersion::V1 }
+    if consensus_version >= ConsensusVersion::V21 {
+        VarunaVersion::V3
+    } else if consensus_version >= ConsensusVersion::V4 {
+        VarunaVersion::V2
+    } else {
+        VarunaVersion::V1
+    }
 }
 
 #[cfg(test)]
@@ -714,6 +721,10 @@ mod tests {
         // First boundary: V4
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V3), VarunaVersion::V1);
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V4), VarunaVersion::V2);
+        // Second boundary: V21.
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V20), VarunaVersion::V2);
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V21), VarunaVersion::V3);
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::latest()), VarunaVersion::V3);
     }
 
     /// Ensure that every published consensus height table is well-formed.
