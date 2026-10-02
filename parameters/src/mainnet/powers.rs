@@ -69,10 +69,16 @@ lazy_static::lazy_static! {
     static ref BETA_H: Vec<u8> = BetaH::load_bytes().expect("Failed to load negative powers of beta in universal SRS");
 }
 
+/// One end of the powers of beta G: immutable once made, and replaced by a
+/// longer one when more powers are fetched.
+pub type PowersSnapshot<E> = Arc<Vec<<E as PairingEngine>::G1Affine>>;
+
 /// A vector of powers of beta G.
 #[derive(Debug)]
 pub struct PowersOfG<E: PairingEngine> {
-    /// The powers of beta G.
+    /// The powers of beta G. Each end is an immutable snapshot, replaced, never
+    /// mutated, when more powers are fetched, so a key may share one for as
+    /// long as it lives.
     powers_of_beta_g: RwLock<PowersOfBetaG<E>>,
     /// Group elements of form `{ \beta^i \gamma G }`, where `i` is from 0 to `degree`,
     /// This is used for hiding.
@@ -118,6 +124,10 @@ impl<E: PairingEngine> PowersOfG<E> {
 
     /// Download the powers of beta G specified by `range`.
     pub fn download_powers_for(&self, range: Range<usize>) -> Result<()> {
+        if range.is_empty() || self.powers_of_beta_g.read().contains_powers(&range) {
+            return Ok(());
+        }
+        ensure!(range.end <= MAX_NUM_POWERS, "Upper bound must be less than the maximum number of powers");
         self.powers_of_beta_g.write().download_powers_for(&range)
     }
 
@@ -138,12 +148,27 @@ impl<E: PairingEngine> PowersOfG<E> {
 
     /// Returns the `index`-th power of beta * G.
     pub fn power_of_beta_g(&self, index: usize) -> Result<E::G1Affine> {
-        self.powers_of_beta_g.write().power(index)
+        self.download_powers_for(index..index + 1)?;
+        Ok(self.powers_of_beta_g.read().held_powers(index..index + 1)?[0])
     }
 
     /// Returns the powers of `beta * G` that lie within `range`.
     pub fn powers_of_beta_g(&self, range: Range<usize>) -> Result<Vec<E::G1Affine>> {
-        Ok(self.powers_of_beta_g.write().powers(range)?.to_vec())
+        self.download_powers_for(range.clone())?;
+        Ok(self.powers_of_beta_g.read().held_powers(range)?.to_vec())
+    }
+
+    /// The powers of `beta * G` in `range`, as the snapshot holding them and
+    /// their range within it, fetching them first if needed. The snapshot never
+    /// changes, so a caller may hold it, and slice it, for as long as it likes.
+    pub fn shared_powers_of_beta_g(&self, range: Range<usize>) -> Result<(PowersSnapshot<E>, Range<usize>)> {
+        if range.is_empty() {
+            return Ok((Arc::new(Vec::new()), 0..0));
+        }
+        self.download_powers_for(range.clone())?;
+        let powers = self.powers_of_beta_g.read();
+        let (store, within) = powers.locate(range)?;
+        Ok((store.clone(), within))
     }
 
     pub fn negative_powers_of_beta_h(&self) -> &BTreeMap<usize, E::G2Affine> {
@@ -231,13 +256,39 @@ impl<E: PairingEngine> ToBytes for PowersOfG<E> {
     }
 }
 
-#[derive(Debug, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Debug)]
 pub struct PowersOfBetaG<E: PairingEngine> {
     /// Group elements of form `[G, \beta * G, \beta^2 * G, ..., \beta^d G]`.
-    powers_of_beta_g: Vec<E::G1Affine>,
+    powers_of_beta_g: PowersSnapshot<E>,
     /// Group elements of form `[\beta^i * G, \beta^2 * G, ..., \beta^D G]`.
     /// where D is the maximum degree supported by the SRS.
-    shifted_powers_of_beta_g: Vec<E::G1Affine>,
+    shifted_powers_of_beta_g: PowersSnapshot<E>,
+}
+
+impl<E: PairingEngine> CanonicalSerialize for PowersOfBetaG<E> {
+    fn serialize_with_mode<W: Write>(&self, mut writer: W, mode: Compress) -> Result<(), SerializationError> {
+        self.powers_of_beta_g.as_ref().serialize_with_mode(&mut writer, mode)?;
+        self.shifted_powers_of_beta_g.as_ref().serialize_with_mode(&mut writer, mode)
+    }
+
+    fn serialized_size(&self, mode: Compress) -> usize {
+        self.powers_of_beta_g.as_ref().serialized_size(mode) + self.shifted_powers_of_beta_g.as_ref().serialized_size(mode)
+    }
+}
+
+impl<E: PairingEngine> CanonicalDeserialize for PowersOfBetaG<E> {
+    fn deserialize_with_mode<R: Read>(mut reader: R, compress: Compress, validate: Validate) -> Result<Self, SerializationError> {
+        let powers_of_beta_g = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
+        let shifted_powers_of_beta_g = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
+        Ok(Self { powers_of_beta_g: Arc::new(powers_of_beta_g), shifted_powers_of_beta_g: Arc::new(shifted_powers_of_beta_g) })
+    }
+}
+
+impl<E: PairingEngine> Valid for PowersOfBetaG<E> {
+    fn check(&self) -> Result<(), SerializationError> {
+        self.powers_of_beta_g.as_ref().check()?;
+        self.shifted_powers_of_beta_g.as_ref().check()
+    }
 }
 
 impl<E: PairingEngine> PowersOfBetaG<E> {
@@ -256,7 +307,10 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
 
         let shifted_powers_of_beta_g = Vec::deserialize_uncompressed_unchecked(&**SHIFTED_POWERS_OF_BETA_G_15)?;
         ensure!(shifted_powers_of_beta_g.len() == NUM_POWERS_15, "Incorrect number of powers in the recovered SRS");
-        Ok(PowersOfBetaG { powers_of_beta_g, shifted_powers_of_beta_g })
+        Ok(PowersOfBetaG {
+            powers_of_beta_g: Arc::new(powers_of_beta_g),
+            shifted_powers_of_beta_g: Arc::new(shifted_powers_of_beta_g),
+        })
     }
 
     /// Returns the range of powers of beta G.
@@ -300,49 +354,34 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
         (range.start as isize - self.available_powers().1.start as isize).unsigned_abs()
     }
 
-    /// Assumes that we have the requisite powers.
-    fn shifted_powers(&self, range: Range<usize>) -> Result<&[E::G1Affine]> {
-        ensure!(self.contains_in_shifted_powers(&range), "Requested range is not contained in the available shifted powers");
-
+    /// Which snapshot holds the powers in `range`, and where in it, if they
+    /// are already held; downloads nothing.
+    fn locate(&self, range: Range<usize>) -> Result<(&PowersSnapshot<E>, Range<usize>)> {
+        if range.is_empty() {
+            return Ok((&self.powers_of_beta_g, 0..0));
+        }
+        ensure!(range.end <= MAX_NUM_POWERS, "Upper bound must be less than the maximum number of powers");
+        if self.contains_in_normal_powers(&range) {
+            return Ok((&self.powers_of_beta_g, range));
+        }
+        ensure!(self.contains_in_shifted_powers(&range), "Requested range is not contained in the available powers");
         if range.start < MAX_NUM_POWERS / 2 {
             ensure!(self.shifted_powers_of_beta_g.is_empty());
             // In this case, we have downloaded all the powers, and so
             // all the powers reside in self.powers_of_beta_g.
-            Ok(&self.powers_of_beta_g[range])
+            Ok((&self.powers_of_beta_g, range))
         } else {
             // In this case, the shifted powers still reside in self.shifted_powers_of_beta_g.
             let lower = self.shifted_powers_of_beta_g.len() - (MAX_NUM_POWERS - range.start);
             let upper = self.shifted_powers_of_beta_g.len() - (MAX_NUM_POWERS - range.end);
-            Ok(&self.shifted_powers_of_beta_g[lower..upper])
+            Ok((&self.shifted_powers_of_beta_g, lower..upper))
         }
     }
 
-    /// Assumes that we have the requisite powers.
-    fn normal_powers(&self, range: Range<usize>) -> Result<&[E::G1Affine]> {
-        ensure!(self.contains_in_normal_powers(&range), "Requested range is not contained in the available powers");
-        Ok(&self.powers_of_beta_g[range])
-    }
-
-    /// Returns the power of beta times G specified by `target`.
-    fn power(&mut self, target: usize) -> Result<E::G1Affine> {
-        self.powers(target..(target + 1)).map(|s| s[0])
-    }
-
-    /// Slices the underlying file to return a vector of affine elements between `lower` and `upper`.
-    fn powers(&mut self, range: Range<usize>) -> Result<&[E::G1Affine]> {
-        if range.is_empty() {
-            return Ok(&self.powers_of_beta_g[0..0]);
-        }
-        ensure!(range.start < range.end, "Lower power must be less than upper power");
-        ensure!(range.end <= MAX_NUM_POWERS, "Upper bound must be less than the maximum number of powers");
-        if !self.contains_powers(&range) {
-            // We must download the powers.
-            self.download_powers_for(&range)?;
-        }
-        match self.contains_in_normal_powers(&range) {
-            true => self.normal_powers(range),
-            false => self.shifted_powers(range),
-        }
+    /// The powers in `range`, if they are already held; downloads nothing.
+    fn held_powers(&self, range: Range<usize>) -> Result<&[E::G1Affine]> {
+        let (store, within) = self.locate(range)?;
+        Ok(&store[within])
     }
 
     pub fn download_powers_for(&mut self, range: &Range<usize>) -> Result<()> {
@@ -354,7 +393,7 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
             // If the range contains the midpoint, then we must download all the powers.
             // (because we round up to the next power of two).
             self.download_powers_up_to(range.end)?;
-            self.shifted_powers_of_beta_g = Vec::new();
+            self.shifted_powers_of_beta_g = Arc::new(Vec::new());
         } else if self.distance_from_shifted_of(range) < self.distance_from_normal_of(range) {
             // If the range is closer to the shifted powers, then we download the shifted powers.
             self.download_shifted_powers_from(range.start)?;
@@ -366,7 +405,7 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
     }
 
     /// This method downloads the universal SRS powers up to the `next_power_of_two(target_degree)`,
-    /// and updates `Self` in place with the new powers.
+    /// and replaces `Self`'s prefix snapshot with the longer one.
     fn download_powers_up_to(&mut self, end: usize) -> Result<()> {
         // Determine the new power of two.
         let final_power_of_two = end.checked_next_power_of_two().ok_or_else(|| anyhow!("Requesting too many powers"))?;
@@ -389,18 +428,33 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
         }
         ensure!(final_power_of_two * 2 == accumulator, "Ensure the loop terminates at the right power of two");
 
-        // Reserve capacity for the new powers of two.
+        // A snapshot a key shares never changes, so a shared one is copied into
+        // a new one; an unshared one is extended in place. Not `Arc::make_mut`,
+        // whose clone is sized to the old length, so the `reserve` below would
+        // copy a shared snapshot a second time.
         let additional_size = final_power_of_two
             .checked_sub(self.powers_of_beta_g.len())
             .ok_or_else(|| anyhow!("final_power_of_two is smaller than existing powers"))?;
-        self.powers_of_beta_g.reserve(additional_size);
+        let mut copy = Arc::get_mut(&mut self.powers_of_beta_g).is_none().then(|| {
+            let mut copy = Vec::with_capacity(final_power_of_two);
+            copy.extend_from_slice(&self.powers_of_beta_g);
+            copy
+        });
+        let powers_of_beta_g = match copy.as_mut() {
+            Some(copy) => copy,
+            // `&mut self` excludes every other reference to the `Arc`, and it
+            // was unshared a moment ago, so it still is.
+            None => Arc::get_mut(&mut self.powers_of_beta_g).expect("an unshared snapshot stays unshared under &mut self"),
+        };
+        powers_of_beta_g.reserve(additional_size);
 
-        // Download the powers of two.
-        for num_powers in &download_queue {
+        // Download the powers of two. A chunk that fails leaves the ones before
+        // it appended, so a retry resumes from them rather than fetching them again.
+        let downloaded = download_queue.iter().try_for_each(|&num_powers| -> Result<()> {
             dev_println!("Loading {num_powers} powers");
 
             // Download the universal SRS powers if they're not already on disk.
-            let additional_bytes = match *num_powers {
+            let additional_bytes = match num_powers {
                 NUM_POWERS_16 => Degree16::load_bytes()?,
                 NUM_POWERS_17 => Degree17::load_bytes()?,
                 NUM_POWERS_18 => Degree18::load_bytes()?,
@@ -422,10 +476,16 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
             };
 
             // Deserialize the group elements.
-            let additional_powers = Vec::deserialize_uncompressed_unchecked(&*additional_bytes)?;
+            let additional_powers: Vec<E::G1Affine> = Vec::deserialize_uncompressed_unchecked(&*additional_bytes)?;
             // Extend the powers.
-            self.powers_of_beta_g.extend(&additional_powers);
+            powers_of_beta_g.extend(additional_powers);
+            Ok(())
+        });
+        // The copy is kept whether or not every chunk arrived, for the same reason.
+        if let Some(copy) = copy {
+            self.powers_of_beta_g = Arc::new(copy);
         }
+        downloaded?;
         ensure!(self.powers_of_beta_g.len() == final_power_of_two, "Loaded an incorrect number of powers");
         Ok(())
     }
@@ -503,7 +563,7 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
             final_powers.extend(additional_powers.iter());
         }
         final_powers.extend(self.shifted_powers_of_beta_g.iter());
-        self.shifted_powers_of_beta_g = final_powers;
+        self.shifted_powers_of_beta_g = Arc::new(final_powers);
 
         ensure!(self.shifted_powers_of_beta_g.len() == final_num_powers, "Loaded an incorrect number of shifted powers");
         Ok(())
