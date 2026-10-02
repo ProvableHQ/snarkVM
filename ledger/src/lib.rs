@@ -65,6 +65,8 @@ use snarkvm_ledger_committee::Committee;
 use snarkvm_ledger_narwhal::{BatchCertificate, Subdag, Transmission, TransmissionID};
 use snarkvm_ledger_puzzle::{Puzzle, PuzzleSolutions, Solution, SolutionID};
 use snarkvm_ledger_query::QueryTrait;
+#[cfg(not(feature = "history"))]
+use snarkvm_ledger_store::AUTHORITY_RETENTION_BLOCKS;
 use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore};
 use snarkvm_synthesizer::{
     program::{FinalizeGlobalState, Program},
@@ -244,13 +246,22 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         }
 
         // Spot check the integrity of `NUM_BLOCKS` random blocks upon bootup.
+        // When built with the `history` feature, this spans across the entire ledger.
+        // When the `history` feature is not enabled, we limit ourselves to the last `AUTHORITY_RETENTION_BLOCKS`
+        // blocks since those are guaranteed to have not been pruned.
         const NUM_BLOCKS: usize = 10;
-        // Retrieve the latest height.
         let latest_height = ledger.current_block.read().height();
         debug_assert_eq!(latest_height, ledger.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
+
+        #[cfg(feature = "history")]
+        let earliest_height = 0;
+        #[cfg(not(feature = "history"))]
+        // Subtract one because the inclusive range should contain exactly `AUTHORITY_RETENTION_BLOCKS` blocks.
+        let earliest_height = latest_height.saturating_sub(AUTHORITY_RETENTION_BLOCKS.saturating_sub(1));
+
         // Sample random block heights.
-        let block_heights: Vec<u32> =
-            (0..=latest_height).sample(&mut rand::rng(), (latest_height as usize).min(NUM_BLOCKS));
+        let num_blocks = usize::try_from(latest_height - earliest_height)?.min(NUM_BLOCKS);
+        let block_heights: Vec<u32> = (earliest_height..=latest_height).sample(&mut rand::rng(), num_blocks);
         cfg_into_iter!(block_heights).try_for_each(|height| {
             ledger.get_block(height)?;
             Ok::<_, Error>(())
@@ -298,8 +309,13 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         const NUM_BLOCKS: usize = 10;
         let latest_height = ledger.current_block.read().height();
         debug_assert_eq!(latest_height, ledger.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
-        let block_heights: Vec<u32> =
-            (0..=latest_height).sample(&mut rand::rng(), (latest_height as usize).min(NUM_BLOCKS));
+        // Restrict non-history builds to the retained authority window.
+        #[cfg(feature = "history")]
+        let earliest_height = 0;
+        #[cfg(not(feature = "history"))]
+        let earliest_height = latest_height.saturating_sub(AUTHORITY_RETENTION_BLOCKS.saturating_sub(1));
+        let num_blocks = usize::try_from(latest_height - earliest_height)?.min(NUM_BLOCKS);
+        let block_heights: Vec<u32> = (earliest_height..=latest_height).sample(&mut rand::rng(), num_blocks);
         cfg_into_iter!(block_heights).try_for_each(|height| {
             ledger.get_block(height)?;
             Ok::<_, Error>(())
