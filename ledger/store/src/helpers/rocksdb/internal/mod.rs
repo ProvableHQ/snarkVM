@@ -102,6 +102,9 @@ pub struct RocksDB {
     pub(super) atomic_writes_paused: Arc<AtomicBool>,
     /// This is an optimization that avoids some allocations when querying the database.
     pub(super) default_readopts: rocksdb::ReadOptions,
+    /// Options that own the statistics object opened with the database.
+    #[cfg(feature = "metrics")]
+    options: Arc<rocksdb::Options>,
 }
 
 impl Clone for RocksDB {
@@ -114,6 +117,8 @@ impl Clone for RocksDB {
             atomic_depth: self.atomic_depth.clone(),
             atomic_writes_paused: self.atomic_writes_paused.clone(),
             default_readopts: Default::default(),
+            #[cfg(feature = "metrics")]
+            options: Arc::clone(&self.options),
         }
     }
 }
@@ -172,6 +177,12 @@ impl Database for RocksDB {
                 options.set_max_background_jobs(4);
                 options.create_if_missing(true);
                 options.set_max_open_files(8192);
+                // Ticker statistics, without histograms or timers.
+                #[cfg(feature = "metrics")]
+                {
+                    options.enable_statistics();
+                    options.set_statistics_level(rocksdb::statistics::StatsLevel::ExceptHistogramOrTimers);
+                }
 
                 Arc::new(rocksdb::DB::open(&options, &primary_path)?)
             };
@@ -184,6 +195,8 @@ impl Database for RocksDB {
                 atomic_depth: Default::default(),
                 atomic_writes_paused: Default::default(),
                 default_readopts: Default::default(),
+                #[cfg(feature = "metrics")]
+                options: Arc::new(options),
             };
 
             databases.insert(db_path.clone(), db.clone());
@@ -358,10 +371,25 @@ impl RocksDB {
             snarkvm_metrics::gauge(names::LIVE_SST_FILES_SIZE, v as f64);
         }
 
+        // Cumulative compaction and flush I/O. These reset when the process restarts.
+        snarkvm_metrics::counter(
+            names::COMPACT_READ_BYTES,
+            self.options.get_ticker_count(rocksdb::statistics::Ticker::CompactReadBytes),
+        );
+        snarkvm_metrics::counter(
+            names::COMPACT_WRITE_BYTES,
+            self.options.get_ticker_count(rocksdb::statistics::Ticker::CompactWriteBytes),
+        );
+        snarkvm_metrics::counter(
+            names::FLUSH_WRITE_BYTES,
+            self.options.get_ticker_count(rocksdb::statistics::Ticker::FlushWriteBytes),
+        );
+
+        // `rocksdb.estimate-num-keys` is not published.
+        // It includes overwritten copies, subtracts each deletion twice, and after a restart it is
+        // extrapolated from about 20 sampled files.
+
         // General state
-        if let Some(v) = prop(db, "rocksdb.estimate-num-keys") {
-            snarkvm_metrics::gauge(names::ESTIMATE_NUM_KEYS, v as f64);
-        }
         if let Some(v) = prop(db, "rocksdb.num-snapshots") {
             snarkvm_metrics::gauge(names::NUM_SNAPSHOTS, v as f64);
         }
