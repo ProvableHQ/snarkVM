@@ -21,11 +21,9 @@
 
 use super::*;
 
-#[cfg(feature = "history")]
 use console::program::{Literal, Plaintext};
 
 /// Convenience: extract a single `u64` from a single-output view result.
-#[cfg(feature = "history")]
 fn expect_u64(outputs: &[Value<CurrentNetwork>]) -> u64 {
     assert_eq!(outputs.len(), 1, "expected exactly one output, got {}", outputs.len());
     match &outputs[0] {
@@ -36,7 +34,6 @@ fn expect_u64(outputs: &[Value<CurrentNetwork>]) -> u64 {
 
 /// Full lifecycle: deploy a program with a view function, run a transition that updates a
 /// mapping via finalize, then evaluate the view and observe the new value.
-#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_view_reflects_finalize_state() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -127,7 +124,6 @@ fn test_evaluate_view_reflects_finalize_state() -> Result<()> {
 }
 
 /// Read with multiple outputs returns each in declaration order.
-#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_view_multi_output() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -180,7 +176,6 @@ fn test_evaluate_view_multi_output() -> Result<()> {
 }
 
 /// Read with multiple inputs computes a typed return.
-#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_view_multi_input() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -228,7 +223,6 @@ fn test_evaluate_view_multi_input() -> Result<()> {
 /// the doubling step runs and writes `r2`. Either way the view's declared output
 /// references `r1`, which is always written. This proves the view evaluator handles
 /// `branch.eq` without crashing under both taken and not-taken paths.
-#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_view_with_branch() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -280,7 +274,6 @@ fn test_evaluate_view_with_branch() -> Result<()> {
 }
 
 /// Read with no inputs (views a fixed-key mapping or just returns a constant).
-#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_view_zero_inputs() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -314,7 +307,6 @@ fn test_evaluate_view_zero_inputs() -> Result<()> {
 }
 
 /// Calling evaluate_view with the wrong input arity returns an error.
-#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_view_arity_mismatch() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -367,7 +359,6 @@ fn test_evaluate_view_arity_mismatch() -> Result<()> {
 }
 
 /// Calling a view that does not exist on a deployed program returns a "not defined" error.
-#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_view_unknown_view() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -401,7 +392,6 @@ fn test_evaluate_view_unknown_view() -> Result<()> {
 }
 
 /// Calling evaluate_view against a program that was never deployed returns a "no such program" error.
-#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_view_unknown_program() {
     let rng = &mut TestRng::default();
@@ -666,7 +656,6 @@ fn test_finalize_calls_same_program_view() -> Result<()> {
     add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Confirm the new mapping value via an external read.
-    #[cfg(feature = "history")]
     {
         let outputs = vm.evaluate_view_at_height(
             "vw_call_same.aleo",
@@ -953,7 +942,6 @@ fn test_finalize_multiple_calls_and_interleaved_writes() -> Result<()> {
     add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Confirm both calls observed the expected (old, new) pair via the encoded result.
-    #[cfg(feature = "history")]
     {
         // We expose the encoded value via `lookup` on `before_after` — but `lookup` reads
         // `balances`, not `before_after`. Use a direct historic mapping read instead.
@@ -981,7 +969,6 @@ fn test_finalize_multiple_calls_and_interleaved_writes() -> Result<()> {
     }
 
     // Also confirm the final committed balance is 55 (the intervening set landed).
-    #[cfg(feature = "history")]
     {
         let outputs = vm.evaluate_view_at_height(
             "vw_call_seq.aleo",
@@ -1384,7 +1371,6 @@ fn test_finalize_call_multi_output_multi_type() -> Result<()> {
     add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Verify each destination received the expected typed value.
-    #[cfg(feature = "history")]
     {
         let height = vm.block_store().current_block_height();
         let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
@@ -1530,7 +1516,6 @@ fn test_finalize_call_struct_return_cross_program() -> Result<()> {
     add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Verify totals[caller] = 77 (the extracted .total field of the returned struct).
-    #[cfg(feature = "history")]
     {
         let height = vm.block_store().current_block_height();
         let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
@@ -1707,7 +1692,6 @@ fn test_finalize_call_view_runtime_failure_rejects_tx() -> Result<()> {
     vm.add_next_block(&block)?;
 
     // The `out` mapping must be unchanged — finalize rejection rolls the batch back.
-    #[cfg(feature = "history")]
     {
         let height = vm.block_store().current_block_height();
         let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
@@ -1818,7 +1802,6 @@ fn test_finalize_calls_zero_input_view() -> Result<()> {
     add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Confirm out[caller] = 42 via the historic store.
-    #[cfg(feature = "history")]
     {
         let height = vm.block_store().current_block_height();
         let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
@@ -1916,7 +1899,6 @@ fn test_finalize_call_inside_branch() -> Result<()> {
     let tx = vm.execute(&caller_private_key, ("vw_call_branch.aleo", "caller"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
-    #[cfg(feature = "history")]
     {
         let height = vm.block_store().current_block_height();
         let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
@@ -2054,7 +2036,6 @@ fn test_finalize_cross_program_multiple_calls() -> Result<()> {
         vm.execute(&caller_private_key, ("vw_cross_multi_caller.aleo", "combine"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
-    #[cfg(feature = "history")]
     {
         let height = vm.block_store().current_block_height();
         let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
@@ -2133,7 +2114,6 @@ fn test_finalize_call_zero_output_guard_view() -> Result<()> {
     let tx = vm.execute(&caller_private_key, ("vw_guard.aleo", "caller"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
-    #[cfg(feature = "history")]
     {
         let height = vm.block_store().current_block_height();
         let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
@@ -2228,7 +2208,6 @@ fn test_finalize_call_zero_output_view_with_destinations_rejected() {
 /// Three upgrades change a view body. The mapping value is held constant, so each height must resolve to the
 /// edition live then — the middle case (height_v1 -> edition 1) checks that the scan picks the intermediate
 /// edition, not just the newest or oldest.
-#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_view_uses_historic_program_edition() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -2304,7 +2283,6 @@ fn test_evaluate_view_uses_historic_program_edition() -> Result<()> {
 }
 
 /// Querying a view at a height before the program was deployed returns an error.
-#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_view_before_deployment_height_errors() -> Result<()> {
     let rng = &mut TestRng::default();
