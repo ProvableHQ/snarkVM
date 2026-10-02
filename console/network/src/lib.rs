@@ -152,12 +152,12 @@ pub trait Network:
     /// The cost in microcredits per constraint for the deployment transaction.
     const SYNTHESIS_FEE_MULTIPLIER: u64 = 25; // 25 microcredits per constraint
     /// The maximum number of variables in a deployment. This limit was enforced at the transaction level up to
-    /// consensus version V16 (inclusive), skipped at V18 in favor of a block-wide synthesis limit, and
+    /// consensus version V17 (inclusive), skipped at V18 in favor of a block-wide synthesis limit, and
     /// replaced by `MAX_DEPLOYMENT_VARIABLES_V2` from V19. This corresponds to ~0.5 second single-threaded
     /// runtime at mainnet launch reference validator hardware.
     const MAX_DEPLOYMENT_VARIABLES: u64 = 1 << 21; // 2,097,152 variables
     /// The maximum number of constraints in a deployment. This limit was enforced at the transaction level up to
-    /// consensus version V16 (inclusive), skipped at V18 in favor of a block-wide synthesis limit, and
+    /// consensus version V17 (inclusive), skipped at V18 in favor of a block-wide synthesis limit, and
     /// replaced by `MAX_DEPLOYMENT_CONSTRAINTS_V2` from V19. This corresponds to ~0.5 second single-threaded
     /// runtime at mainnet launch reference validator hardware.
     const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 21; // 2,097,152 constraints
