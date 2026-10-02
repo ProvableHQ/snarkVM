@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{MapKey, SstFile, map_prefix};
+use crate::{MapKey, OpCounts, SstFile, map_prefix, unflushed_ops};
 
 use anyhow::{Context, Result};
 use std::collections::BTreeMap;
@@ -28,6 +28,57 @@ impl From<rocksdb::LiveFile> for SstFile {
             num_entries: file.num_entries,
             num_deletions: file.num_deletions,
             size,
+        }
+    }
+}
+
+/// Counts puts and deletes still in the memtable, by map prefix.
+///
+/// The counts come from the retained write-ahead log. `entries` and `deletions` select the newest
+/// log suffix that matches the memtable properties, so flushed batches still sitting in the log
+/// are left out.
+pub fn count_memtable_ops(db: &rocksdb::DB, entries: u64, deletions: u64) -> Result<BTreeMap<MapKey, OpCounts>> {
+    if entries == 0 && deletions == 0 {
+        return Ok(BTreeMap::new());
+    }
+
+    let mut batches = Vec::new();
+    let mut iter = db.get_updates_since(0).context("Failed to read the write-ahead log")?;
+    for batch in iter.by_ref() {
+        let (_sequence, batch) = batch.context("Failed to read a write-ahead log batch")?;
+        let mut counts = OpCounter::default();
+        batch.iterate(&mut counts);
+        batches.push(counts.maps);
+    }
+    iter.status().context("Failed to read the write-ahead log")?;
+    Ok(unflushed_ops(&batches, entries, deletions))
+}
+
+#[derive(Default)]
+struct OpCounter {
+    maps: BTreeMap<MapKey, OpCounts>,
+}
+
+impl rocksdb::WriteBatchIterator for OpCounter {
+    fn put(&mut self, key: &[u8], _value: &[u8]) {
+        self.record(key, false);
+    }
+
+    fn delete(&mut self, key: &[u8]) {
+        self.record(key, true);
+    }
+}
+
+impl OpCounter {
+    fn record(&mut self, key: &[u8], deletion: bool) {
+        let map_key = match map_prefix(key) {
+            Some((network_id, map_id)) => MapKey::Map { network_id, map_id },
+            None => MapKey::Unattributed,
+        };
+        let counts = self.maps.entry(map_key).or_default();
+        counts.entries += 1;
+        if deletion {
+            counts.deletions += 1;
         }
     }
 }
@@ -137,5 +188,37 @@ mod tests {
 
     fn property_or_zero(db: &rocksdb::DB, name: &str) -> Result<u64> {
         Ok(db.property_int_value(name)?.unwrap_or(0))
+    }
+
+    #[test]
+    fn wal_replay_attributes_unflushed_memtable_ops() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let mut options = rocksdb::Options::default();
+        options.create_if_missing(true);
+        options.set_stats_dump_period_sec(0);
+        let header = BlockMap::Header as u16;
+        let program = ProgramMap::KeyValueID as u16;
+        let db = rocksdb::DB::open(&options, dir.path())?;
+
+        db.put(prefixed(0, header, 1), b"flushed")?;
+        db.flush()?;
+        db.put(prefixed(0, program, 1), b"live")?;
+        db.put(prefixed(0, program, 2), b"live")?;
+        db.delete(prefixed(0, program, 1))?;
+
+        let entries = property_or_zero(&db, "rocksdb.num-entries-active-mem-table")?
+            + property_or_zero(&db, "rocksdb.num-entries-imm-mem-tables")?;
+        let deletions = property_or_zero(&db, "rocksdb.num-deletes-active-mem-table")?
+            + property_or_zero(&db, "rocksdb.num-deletes-imm-mem-tables")?;
+        assert_eq!(entries, 3);
+        assert_eq!(deletions, 1);
+
+        let counts = count_memtable_ops(&db, entries, deletions)?;
+        assert!(!counts.contains_key(&MapKey::Map { network_id: 0, map_id: header }));
+        let program_counts = counts[&MapKey::Map { network_id: 0, map_id: program }];
+        assert_eq!(program_counts.entries, 3);
+        assert_eq!(program_counts.deletions, 1);
+        assert_eq!(program_counts.estimated_active_keys(), 1);
+        Ok(())
     }
 }

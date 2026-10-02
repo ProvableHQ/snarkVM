@@ -13,7 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Attribution, MapKey, MapStats, estimate_num_keys, map_label, sst_estimated_active_keys};
+use crate::{Attribution, MapKey, OpCounts, estimate_num_keys, map_label, sst_estimated_active_keys};
+
+use std::collections::BTreeMap;
 
 /// Paths and network id of the instance that was read.
 pub struct ReportHeader {
@@ -34,28 +36,26 @@ pub struct Gauge {
     pub live_sst_files_size: Option<u64>,
 }
 
-/// Renders the gauge and the per-map SST attribution.
-pub fn render(header: &ReportHeader, gauge: &Gauge, attribution: &Attribution) -> String {
+/// Renders the gauge and the per-map composition of its SST and memtable inputs.
+pub fn render(
+    header: &ReportHeader,
+    gauge: &Gauge,
+    attribution: &Attribution,
+    memtable: &BTreeMap<MapKey, OpCounts>,
+) -> String {
     let totals = attribution.totals();
     let mem_entries = gauge.active_mem_entries.saturating_add(gauge.imm_mem_entries);
     let mem_deletions = gauge.active_mem_deletions.saturating_add(gauge.imm_mem_deletions);
     let sst_active = sst_estimated_active_keys(totals.entries, totals.deletions);
     let recomputed = estimate_num_keys(sst_active, mem_entries, mem_deletions);
-    let show_network = network_count(attribution) > 1;
+    let composition = compose(attribution, memtable);
+    let show_network = network_count(&composition) > 1;
+    let share_base: i128 = composition.values().map(|counts| counts.estimated_active_keys()).sum();
 
     let mut out = String::new();
     push(&mut out, &format!("primary:   {}", header.primary_path));
     push(&mut out, &format!("secondary: {}", header.secondary_path));
     push(&mut out, &format!("network:   {}", header.network_id));
-    push(&mut out, "");
-    push(
-        &mut out,
-        "rocksdb.estimate-num-keys is one integer for the default column family. snarkVM stores every ledger map in that column family; the map is the second little-endian u16 in the key. RocksDB has no property that splits the gauge by key prefix.",
-    );
-    push(
-        &mut out,
-        "Each SST file below is charged to the map that contains its smallest and largest key. A file whose endpoints sit in different maps is split in proportion to the live keys in that range. The entries and deletions are the SST inputs of the gauge: estimated active keys = entries - 2 * deletions, then clamped to zero for the whole database.",
-    );
     push(&mut out, "");
     push(&mut out, &format!("rocksdb.estimate-num-keys: {}", format_option(gauge.estimate_num_keys)));
     push(&mut out, &format!("recomputed from live SST files and memtables: {}", grouped(recomputed)));
@@ -65,13 +65,7 @@ pub fn render(header: &ReportHeader, gauge: &Gauge, attribution: &Attribution) -
         }
         Some(property) => {
             let delta = i128::from(property) - i128::from(recomputed);
-            push(
-                &mut out,
-                &format!(
-                    "recomputed value differs from the property by {}. RocksDB scales the SST term when some files have no table statistics, and live file metadata can include SSTs outside the current LSM version.",
-                    grouped_i128(delta)
-                ),
-            );
+            push(&mut out, &format!("recomputed value differs from the property by {}.", grouped_i128(delta)));
         }
         None => push(&mut out, "rocksdb.estimate-num-keys was not reported."),
     }
@@ -96,7 +90,6 @@ pub fn render(header: &ReportHeader, gauge: &Gauge, attribution: &Attribution) -
             grouped(gauge.imm_mem_deletions)
         ),
     );
-    push(&mut out, "  memtable keys are part of the gauge and are not included in the per-map table.");
     push(&mut out, &format!("  snapshots: {}", grouped(gauge.num_snapshots)));
     push(&mut out, &format!("  live versions: {}", grouped(gauge.num_live_versions)));
     push(&mut out, &format!("  live SST bytes in file metadata: {}", grouped(totals.bytes)));
@@ -106,18 +99,27 @@ pub fn render(header: &ReportHeader, gauge: &Gauge, attribution: &Attribution) -
     }
     push(&mut out, "");
     push(&mut out, "Category rollup");
-    push_table(&mut out, &category_rows(attribution, show_network, sst_active));
+    push_counts(&mut out, &category_rows(&composition, show_network), share_base);
     push(&mut out, "");
-    push(&mut out, "Per-map SST contribution");
-    push_table(&mut out, &map_rows(attribution, show_network, sst_active));
-    push(&mut out, "");
-    push(&mut out, "A stock RocksDB metric cannot replace this table. See ledger/rocksdb-analyser/README.md.");
+    push(&mut out, "Per-map contribution");
+    push_counts(&mut out, &map_rows(&composition, show_network), share_base);
     out
 }
 
-fn network_count(attribution: &Attribution) -> usize {
+fn compose(attribution: &Attribution, memtable: &BTreeMap<MapKey, OpCounts>) -> BTreeMap<MapKey, OpCounts> {
+    let mut composition: BTreeMap<MapKey, OpCounts> = BTreeMap::new();
+    for (key, stats) in &attribution.maps {
+        composition.entry(*key).or_default().add(OpCounts { entries: stats.entries, deletions: stats.deletions });
+    }
+    for (key, counts) in memtable {
+        composition.entry(*key).or_default().add(*counts);
+    }
+    composition
+}
+
+fn network_count(composition: &BTreeMap<MapKey, OpCounts>) -> usize {
     let mut networks = Vec::new();
-    for key in attribution.maps.keys() {
+    for key in composition.keys() {
         if let MapKey::Map { network_id, .. } = key
             && !networks.contains(network_id)
         {
@@ -127,55 +129,49 @@ fn network_count(attribution: &Attribution) -> usize {
     networks.len()
 }
 
-fn category_rows(attribution: &Attribution, show_network: bool, sst_active: u64) -> Vec<Vec<String>> {
-    let mut grouped_stats: Vec<(String, MapStats)> = Vec::new();
-    for (key, stats) in &attribution.maps {
+fn category_rows(composition: &BTreeMap<MapKey, OpCounts>, show_network: bool) -> Vec<(String, OpCounts)> {
+    let mut grouped_counts: Vec<(String, OpCounts)> = Vec::new();
+    for (key, counts) in composition {
         let label = category_label(*key, show_network);
-        if let Some((_, existing)) = grouped_stats.iter_mut().find(|(name, _)| *name == label) {
-            existing.files += stats.files;
-            existing.split_files += stats.split_files;
-            existing.entries += stats.entries;
-            existing.deletions += stats.deletions;
-            existing.bytes += stats.bytes;
+        if let Some((_, existing)) = grouped_counts.iter_mut().find(|(name, _)| *name == label) {
+            existing.add(*counts);
         } else {
-            grouped_stats.push((label, *stats));
+            grouped_counts.push((label, *counts));
         }
     }
-    rows(grouped_stats, sst_active)
+    grouped_counts
 }
 
-fn map_rows(attribution: &Attribution, show_network: bool, sst_active: u64) -> Vec<Vec<String>> {
-    let labeled = attribution.maps.iter().map(|(key, stats)| (row_label(*key, show_network), *stats)).collect();
-    rows(labeled, sst_active)
+fn map_rows(composition: &BTreeMap<MapKey, OpCounts>, show_network: bool) -> Vec<(String, OpCounts)> {
+    composition.iter().map(|(key, counts)| (row_label(*key, show_network), *counts)).collect()
 }
 
-fn rows(mut labeled: Vec<(String, MapStats)>, sst_active: u64) -> Vec<Vec<String>> {
+fn push_counts(out: &mut String, labeled: &[(String, OpCounts)], share_base: i128) {
+    if labeled.is_empty() {
+        push(out, "none");
+        return;
+    }
+    let mut labeled = labeled.to_vec();
     labeled.sort_by(|left, right| {
         right.1.estimated_active_keys().cmp(&left.1.estimated_active_keys()).then(left.0.cmp(&right.0))
     });
     let mut table = vec![vec![
-        "map".to_string(),
-        "files".to_string(),
-        "split".to_string(),
+        "name".to_string(),
         "entries".to_string(),
         "deletions".to_string(),
-        "bytes".to_string(),
         "est. keys".to_string(),
         "share".to_string(),
     ]];
-    for (label, stats) in labeled {
+    for (label, counts) in labeled {
         table.push(vec![
             label,
-            grouped(stats.files),
-            grouped(stats.split_files),
-            grouped(stats.entries),
-            grouped(stats.deletions),
-            grouped(stats.bytes),
-            grouped_i128(stats.estimated_active_keys()),
-            share(stats.estimated_active_keys(), sst_active),
+            grouped(counts.entries),
+            grouped(counts.deletions),
+            grouped_i128(counts.estimated_active_keys()),
+            share(counts.estimated_active_keys(), share_base),
         ]);
     }
-    table
+    push_table(out, &table);
 }
 
 fn category_label(key: MapKey, show_network: bool) -> String {
@@ -229,11 +225,11 @@ fn push_table(out: &mut String, rows: &[Vec<String>]) {
     }
 }
 
-fn share(estimated: i128, sst_active: u64) -> String {
-    if sst_active == 0 {
+fn share(estimated: i128, total: i128) -> String {
+    if total == 0 {
         return "n/a".to_string();
     }
-    let tenths = estimated * 1000 / i128::from(sst_active);
+    let tenths = estimated * 1000 / total;
     let sign = if tenths < 0 { "-" } else { "" };
     let tenths = tenths.abs();
     format!("{sign}{}.{}%", tenths / 10, tenths % 10)
@@ -306,10 +302,14 @@ mod tests {
                 live_sst_files_size: Some(100),
             },
             &attribution,
+            &BTreeMap::new(),
         );
         assert!(text.contains("Block::Header"), "{text}");
+        assert!(text.contains("Block"), "{text}");
         assert!(text.contains("recomputed value matches the property."), "{text}");
         assert!(text.contains("100.0%"), "{text}");
+        assert!(!text.contains("no property that splits"), "{text}");
+        assert!(!text.contains("stock RocksDB"), "{text}");
     }
 
     #[test]

@@ -18,7 +18,16 @@
 
 #![forbid(unsafe_code)]
 
-use snarkvm_rocksdb_analyser::{Gauge, ReportHeader, SstFile, attribute_ssts, count_live_keys, render, spans_maps};
+use snarkvm_rocksdb_analyser::{
+    Gauge,
+    ReportHeader,
+    SstFile,
+    attribute_ssts,
+    count_live_keys,
+    count_memtable_ops,
+    render,
+    spans_maps,
+};
 
 use aleo_std_storage::StorageMode;
 use anyhow::{Context, Result};
@@ -83,6 +92,14 @@ fn main() -> Result<()> {
         count_live_keys(rocks(&db), start, end)
     })?;
 
+    let mem_entries = gauge.active_mem_entries.saturating_add(gauge.imm_mem_entries);
+    let mem_deletions = gauge.active_mem_deletions.saturating_add(gauge.imm_mem_deletions);
+    if mem_entries > 0 || mem_deletions > 0 {
+        eprintln!("Replaying the write-ahead log for {mem_entries} memtable entries");
+    }
+    let memtable =
+        count_memtable_ops(rocks(&db), mem_entries, mem_deletions).context("Failed to attribute memtable entries")?;
+
     let text = render(
         &ReportHeader {
             primary_path: args.primary_path.display().to_string(),
@@ -91,6 +108,7 @@ fn main() -> Result<()> {
         },
         &gauge,
         &attribution,
+        &memtable,
     );
     print!("{text}");
     Ok(())

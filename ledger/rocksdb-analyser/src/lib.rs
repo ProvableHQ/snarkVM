@@ -22,15 +22,17 @@ mod stats;
 
 pub use names::map_label;
 pub use report::{Gauge, ReportHeader, render};
-pub use scan::count_live_keys;
+pub use scan::{count_live_keys, count_memtable_ops};
 pub use stats::{
     Attribution,
     MapKey,
     MapStats,
+    OpCounts,
     SstFile,
     attribute_ssts,
     estimate_num_keys,
     map_prefix,
     spans_maps,
     sst_estimated_active_keys,
+    unflushed_ops,
 };

@@ -45,6 +45,65 @@ impl MapStats {
     }
 }
 
+/// Puts and deletes that feed `rocksdb.estimate-num-keys`.
+///
+/// A delete is one entry and one deletion. The gauge subtracts each deletion twice.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct OpCounts {
+    pub entries: u64,
+    pub deletions: u64,
+}
+
+impl OpCounts {
+    /// `entries - 2 * deletions`. The value is negative when deletions are more than half the entries.
+    pub fn estimated_active_keys(self) -> i128 {
+        i128::from(self.entries) - 2 * i128::from(self.deletions)
+    }
+
+    pub(crate) fn add(&mut self, other: Self) {
+        self.entries += other.entries;
+        self.deletions += other.deletions;
+    }
+}
+
+/// Drops already-flushed write-ahead batches.
+///
+/// A retained log can still contain batches that are already in SST files. The returned suffix is
+/// the newest range whose entry and deletion totals equal the memtable counters. The full log is
+/// returned when no such suffix exists.
+pub fn unflushed_ops(
+    batches: &[BTreeMap<MapKey, OpCounts>],
+    entries: u64,
+    deletions: u64,
+) -> BTreeMap<MapKey, OpCounts> {
+    let mut prefix_entries = Vec::with_capacity(batches.len() + 1);
+    let mut prefix_deletions = Vec::with_capacity(batches.len() + 1);
+    prefix_entries.push(0);
+    prefix_deletions.push(0);
+    for batch in batches {
+        let batch_entries = batch.values().map(|counts| counts.entries).sum::<u64>();
+        let batch_deletions = batch.values().map(|counts| counts.deletions).sum::<u64>();
+        prefix_entries.push(prefix_entries.last().copied().unwrap_or(0) + batch_entries);
+        prefix_deletions.push(prefix_deletions.last().copied().unwrap_or(0) + batch_deletions);
+    }
+
+    let total_entries = prefix_entries.last().copied().unwrap_or(0);
+    let total_deletions = prefix_deletions.last().copied().unwrap_or(0);
+    let start = (0..=batches.len())
+        .find(|&index| {
+            total_entries - prefix_entries[index] == entries && total_deletions - prefix_deletions[index] == deletions
+        })
+        .unwrap_or(0);
+
+    let mut merged: BTreeMap<MapKey, OpCounts> = BTreeMap::new();
+    for batch in &batches[start..] {
+        for (key, counts) in batch {
+            merged.entry(*key).or_default().add(*counts);
+        }
+    }
+    merged
+}
+
 /// One live SST file, reduced to the fields that feed the key estimate.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SstFile {
@@ -316,6 +375,17 @@ mod tests {
         let files = vec![file(&start, &end, 7, 0, 70)];
         let attribution = attribute_ssts(&files, false, |_| -> Result<_, ()> { panic!("scan") }).expect("no scan");
         assert_eq!(attribution.maps[&MapKey::SpanningNotScanned].entries, 7);
+    }
+
+    #[test]
+    fn unflushed_suffix_drops_batches_already_in_sst_files() {
+        let older = MapKey::Map { network_id: 0, map_id: 1 };
+        let newer = MapKey::Map { network_id: 0, map_id: 2 };
+        let flushed = BTreeMap::from([(older, OpCounts { entries: 4, deletions: 1 })]);
+        let live = BTreeMap::from([(newer, OpCounts { entries: 3, deletions: 1 })]);
+        let kept = unflushed_ops(&[flushed, live], 3, 1);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[&newer], OpCounts { entries: 3, deletions: 1 });
     }
 
     #[test]

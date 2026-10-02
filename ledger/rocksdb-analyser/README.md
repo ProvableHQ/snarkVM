@@ -43,14 +43,14 @@ These native values are real and still describe the whole column family:
 
 A custom `TablePropertiesCollector` could record per-prefix counts while an SST is flushed or compacted. That collector is not part of RocksDB's built-in property set, the ledger does not install one, and it would describe only files written after it was added. Giving each map its own column family would make `estimate-num-keys` per map, because the property is per column family. The on-disk ledger is one column family.
 
-Reading live-file metadata, and scanning only the SST files whose key range crosses a map prefix, is how an existing ledger can be broken down. This binary is that utility.
+Reading live-file metadata, scanning only the SST files whose key range crosses a map prefix, and replaying the unflushed write-ahead log is how an existing ledger can be broken down. This binary is that utility. RocksDB does not publish a per-prefix memtable counter.
 
 ## How to read the table
 
-`est. keys` for a map is `entries - 2 * deletions` for the SST bytes attributed to it. The sum of those signed values is the SST term of the gauge when every live file has table statistics and `live_files` matches the current LSM version. The recomputed line at the top applies the memtable adjustment as well and compares it with the property.
+`est. keys` for a map is `entries - 2 * deletions` over the SST counters and the memtable operations attributed to it. A delete counts as one entry and one deletion, so it reduces the estimate by two. The sum of those signed values is the gauge when every live SST file has table statistics, `live_files` matches the current LSM version, and the memtable suffix matches `rocksdb.num-entries-*-mem-table`.
 
-Memtable keys are inside the gauge. They are not in the per-map table; a secondary instance does not expose a per-prefix memtable property.
+Memtable operations come from the retained write-ahead log. RocksDB has no property that splits memtable entries by key prefix. A log file can still hold batches that were already flushed; the tool keeps the newest suffix whose entry and deletion totals equal the memtable properties.
 
-A spanning file is split by the number of live user keys in its range. `num_entries` also counts obsolete versions and deletion tombstones, which the iterator collapses, so that split is an apportionment of the file's physical counters. A file that sits entirely inside one map is charged exactly.
+A spanning SST file is split by the number of live user keys in its range. `num_entries` also counts obsolete versions and deletion tombstones, which the iterator collapses, so that split is an apportionment of the file's physical counters. A file that sits entirely inside one map is charged exactly.
 
-`share` is that map's `est. keys` divided by the database-wide SST term.
+`share` is that row's `est. keys` divided by the sum of `est. keys` across maps.
