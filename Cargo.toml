@@ -461,6 +461,9 @@ version = "1.0.0"
 [workspace.dependencies.criterion]
 version = "0.7"
 
+[workspace.dependencies.gungraun]
+version = "0.20"
+
 [workspace.dependencies.colored]
 version = "3"
 
