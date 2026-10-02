@@ -181,6 +181,7 @@ dev_skip_checks = [
   "snarkvm-synthesizer/dev_skip_checks"
 ]
 dev-committee = [ "snarkvm-ledger/dev-committee" ]
+dev_genesis_state_root = [ "snarkvm-ledger/dev_genesis_state_root" ]
 save_r1cs_hashes = [ "snarkvm-circuit/save_r1cs_hashes" ]
 test_exports = [ "snarkvm-algorithms/test_exports" ]
 test_targets = [ "snarkvm-console/test_targets" ]

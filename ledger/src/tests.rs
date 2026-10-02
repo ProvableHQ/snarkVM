@@ -130,6 +130,36 @@ fn test_load_unchecked() {
     assert_eq!(ledger.latest_block(), genesis);
 }
 
+/// Loads a ledger whose genesis state root is `Field::one()`.
+#[cfg(feature = "dev_genesis_state_root")]
+#[test]
+fn test_load_dev_genesis_state_root() {
+    let rng = &mut TestRng::default();
+
+    // Sample the genesis private key.
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    // Initialize the store.
+    let store = ConsensusStore::<_, LedgerType>::open(StorageMode::new_test(None)).unwrap();
+    // Create a genesis block.
+    let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, rng).unwrap();
+
+    // Initialize the ledger with the genesis block.
+    let storage_mode = StorageMode::new_test(None);
+    let ledger = CurrentLedger::load(genesis.clone(), storage_mode.clone()).unwrap();
+    assert_eq!(ledger.latest_height(), 0);
+    assert_eq!(ledger.latest_block(), genesis);
+    assert_eq!(ledger.get_state_root(0).unwrap().unwrap(), console::types::Field::<CurrentNetwork>::one().into());
+    // Block 1 speculation treats genesis as inserted when this lookup finds a height.
+    assert_eq!(ledger.find_block_height_from_state_root(ledger.latest_state_root()).unwrap(), Some(0));
+    drop(ledger);
+
+    // Load the same storage mode again while the chain is still at height 0.
+    let ledger = CurrentLedger::load(genesis.clone(), storage_mode).unwrap();
+    assert_eq!(ledger.latest_height(), 0);
+    assert_eq!(ledger.latest_block(), genesis);
+    assert_eq!(ledger.get_state_root(0).unwrap().unwrap(), console::types::Field::<CurrentNetwork>::one().into());
+}
+
 #[test]
 fn test_get_block() {
     let rng = &mut TestRng::default();
