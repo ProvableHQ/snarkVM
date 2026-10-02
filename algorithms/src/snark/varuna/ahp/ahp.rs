@@ -207,7 +207,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let verifier::ThirdMessage { beta } = state.third_round_message.unwrap();
 
         // Choose challenges based on the proof system version.
-        let (alpha, third_round_batch_combiners, eta_b, eta_c) = select_third_round_challenges(
+        let (alpha, third_round_batch_combiners, eta_a, eta_b, eta_c) = select_third_round_challenges(
             state.first_round_message.as_ref().unwrap(),
             state.second_round_message.as_ref().unwrap(),
             state.prepare_third_round_message.as_ref(),
@@ -215,8 +215,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         )
         .map_err(AHPError::AnyhowError)?;
 
-        let batch_lineval_sum =
-            prover_third_message.sum(&third_round_batch_combiners, eta_b, eta_c) * state.max_variable_domain.size_inv;
+        let batch_lineval_sum = prover_third_message.sum(&third_round_batch_combiners, eta_a, eta_b, eta_c)
+            * state.max_variable_domain.size_inv;
         let verifier::FourthMessage { delta_a, delta_b, delta_c } = state.fourth_round_message.as_ref().unwrap();
         let sums_fourth_msg = &prover_fourth_message.sums;
         let gamma = state.gamma.unwrap();
@@ -328,8 +328,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     let sum_b_fourth = fourth_sums_i.sum_b * circuit_state.non_zero_b_domain.size_as_field_element;
                     let sum_c_fourth = fourth_sums_i.sum_c * circuit_state.non_zero_c_domain.size_as_field_element;
 
-                    lineval.add(sum_a_fourth * x_at_betas[id][j], LCTerm::One);
-                    lineval.add(sum_a_fourth * v_X_at_beta[id], w_j.clone());
+                    lineval.add(sum_a_fourth * eta_a * x_at_betas[id][j], LCTerm::One);
+                    lineval.add(sum_a_fourth * eta_a * v_X_at_beta[id], w_j.clone());
 
                     lineval.add(sum_b_fourth * eta_b * x_at_betas[id][j], LCTerm::One);
                     lineval.add(sum_b_fourth * eta_b * v_X_at_beta[id], w_j.clone());

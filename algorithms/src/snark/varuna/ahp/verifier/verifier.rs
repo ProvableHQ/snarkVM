@@ -164,7 +164,7 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
                 let [alpha, eta_b, eta_c]: [_; 3] = first.try_into().map_err(anyhow::Error::msg)?;
                 (alpha, Some(eta_b), Some(eta_c))
             }
-            VarunaVersion::V2 => {
+            VarunaVersion::V2 | VarunaVersion::V3 => {
                 let elems = fs_rng.squeeze_nonnative_field_elements(1);
                 let alpha = elems[0];
                 (alpha, None, None)
@@ -187,16 +187,28 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
         batch_sizes: &BTreeMap<CircuitId, usize>,
         circuit_infos: &BTreeMap<CircuitId, &CircuitInfo>,
         fs_rng: &mut R,
+        varuna_version: VarunaVersion,
     ) -> Result<(PrepareThirdMessage<TargetField>, State<TargetField, SM>)> {
         // Sample the batch combiners for the third round.
         let third_round_batch_combiners = Self::sample_batch_combiners(batch_sizes, circuit_infos, fs_rng)?;
 
-        // Sample eta_b and eta_c.
-        let elems = fs_rng.squeeze_nonnative_field_elements(2);
-        let (first, _) = elems.split_at(2);
-        let [eta_b, eta_c]: [_; 2] = first.try_into().map_err(anyhow::Error::msg)?;
+        // The matrix-sum claims and mask commitment precede these challenges in the
+        // transcript.
+        let (eta_a, eta_b, eta_c) = match varuna_version {
+            VarunaVersion::V1 => anyhow::bail!("V1 has no preparation round"),
+            VarunaVersion::V2 => {
+                let elems = fs_rng.squeeze_nonnative_field_elements(2);
+                let [eta_b, eta_c]: [_; 2] = elems.as_slice().try_into().map_err(anyhow::Error::msg)?;
+                (TargetField::one(), eta_b, eta_c)
+            }
+            VarunaVersion::V3 => {
+                let elems = fs_rng.squeeze_nonnative_field_elements(3);
+                let [eta_a, eta_b, eta_c]: [_; 3] = elems.as_slice().try_into().map_err(anyhow::Error::msg)?;
+                (eta_a, eta_b, eta_c)
+            }
+        };
 
-        let message = PrepareThirdMessage { third_round_batch_combiners, eta_b, eta_c };
+        let message = PrepareThirdMessage { third_round_batch_combiners, eta_a, eta_b, eta_c };
         state.prepare_third_round_message = Some(message.clone());
 
         Ok((message, state))

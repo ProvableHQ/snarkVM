@@ -81,7 +81,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let max_variable_domain = state.max_variable_domain;
 
         // Choose challenges based on the proof system version.
-        let (alpha, third_round_batch_combiners, eta_b, eta_c) = select_third_round_challenges(
+        let (alpha, third_round_batch_combiners, eta_a, eta_b, eta_c) = select_third_round_challenges(
             verifier_first_message,
             verifier_second_message,
             verifier_prepare_third_message.as_ref(),
@@ -98,6 +98,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             assignments,
             matrix_transposes,
             &alpha,
+            &eta_a,
             &eta_b,
             &eta_c,
             varuna_version,
@@ -109,14 +110,14 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             sumcheck_lhs += &x_g_1_sum;
             debug_assert!(
                 sumcheck_lhs.evaluate_over_domain_by_ref(max_variable_domain).evaluations.into_iter().sum::<F>()
-                    == msg.sum(&third_round_batch_combiners, eta_b, eta_c)
+                    == msg.sum(&third_round_batch_combiners, eta_a, eta_b, eta_c)
             );
         }
 
         // Send the assigned matrix sums to the verifier only in VarunaVersion::V1.
         let msg = match varuna_version {
             VarunaVersion::V1 => Some(msg),
-            VarunaVersion::V2 => None,
+            VarunaVersion::V2 | VarunaVersion::V3 => None,
         };
 
         let g_1 = DensePolynomial::from_coefficients_slice(&x_g_1_sum.coeffs[1..]);
@@ -144,6 +145,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         assignments: BTreeMap<CircuitId, Vec<DensePolynomial<F>>>,
         matrix_transposes: BTreeMap<CircuitId, BTreeMap<String, Matrix<F>>>,
         alpha: &F,
+        eta_a: &F,
         eta_b: &F,
         eta_c: &F,
         varuna_version: VarunaVersion,
@@ -152,7 +154,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let total_instances = num_instances.iter().sum::<usize>();
         let max_variable_domain = &state.max_variable_domain;
         let matrix_labels = ["a", "b", "c"];
-        let matrix_combiners = [F::one(), *eta_b, *eta_c];
+        let matrix_combiners = [*eta_a, *eta_b, *eta_c];
 
         // Compute lineval sumcheck witnesses
         let mut job_pool = ExecutionPool::with_capacity(total_instances * 3);
@@ -229,13 +231,15 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                                 Some(z_m_at_alpha),
                             )
                         }
-                        VarunaVersion::V2 => Self::calculate_lineval_sumcheck_instance_witness_polys(
-                            label,
-                            variable_domain,
-                            max_variable_domain,
-                            combiner,
-                            z_m_at_alpha,
-                        ),
+                        VarunaVersion::V2 | VarunaVersion::V3 => {
+                            Self::calculate_lineval_sumcheck_instance_witness_polys(
+                                label,
+                                variable_domain,
+                                max_variable_domain,
+                                combiner,
+                                z_m_at_alpha,
+                            )
+                        }
                     });
                 }
             }

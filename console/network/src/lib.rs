@@ -246,7 +246,7 @@ pub trait Network:
         (ConsensusVersion::V16, 2_048_000), // 2048 kB
     ];
     /// A list of consensus versions and their corresponding maximum number of mappings in a program.
-    const MAX_MAPPINGS: [(ConsensusVersion, usize); 2] = [(ConsensusVersion::V1, 31), (ConsensusVersion::V21, 128)];
+    const MAX_MAPPINGS: [(ConsensusVersion, usize); 2] = [(ConsensusVersion::V1, 31), (ConsensusVersion::V22, 128)];
     /// The maximum number of functions in a program.
     const MAX_FUNCTIONS: usize = 31;
     /// The maximum number of structs in a program.

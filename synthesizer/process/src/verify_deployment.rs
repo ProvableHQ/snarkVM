@@ -164,22 +164,22 @@ mod tests {
 
         let program_with_31_mappings = program_with_mappings(31)?;
         let deployment_with_31_mappings = process.deploy::<CurrentAleo, _>(&program_with_31_mappings, rng)?;
-        process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V20, &deployment_with_31_mappings, rng)?;
+        process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V21, &deployment_with_31_mappings, rng)?;
 
         let program_with_32_mappings = program_with_mappings(32)?;
         let deployment_with_32_mappings = process.deploy::<CurrentAleo, _>(&program_with_32_mappings, rng)?;
         assert!(
             process
-                .verify_deployment::<CurrentAleo, _>(ConsensusVersion::V20, &deployment_with_32_mappings, rng)
+                .verify_deployment::<CurrentAleo, _>(ConsensusVersion::V21, &deployment_with_32_mappings, rng)
                 .unwrap_err()
                 .to_string()
-                .contains("exceeds the maximum number of mappings (31) for V20")
+                .contains("exceeds the maximum number of mappings (31) for V21")
         );
-        process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V21, &deployment_with_32_mappings, rng)?;
+        process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V22, &deployment_with_32_mappings, rng)?;
 
         let program_with_128_mappings = program_with_mappings(128)?;
         let deployment_with_128_mappings = process.deploy::<CurrentAleo, _>(&program_with_128_mappings, rng)?;
-        process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V21, &deployment_with_128_mappings, rng)?;
+        process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V22, &deployment_with_128_mappings, rng)?;
 
         Ok(())
     }

@@ -175,7 +175,7 @@ impl Network for TestnetV0 {
         (ConsensusVersion::V5, 100),
         (ConsensusVersion::V6, 100),
         (ConsensusVersion::V9, 100),
-        (ConsensusVersion::V20, 40),
+        (ConsensusVersion::V22, 40),
     ];
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
     #[cfg(any(test, feature = "test"))]
