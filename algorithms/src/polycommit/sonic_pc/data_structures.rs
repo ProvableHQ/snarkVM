@@ -329,6 +329,15 @@ impl<E: PairingEngine> ToBytes for CommitterKey<E> {
             }
         }
 
+        // Serialize `hash`
+        self.points_hash()?.write_le(&mut writer)
+    }
+}
+
+impl<E: PairingEngine> CommitterKey<E> {
+    /// The hash a key's bytes end with. It covers every point except the
+    /// Lagrange bases.
+    fn points_hash(&self) -> io::Result<[u8; 32]> {
         // Construct the hash of the group elements.
         let mut hash_input = self.powers_of_beta_g.to_bytes_le().map_err(|_| error("Could not serialize powers"))?;
         self.powers_of_beta_times_gamma_g
@@ -347,9 +356,112 @@ impl<E: PairingEngine> ToBytes for CommitterKey<E> {
             }
         }
 
-        // Serialize `hash`
-        let hash = sha256(&hash_input);
-        hash.write_le(&mut writer)
+        Ok(sha256(&hash_input))
+    }
+
+    /// Identifies an SRS by its first two powers of beta G, `G` and `beta * G`,
+    /// which fix every other power of beta G.
+    fn srs_fingerprint(first_two_powers: &[E::G1Affine]) -> io::Result<[u8; 32]> {
+        Ok(sha256(&first_two_powers.to_bytes_le().map_err(into_io_error)?))
+    }
+
+    /// Whether the key shares its powers of beta G with an SRS, and so can be
+    /// written as a reference to it with `write_le_srs_reference`.
+    pub fn shares_srs(&self) -> bool {
+        matches!(self.powers_of_beta_g, Bases::Shared { .. })
+            && self.powers_of_beta_g.len() >= 2
+            && matches!(self.shifted_powers_of_beta_g, None | Some(Bases::Shared { .. }))
+    }
+
+    /// Writes the key as a reference to the SRS it was trimmed from: the SRS's
+    /// fingerprint, the arguments `SonicKZG10::trim` was called with, and the
+    /// key's hash. No point is written.
+    ///
+    /// Only a key that `SonicKZG10::trim` returned can be read back, by
+    /// `read_le_srs_reference`.
+    pub fn write_le_srs_reference<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        let (Some(first_two_powers), Some(supported_hiding_bound)) =
+            (self.powers_of_beta_g.get(..2), self.powers_of_beta_times_gamma_g.len().checked_sub(2))
+        else {
+            return Err(error("CommitterKey has too few points to refer to the SRS"));
+        };
+        Self::srs_fingerprint(first_two_powers)?.write_le(&mut writer)?;
+
+        // The arguments to `SonicKZG10::trim`, in its order.
+        let supported_degree = self.powers_of_beta_g.len() - 1;
+        u32::try_from(supported_degree).map_err(into_io_error)?.write_le(&mut writer)?;
+        (self.lagrange_bases_at_beta_g.len() as u32).write_le(&mut writer)?;
+        for size in self.lagrange_bases_at_beta_g.keys() {
+            (*size as u32).write_le(&mut writer)?;
+        }
+        u32::try_from(supported_hiding_bound).map_err(into_io_error)?.write_le(&mut writer)?;
+        self.enforced_degree_bounds.is_some().write_le(&mut writer)?;
+        if let Some(enforced_degree_bounds) = &self.enforced_degree_bounds {
+            (enforced_degree_bounds.len() as u32).write_le(&mut writer)?;
+            for enforced_degree_bound in enforced_degree_bounds {
+                (*enforced_degree_bound as u32).write_le(&mut writer)?;
+            }
+        }
+
+        self.points_hash()?.write_le(&mut writer)
+    }
+
+    /// Reads a key written by `write_le_srs_reference`, trimming it from `srs`.
+    /// The key shares its powers of beta G with `srs`.
+    ///
+    /// The bytes are a few dozen, but they can name powers that `srs` does not
+    /// hold yet, which are then downloaded. A key read from untrusted bytes can
+    /// therefore cost as much memory and bandwidth as the largest key the SRS
+    /// supports.
+    pub fn read_le_srs_reference<R: Read>(mut reader: R, srs: &UniversalParams<E>) -> io::Result<Self> {
+        let fingerprint: [u8; 32] = FromBytes::read_le(&mut reader)?;
+        let srs_fingerprint = Self::srs_fingerprint(&srs.powers_of_beta_g(0, 2).map_err(into_io_error)?)?;
+        if fingerprint != srs_fingerprint {
+            return Err(error("CommitterKey refers to a different SRS"));
+        }
+
+        let supported_degree: u32 = FromBytes::read_le(&mut reader)?;
+        let num_lagrange_sizes: u32 = FromBytes::read_le(&mut reader)?;
+        let mut supported_lagrange_sizes = Vec::new();
+        for _ in 0..num_lagrange_sizes {
+            let size: u32 = FromBytes::read_le(&mut reader)?;
+            supported_lagrange_sizes.push(size as usize);
+        }
+        let supported_hiding_bound: u32 = FromBytes::read_le(&mut reader)?;
+        let has_enforced_degree_bounds: bool = FromBytes::read_le(&mut reader)?;
+        let enforced_degree_bounds = match has_enforced_degree_bounds {
+            true => {
+                let enforced_degree_bounds_len: u32 = FromBytes::read_le(&mut reader)?;
+                let mut enforced_degree_bounds = Vec::new();
+                for _ in 0..enforced_degree_bounds_len {
+                    let enforced_degree_bound: u32 = FromBytes::read_le(&mut reader)?;
+                    enforced_degree_bounds.push(enforced_degree_bound as usize);
+                }
+                Some(enforced_degree_bounds)
+            }
+            false => None,
+        };
+        let expected_hash: [u8; 32] = FromBytes::read_le(&mut reader)?;
+
+        if supported_degree as usize >= MAX_NUM_POWERS {
+            return Err(error(format!(
+                "CommitterKey (from 'read_le_srs_reference') has too many points ({supported_degree} >= {MAX_NUM_POWERS})"
+            )));
+        }
+        let key = Self::trim(
+            srs,
+            supported_degree as usize,
+            supported_lagrange_sizes,
+            supported_hiding_bound as usize,
+            enforced_degree_bounds.as_deref(),
+        )
+        .map_err(into_io_error)?;
+
+        // Fails if the key was not trimmed from `srs`, or not by `SonicKZG10::trim`.
+        if key.points_hash()? != expected_hash {
+            return Err(error("Mismatching group elements"));
+        }
+        Ok(key)
     }
 }
 
