@@ -21,6 +21,7 @@ use snarkvm_parameters::mainnet::{MAX_NUM_POWERS, srs_checksum};
 use snarkvm_utilities::{FromBytes, ToBytes, error, into_io_error, serialize::*};
 
 use hashbrown::HashMap;
+use sha2::{Digest, Sha256};
 use std::{
     borrow::{Borrow, Cow},
     collections::{BTreeMap, BTreeSet},
@@ -334,12 +335,27 @@ impl<E: PairingEngine> ToBytes for CommitterKey<E> {
     }
 }
 
+/// Feeds the bytes written to it into a SHA-256 hash.
+struct Sha256Writer(Sha256);
+
+impl Write for Sha256Writer {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.update(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 impl<E: PairingEngine> CommitterKey<E> {
     /// The hash a key's bytes end with. It covers every point except the
     /// Lagrange bases.
     fn points_hash(&self) -> io::Result<[u8; 32]> {
         // Construct the hash of the group elements.
-        let mut hash_input = self.powers_of_beta_g.to_bytes_le().map_err(|_| error("Could not serialize powers"))?;
+        let mut hash_input = Sha256Writer(Sha256::new());
+        self.powers_of_beta_g.write_le(&mut hash_input).map_err(|_| error("Could not serialize powers"))?;
         self.powers_of_beta_times_gamma_g
             .write_le(&mut hash_input)
             .map_err(|_| error("Could not serialize powers_of_beta_times_gamma_g"))?;
@@ -356,7 +372,7 @@ impl<E: PairingEngine> CommitterKey<E> {
             }
         }
 
-        Ok(sha256(&hash_input))
+        Ok(hash_input.0.finalize().into())
     }
 
     /// Whether the key shares its powers of beta G with an SRS, and so can be
