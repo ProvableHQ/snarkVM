@@ -335,6 +335,21 @@ impl<E: PairingEngine> ToBytes for CommitterKey<E> {
     }
 }
 
+/// Writes `values` as a `u32` count, then each value as a `u32`.
+fn write_u32s<W: Write>(values: impl ExactSizeIterator<Item = usize>, mut writer: W) -> io::Result<()> {
+    u32::try_from(values.len()).map_err(into_io_error)?.write_le(&mut writer)?;
+    for value in values {
+        u32::try_from(value).map_err(into_io_error)?.write_le(&mut writer)?;
+    }
+    Ok(())
+}
+
+/// Reads values written by `write_u32s`.
+fn read_u32s<R: Read>(mut reader: R) -> io::Result<Vec<usize>> {
+    let len: u32 = FromBytes::read_le(&mut reader)?;
+    (0..len).map(|_| u32::read_le(&mut reader).map(|value| value as usize)).collect()
+}
+
 /// Feeds the bytes written to it into a SHA-256 hash.
 struct Sha256Writer(Sha256);
 
@@ -398,17 +413,11 @@ impl<E: PairingEngine> CommitterKey<E> {
 
         // The arguments to `SonicKZG10::trim`, in its order.
         u32::try_from(supported_degree).map_err(into_io_error)?.write_le(&mut writer)?;
-        (self.lagrange_bases_at_beta_g.len() as u32).write_le(&mut writer)?;
-        for size in self.lagrange_bases_at_beta_g.keys() {
-            (*size as u32).write_le(&mut writer)?;
-        }
+        write_u32s(self.lagrange_bases_at_beta_g.keys().copied(), &mut writer)?;
         u32::try_from(supported_hiding_bound).map_err(into_io_error)?.write_le(&mut writer)?;
         self.enforced_degree_bounds.is_some().write_le(&mut writer)?;
         if let Some(enforced_degree_bounds) = &self.enforced_degree_bounds {
-            (enforced_degree_bounds.len() as u32).write_le(&mut writer)?;
-            for enforced_degree_bound in enforced_degree_bounds {
-                (*enforced_degree_bound as u32).write_le(&mut writer)?;
-            }
+            write_u32s(enforced_degree_bounds.iter().copied(), &mut writer)?;
         }
 
         self.points_hash()?.write_le(&mut writer)
@@ -428,24 +437,11 @@ impl<E: PairingEngine> CommitterKey<E> {
         }
 
         let supported_degree: u32 = FromBytes::read_le(&mut reader)?;
-        let num_lagrange_sizes: u32 = FromBytes::read_le(&mut reader)?;
-        let mut supported_lagrange_sizes = Vec::new();
-        for _ in 0..num_lagrange_sizes {
-            let size: u32 = FromBytes::read_le(&mut reader)?;
-            supported_lagrange_sizes.push(size as usize);
-        }
+        let supported_lagrange_sizes = read_u32s(&mut reader)?;
         let supported_hiding_bound: u32 = FromBytes::read_le(&mut reader)?;
         let has_enforced_degree_bounds: bool = FromBytes::read_le(&mut reader)?;
         let enforced_degree_bounds = match has_enforced_degree_bounds {
-            true => {
-                let enforced_degree_bounds_len: u32 = FromBytes::read_le(&mut reader)?;
-                let mut enforced_degree_bounds = Vec::new();
-                for _ in 0..enforced_degree_bounds_len {
-                    let enforced_degree_bound: u32 = FromBytes::read_le(&mut reader)?;
-                    enforced_degree_bounds.push(enforced_degree_bound as usize);
-                }
-                Some(enforced_degree_bounds)
-            }
+            true => Some(read_u32s(&mut reader)?),
             false => None,
         };
         let expected_hash: [u8; 32] = FromBytes::read_le(&mut reader)?;
