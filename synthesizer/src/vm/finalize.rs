@@ -17,8 +17,6 @@ use super::*;
 
 use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
 use snarkvm_ledger_puzzle::SolutionID;
-#[cfg(feature = "history-staking-rewards")]
-use snarkvm_ledger_store::helpers::Map;
 use snarkvm_synthesizer_error::{
     FinalizeError,
     IndexedFinalizeError,
@@ -545,12 +543,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             rejected_reasons.clear();
         }
 
-        // Update the block height used for the purposes of historical mapping accounting.
-        #[cfg(feature = "history")]
+        // Height and event sequence used when history recording is enabled.
         self.store
             .finalize_store()
             .current_block_height()
             .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
+        self.store.finalize_store().reset_history_event_seq();
 
         // Perform the finalize operation on the preset finalize mode.
         atomic_finalize!(self.finalize_store(), FinalizeMode::DryRun, {
@@ -949,17 +947,23 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         let timer = timer!("VM::atomic_finalize");
 
-        // Update the block height used for the purposes of historical mapping accounting.
-        #[cfg(feature = "history")]
+        // Height and event sequence used when history recording is enabled.
         self.store
             .finalize_store()
             .current_block_height()
             .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
+        self.store.finalize_store().reset_history_event_seq();
 
         self.store.finalize_store().block_height().store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
         // Perform the finalize operation on the preset finalize mode.
         let finalize_result = atomic_finalize!(self.finalize_store(), FinalizeMode::RealRun, {
+            // First event at this height, so an empty block is still distinguishable from one
+            // whose history was not recorded.
+            if let Err(error) = self.finalize_store().record_history_block() {
+                return Err(format!("Failed to record history block - {error}"));
+            }
+
             // Initialize an iterator for ratifications before finalize.
             let pre_ratifications = ratifications.iter().filter(|r| match r {
                 Ratify::Genesis(_, _, _) => true,
@@ -1839,15 +1843,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Compute the updated stakers, using the committee and block reward.
                     let next_stakers = staking_rewards(&current_stakers, &current_committee, *block_reward);
 
-                    #[cfg(feature = "history-staking-rewards")]
+                    for (curr_stake, (staker, (validator, new_stake))) in
+                        current_stakers.values().map(|(_, current_stake)| current_stake).zip_eq(&next_stakers)
                     {
-                        let height = state.block_height();
-                        for (curr_stake, (staker, (validator, new_stake))) in
-                            current_stakers.values().map(|(_, current_stake)| current_stake).zip(&next_stakers)
-                        {
-                            let reward = new_stake - curr_stake;
-                            store.staking_rewards_map().insert((*staker, height), (*validator, reward, *new_stake))?;
-                        }
+                        let reward = new_stake - curr_stake;
+                        store.record_staking_reward(*staker, *validator, reward, *new_stake)?;
                     }
 
                     // Compute the updated delegated amounts, using the next_stakers updated amounts.
@@ -1869,8 +1869,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         store.replace_mapping(program_id, committee_mapping, next_committee_map)?,
                         // Replace the delegated mapping in storage.
                         store.replace_mapping(program_id, delegated_mapping, next_delegated_map)?,
-                        // Replace the bonded mapping in storage.
-                        store.replace_mapping(program_id, bonded_mapping, next_bonded_map)?,
+                        // Replace the bonded mapping in storage. Each staker's new bond is its
+                        // staking reward, which history records instead.
+                        store.replace_mapping_without_history(program_id, bonded_mapping, next_bonded_map)?,
                     ]);
 
                     // Set the block reward ratification flag.

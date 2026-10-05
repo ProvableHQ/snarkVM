@@ -22,6 +22,10 @@ pub use map::*;
 mod nested_map;
 pub use nested_map::*;
 
+mod schema;
+pub(crate) use schema::MetadataKey;
+pub use schema::{STORAGE_VERSION, StorageVersion};
+
 #[cfg(test)]
 mod tests;
 
@@ -123,6 +127,66 @@ impl Clone for RocksDB {
     }
 }
 
+impl RocksDB {
+    /// Returns the next block height history indexing will process.
+    pub(crate) fn history_synced_height(&self) -> Result<u32> {
+        schema::read_history_synced_height(self, self.network_id)
+    }
+
+    /// Stores the next block height history indexing will process.
+    pub(crate) fn set_history_synced_height(&self, height: u32) -> Result<()> {
+        schema::set_history_synced_height(self, self.network_id, height)
+    }
+
+    /// Returns a metadata entry's raw bytes.
+    pub(crate) fn metadata(&self, key: MetadataKey) -> Result<Option<Vec<u8>>> {
+        schema::read_metadata(self, self.network_id, key)
+    }
+
+    /// Writes a metadata entry's raw bytes, outside any atomic batch.
+    pub(crate) fn set_metadata(&self, key: MetadataKey, value: &[u8]) -> Result<()> {
+        schema::set_metadata(self, self.network_id, key, value)
+    }
+
+    /// Deletes a metadata entry, outside any atomic batch.
+    pub(crate) fn delete_metadata(&self, key: MetadataKey) -> Result<()> {
+        schema::delete_metadata(self, self.network_id, key)
+    }
+
+    /// Deletes every entry of the map `map_id`, with one range deletion outside any atomic batch.
+    pub(crate) fn delete_map(&self, map_id: MapID) -> Result<()> {
+        let prefix = schema::map_prefix(self.network_id, map_id);
+        // The first key after every key that starts with `prefix`.
+        let end = u32::from_be_bytes(prefix)
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("Map prefix {prefix:?} has no successor"))?
+            .to_be_bytes();
+        let mut batch = rocksdb::WriteBatch::default();
+        batch.delete_range(prefix, end);
+        Ok(self.rocksdb.write(batch)?)
+    }
+
+    /// Deletes every entry of the map `map_id` whose serialized key is in `[start, end)`, with one
+    /// range deletion outside any atomic batch.
+    pub(crate) fn delete_map_range(&self, map_id: MapID, start: &[u8], end: &[u8]) -> Result<()> {
+        let prefix = schema::map_prefix(self.network_id, map_id);
+        let mut batch = rocksdb::WriteBatch::default();
+        batch.delete_range([&prefix[..], start].concat(), [&prefix[..], end].concat());
+        Ok(self.rocksdb.write(batch)?)
+    }
+
+    /// Writes each `(map_id, key, value)` in one write batch outside any atomic batch. `key` and
+    /// `value` are serialized as the map with ID `map_id` serializes them.
+    pub(crate) fn put_map_rows(&self, rows: impl IntoIterator<Item = (MapID, Vec<u8>, Vec<u8>)>) -> Result<()> {
+        let mut batch = rocksdb::WriteBatch::default();
+        for (map_id, key, value) in rows {
+            let prefix = schema::map_prefix(self.network_id, map_id);
+            batch.put([&prefix[..], &key].concat(), value);
+        }
+        Ok(self.rocksdb.write(batch)?)
+    }
+}
+
 impl Deref for RocksDB {
     type Target = Arc<rocksdb::DB>;
 
@@ -131,14 +195,20 @@ impl Deref for RocksDB {
     }
 }
 
-impl Database for RocksDB {
+impl RocksDB {
+    /// Opens the database and deletes v0 mapping-history prefixes before migration can refuse them.
+    ///
+    /// A normal [`Database::open`] leaves those prefixes in place and returns an error that names
+    /// `snarkos clean --history`.
+    pub fn open_dropping_legacy_mapping_history<S: Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self> {
+        Self::open_with(network_id, storage, true)
+    }
+
     /// Opens the database.
     ///
-    /// In production mode, the database opens directory `~/.aleo/storage/ledger-{network}`.
-    /// In development mode, the database opens directory `/path/to/repo/.ledger-{network}-{id}`.
-    /// In tests, the database opens an ephemeral directory in the OS temporary folder.
-    /// The default storage location can be changed by using `StorageMode::Custom`.
-    fn open<S: Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self> {
+    /// When `drop_legacy_mapping_history` is set, v0 mapping-history prefixes are deleted during
+    /// migration instead of refusing the open.
+    fn open_with<S: Into<StorageMode>>(network_id: u16, storage: S, drop_legacy_mapping_history: bool) -> Result<Self> {
         let storage = storage.into();
 
         // Obtain the path to the primary instance.
@@ -186,6 +256,12 @@ impl Database for RocksDB {
 
                 Arc::new(rocksdb::DB::open(&options, &primary_path)?)
             };
+            // Record the schema version, and refuse a database written by a newer build, before
+            // any map is opened on this database.
+            match drop_legacy_mapping_history {
+                true => schema::migrate_storage_dropping_legacy_mapping_history(&rocksdb, network_id)?,
+                false => schema::migrate_storage(&rocksdb, network_id)?,
+            }
 
             let db = RocksDB {
                 rocksdb,
@@ -204,12 +280,13 @@ impl Database for RocksDB {
             db
         };
 
-        // Ensure that multiple database instances are possible only when using the test storage
-        // mode, and that in such scenarios, all of the instances are only using the test mode.
+        // Outside tests, there is one primary database. Test databases may share the process.
+        let is_test = |db: &RocksDB| matches!(&db.storage_mode, StorageMode::Test(_));
         if matches!(storage, StorageMode::Test(_)) {
-            ensure!(databases.values().all(|db| matches!(&db.storage_mode, StorageMode::Test(_))));
+            ensure!(databases.values().all(is_test));
         } else {
-            ensure!(databases.len() == 1, "There can only be one active rocksDB database when not in test mode.");
+            let primaries = databases.values().filter(|db| !is_test(db)).count();
+            ensure!(primaries <= 1, "There can only be one active rocksDB database when not in test mode.");
         }
 
         // Ensure the database network ID and storage mode match.
@@ -217,6 +294,18 @@ impl Database for RocksDB {
             true => Ok(database),
             false => bail!("Mismatching network ID or storage mode in the database"),
         }
+    }
+}
+
+impl Database for RocksDB {
+    /// Opens the database.
+    ///
+    /// In production mode, the database opens directory `~/.aleo/storage/ledger-{network}`.
+    /// In development mode, the database opens directory `/path/to/repo/.ledger-{network}-{id}`.
+    /// In tests, the database opens an ephemeral directory in the OS temporary folder.
+    /// The default storage location can be changed by using `StorageMode::Custom`.
+    fn open<S: Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self> {
+        Self::open_with(network_id, storage, false)
     }
 
     /// Opens the map with the given `network_id`, `storage mode`, and `map_id` from storage.
