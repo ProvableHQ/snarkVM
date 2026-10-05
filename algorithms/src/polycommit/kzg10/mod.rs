@@ -480,7 +480,7 @@ mod tests {
     #![allow(clippy::needless_borrow)]
     use super::*;
     use snarkvm_curves::bls12_377::{Bls12_377, Fr};
-    use snarkvm_utilities::{FromBytes, ToBytes, rand::TestRng};
+    use snarkvm_utilities::rand::TestRng;
 
     use rand::RngExt;
     use std::borrow::Cow;
@@ -522,16 +522,22 @@ mod tests {
         }
     }
 
+    /// The SRS's powers serialize back to the bytes of the parameter files
+    /// they were loaded from.
     #[test]
     fn test_kzg10_universal_params_serialization() {
-        let degree = 4;
-        let pp = KZG_Bls12_377::load_srs(degree).unwrap();
+        use snarkvm_parameters::mainnet::{BetaH, Degree15};
+        use snarkvm_utilities::CanonicalSerialize;
 
-        let pp_bytes = pp.to_bytes_le().unwrap();
-        let pp_recovered: UniversalParams<Bls12_377> = FromBytes::read_le(&pp_bytes[..]).unwrap();
-        let pp_recovered_bytes = pp_recovered.to_bytes_le().unwrap();
+        let pp = KZG_Bls12_377::load_srs(4).unwrap();
 
-        assert_eq!(&pp_bytes, &pp_recovered_bytes);
+        let mut powers_bytes = vec![];
+        pp.powers_of_beta_g(0, 1 << 15).unwrap().serialize_uncompressed(&mut powers_bytes).unwrap();
+        assert_eq!(powers_bytes, Degree15::load_bytes().unwrap());
+
+        let mut beta_h_bytes = vec![];
+        pp.beta_h().serialize_uncompressed(&mut beta_h_bytes).unwrap();
+        assert_eq!(beta_h_bytes, BetaH::load_bytes().unwrap());
     }
 
     fn end_to_end_test_template<E: PairingEngine>() -> Result<(), PCError> {

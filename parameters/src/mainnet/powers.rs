@@ -15,19 +15,7 @@
 
 use super::*;
 use snarkvm_curves::traits::{PairingCurve, PairingEngine};
-use snarkvm_utilities::{
-    CanonicalDeserialize,
-    CanonicalSerialize,
-    Compress,
-    FromBytes,
-    Read,
-    SerializationError,
-    ToBytes,
-    Valid,
-    Validate,
-    Write,
-    dev_println,
-};
+use snarkvm_utilities::{CanonicalDeserialize, dev_println};
 
 use anyhow::{Result, anyhow, bail, ensure};
 #[cfg(feature = "locktick")]
@@ -184,78 +172,6 @@ impl<E: PairingEngine> PowersOfG<E> {
     }
 }
 
-impl<E: PairingEngine> CanonicalSerialize for PowersOfG<E> {
-    fn serialize_with_mode<W: Write>(&self, mut writer: W, mode: Compress) -> Result<(), SerializationError> {
-        self.powers_of_beta_g.read().serialize_with_mode(&mut writer, mode)?;
-        self.powers_of_beta_times_gamma_g.serialize_with_mode(&mut writer, mode)?;
-        self.negative_powers_of_beta_h.serialize_with_mode(&mut writer, mode)?;
-        self.beta_h.serialize_with_mode(&mut writer, mode)?;
-        Ok(())
-    }
-
-    fn serialized_size(&self, mode: Compress) -> usize {
-        self.powers_of_beta_g.read().serialized_size(mode)
-            + self.powers_of_beta_times_gamma_g.serialized_size(mode)
-            + self.negative_powers_of_beta_h.serialized_size(mode)
-            + self.beta_h.serialized_size(mode)
-    }
-}
-
-impl<E: PairingEngine> CanonicalDeserialize for PowersOfG<E> {
-    fn deserialize_with_mode<R: Read>(mut reader: R, compress: Compress, validate: Validate) -> Result<Self, SerializationError> {
-        let powers_of_beta_g = RwLock::new(PowersOfBetaG::deserialize_with_mode(&mut reader, compress, Validate::No)?);
-
-        // Reconstruct powers of beta_times_gamma_g.
-        let powers_of_beta_times_gamma_g = BTreeMap::deserialize_with_mode(&mut reader, compress, Validate::No)?;
-
-        // Reconstruct negative powers of beta_h.
-        let negative_powers_of_beta_h: BTreeMap<usize, E::G2Affine> =
-            BTreeMap::deserialize_with_mode(&mut reader, compress, Validate::No)?;
-
-        // Compute the prepared negative powers of beta_h.
-        let prepared_negative_powers_of_beta_h: Arc<BTreeMap<usize, <E::G2Affine as PairingCurve>::Prepared>> =
-            Arc::new(negative_powers_of_beta_h.iter().map(|(d, affine)| (*d, affine.prepare())).collect());
-
-        let beta_h = E::G2Affine::deserialize_with_mode(&mut reader, compress, Validate::No)?;
-
-        let powers = Self {
-            powers_of_beta_g,
-            powers_of_beta_times_gamma_g,
-            negative_powers_of_beta_h,
-            prepared_negative_powers_of_beta_h,
-            beta_h,
-        };
-        if let Validate::Yes = validate {
-            powers.check()?;
-        }
-        Ok(powers)
-    }
-}
-
-impl<E: PairingEngine> Valid for PowersOfG<E> {
-    fn check(&self) -> Result<(), SerializationError> {
-        self.powers_of_beta_g.read().check()?;
-        self.powers_of_beta_times_gamma_g.check()?;
-        self.negative_powers_of_beta_h.check()?;
-        self.prepared_negative_powers_of_beta_h.check()?;
-        self.beta_h.check()
-    }
-}
-
-impl<E: PairingEngine> FromBytes for PowersOfG<E> {
-    /// Reads the powers from the buffer.
-    fn read_le<R: Read>(reader: R) -> std::io::Result<Self> {
-        Self::deserialize_with_mode(reader, Compress::No, Validate::No).map_err(|e| e.into())
-    }
-}
-
-impl<E: PairingEngine> ToBytes for PowersOfG<E> {
-    /// Writes the powers to the buffer.
-    fn write_le<W: Write>(&self, writer: W) -> std::io::Result<()> {
-        self.serialize_with_mode(writer, Compress::No).map_err(|e| e.into())
-    }
-}
-
 #[derive(Debug)]
 pub struct PowersOfBetaG<E: PairingEngine> {
     /// Group elements of form `[G, \beta * G, \beta^2 * G, ..., \beta^d G]`.
@@ -263,32 +179,6 @@ pub struct PowersOfBetaG<E: PairingEngine> {
     /// Group elements of form `[\beta^i * G, \beta^2 * G, ..., \beta^D G]`.
     /// where D is the maximum degree supported by the SRS.
     shifted_powers_of_beta_g: PowersSnapshot<E>,
-}
-
-impl<E: PairingEngine> CanonicalSerialize for PowersOfBetaG<E> {
-    fn serialize_with_mode<W: Write>(&self, mut writer: W, mode: Compress) -> Result<(), SerializationError> {
-        self.powers_of_beta_g.as_ref().serialize_with_mode(&mut writer, mode)?;
-        self.shifted_powers_of_beta_g.as_ref().serialize_with_mode(&mut writer, mode)
-    }
-
-    fn serialized_size(&self, mode: Compress) -> usize {
-        self.powers_of_beta_g.as_ref().serialized_size(mode) + self.shifted_powers_of_beta_g.as_ref().serialized_size(mode)
-    }
-}
-
-impl<E: PairingEngine> CanonicalDeserialize for PowersOfBetaG<E> {
-    fn deserialize_with_mode<R: Read>(mut reader: R, compress: Compress, validate: Validate) -> Result<Self, SerializationError> {
-        let powers_of_beta_g = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
-        let shifted_powers_of_beta_g = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
-        Ok(Self { powers_of_beta_g: Arc::new(powers_of_beta_g), shifted_powers_of_beta_g: Arc::new(shifted_powers_of_beta_g) })
-    }
-}
-
-impl<E: PairingEngine> Valid for PowersOfBetaG<E> {
-    fn check(&self) -> Result<(), SerializationError> {
-        self.powers_of_beta_g.as_ref().check()?;
-        self.shifted_powers_of_beta_g.as_ref().check()
-    }
 }
 
 impl<E: PairingEngine> PowersOfBetaG<E> {
@@ -567,19 +457,5 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
 
         ensure!(self.shifted_powers_of_beta_g.len() == final_num_powers, "Loaded an incorrect number of shifted powers");
         Ok(())
-    }
-}
-
-impl<E: PairingEngine> FromBytes for PowersOfBetaG<E> {
-    /// Reads the powers from the buffer.
-    fn read_le<R: Read>(reader: R) -> std::io::Result<Self> {
-        Self::deserialize_with_mode(reader, Compress::No, Validate::No).map_err(|e| e.into())
-    }
-}
-
-impl<E: PairingEngine> ToBytes for PowersOfBetaG<E> {
-    /// Writes the powers to the buffer.
-    fn write_le<W: Write>(&self, writer: W) -> std::io::Result<()> {
-        self.serialize_with_mode(writer, Compress::No).map_err(|e| e.into())
     }
 }
