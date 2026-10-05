@@ -61,6 +61,26 @@ name = "transaction"
 path = "benches/transaction.rs"
 harness = false
 
+[[bench]]
+name = "gungraun_block"
+path = "benches/gungraun_block.rs"
+harness = false
+bench = false
+required-features = [ "test-helpers", "rocks" ]
+
+[[bench]]
+name = "gungraun_dag"
+path = "benches/gungraun_dag.rs"
+harness = false
+bench = false
+required-features = [ "test-helpers" ]
+
+[[bench]]
+name = "gungraun_transaction"
+path = "benches/gungraun_transaction.rs"
+harness = false
+bench = false
+
 [features]
 default = [ "async", "indexmap/rayon", ]
 async = [
@@ -222,6 +242,9 @@ workspace = true
 workspace = true
 
 [dev-dependencies.criterion]
+workspace = true
+
+[dev-dependencies.gungraun]
 workspace = true
 
 [dev-dependencies.snarkvm-console]

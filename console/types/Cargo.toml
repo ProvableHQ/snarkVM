@@ -13,6 +13,12 @@ name = "group"
 path = "benches/group.rs"
 harness = false
 
+[[bench]]
+name = "gungraun_group"
+path = "benches/gungraun_group.rs"
+harness = false
+bench = false
+
 [dependencies.snarkvm-console-network-environment]
 workspace = true
 
@@ -45,6 +51,9 @@ workspace = true
 optional = true
 
 [dev-dependencies.criterion]
+workspace = true
+
+[dev-dependencies.gungraun]
 workspace = true
 
 [dev-dependencies.snarkvm-console-network]

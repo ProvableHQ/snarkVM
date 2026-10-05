@@ -29,6 +29,13 @@ path = "benches/puzzle.rs"
 harness = false
 required-features = [ "setup" ]
 
+[[bench]]
+name = "gungraun_puzzle"
+path = "benches/gungraun_puzzle.rs"
+harness = false
+bench = false
+required-features = [ "setup" ]
+
 [features]
 default = [ "indexmap/rayon", "rayon" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
@@ -91,6 +98,9 @@ workspace = true
 features = [ "test", "default" ]
 
 [dev-dependencies.criterion]
+workspace = true
+
+[dev-dependencies.gungraun]
 workspace = true
 
 [dev-dependencies.rand]

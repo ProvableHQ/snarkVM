@@ -13,6 +13,12 @@ name = "account"
 path = "benches/account.rs"
 harness = false
 
+[[bench]]
+name = "gungraun_account"
+path = "benches/gungraun_account.rs"
+harness = false
+bench = false
+
 [dependencies.snarkvm-console-network]
 workspace = true
 
@@ -31,6 +37,9 @@ features = [ "derive" ]
 workspace = true
 
 [dev-dependencies.criterion]
+workspace = true
+
+[dev-dependencies.gungraun]
 workspace = true
 
 [dev-dependencies.serde_json]

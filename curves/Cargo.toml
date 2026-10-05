@@ -34,6 +34,12 @@ name = "curves"
 path = "benches/curves.rs"
 harness = false
 
+[[bench]]
+name = "gungraun_curves"
+path = "benches/gungraun_curves.rs"
+harness = false
+bench = false
+
 [dependencies.snarkvm-fields]
 workspace = true
 default-features = false
@@ -55,6 +61,9 @@ workspace = true
 workspace = true
 
 [dev-dependencies.criterion]
+workspace = true
+
+[dev-dependencies.gungraun]
 workspace = true
 
 [dev-dependencies.proptest]

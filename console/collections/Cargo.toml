@@ -18,6 +18,12 @@ name = "merkle_tree"
 path = "benches/merkle_tree.rs"
 harness = false
 
+[[bench]]
+name = "gungraun_merkle_tree"
+path = "benches/gungraun_merkle_tree.rs"
+harness = false
+bench = false
+
 [dependencies.snarkvm-console-algorithms]
 workspace = true
 
@@ -48,6 +54,9 @@ path = "../network"
 workspace = true
 
 [dev-dependencies.criterion]
+workspace = true
+
+[dev-dependencies.gungraun]
 workspace = true
 
 [dev-dependencies.indexmap]
