@@ -1001,7 +1001,7 @@ mod tests {
     fn an_srs_reference_reads_back_as_the_same_key() {
         let pp = PC_Bls12_377::load_srs((1 << 12) - 1).unwrap();
         for (degree, lagrange_sizes, bounds) in
-            [(1000, vec![], Some(&[500, 1][..])), (1000, vec![256, 512], None), (1, vec![], None)]
+            [(1000, vec![], Some(&[500, 1][..])), (1000, vec![256, 512], None), (0, vec![], None)]
         {
             let (ck, _) = PC_Bls12_377::trim(&pp, degree, lagrange_sizes, 1, bounds).unwrap();
             assert!(ck.shares_srs());
@@ -1025,7 +1025,7 @@ mod tests {
         let mut reference = vec![];
         ck.write_le_srs_reference(&mut reference).unwrap();
 
-        // The fingerprint of another SRS.
+        // The checksum of another SRS.
         let mut other_srs = reference.clone();
         other_srs[0] ^= 1;
         assert!(CommitterKey::<Bls12_377>::read_le_srs_reference(&other_srs[..], &pp).is_err());

@@ -17,7 +17,7 @@ use super::{LabeledPolynomial, PolynomialInfo};
 use crate::{crypto_hash::sha256::sha256, fft::EvaluationDomain, polycommit::kzg10};
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{ConstraintFieldError, Field, PrimeField, ToConstraintField};
-use snarkvm_parameters::mainnet::MAX_NUM_POWERS;
+use snarkvm_parameters::mainnet::{MAX_NUM_POWERS, srs_checksum};
 use snarkvm_utilities::{FromBytes, ToBytes, error, into_io_error, serialize::*};
 
 use hashbrown::HashMap;
@@ -359,36 +359,28 @@ impl<E: PairingEngine> CommitterKey<E> {
         Ok(sha256(&hash_input))
     }
 
-    /// Identifies an SRS by its first two powers of beta G, `G` and `beta * G`,
-    /// which fix every other power of beta G.
-    fn srs_fingerprint(first_two_powers: &[E::G1Affine]) -> io::Result<[u8; 32]> {
-        Ok(sha256(&first_two_powers.to_bytes_le().map_err(into_io_error)?))
-    }
-
     /// Whether the key shares its powers of beta G with an SRS, and so can be
     /// written as a reference to it with `write_le_srs_reference`.
     pub fn shares_srs(&self) -> bool {
         matches!(self.powers_of_beta_g, Bases::Shared { .. })
-            && self.powers_of_beta_g.len() >= 2
             && matches!(self.shifted_powers_of_beta_g, None | Some(Bases::Shared { .. }))
     }
 
     /// Writes the key as a reference to the SRS it was trimmed from: the SRS's
-    /// fingerprint, the arguments `SonicKZG10::trim` was called with, and the
-    /// key's hash. No point is written.
+    /// checksum (see `srs_checksum`), the arguments `SonicKZG10::trim` was
+    /// called with, and the key's hash. No point is written.
     ///
     /// Only a key that `SonicKZG10::trim` returned can be read back, by
     /// `read_le_srs_reference`.
     pub fn write_le_srs_reference<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        let (Some(first_two_powers), Some(supported_hiding_bound)) =
-            (self.powers_of_beta_g.get(..2), self.powers_of_beta_times_gamma_g.len().checked_sub(2))
+        let (Some(supported_degree), Some(supported_hiding_bound)) =
+            (self.powers_of_beta_g.len().checked_sub(1), self.powers_of_beta_times_gamma_g.len().checked_sub(2))
         else {
             return Err(error("CommitterKey has too few points to refer to the SRS"));
         };
-        Self::srs_fingerprint(first_two_powers)?.write_le(&mut writer)?;
+        srs_checksum().write_le(&mut writer)?;
 
         // The arguments to `SonicKZG10::trim`, in its order.
-        let supported_degree = self.powers_of_beta_g.len() - 1;
         u32::try_from(supported_degree).map_err(into_io_error)?.write_le(&mut writer)?;
         (self.lagrange_bases_at_beta_g.len() as u32).write_le(&mut writer)?;
         for size in self.lagrange_bases_at_beta_g.keys() {
@@ -414,9 +406,8 @@ impl<E: PairingEngine> CommitterKey<E> {
     /// therefore cost as much memory and bandwidth as the largest key the SRS
     /// supports.
     pub fn read_le_srs_reference<R: Read>(mut reader: R, srs: &UniversalParams<E>) -> io::Result<Self> {
-        let fingerprint: [u8; 32] = FromBytes::read_le(&mut reader)?;
-        let srs_fingerprint = Self::srs_fingerprint(&srs.powers_of_beta_g(0, 2).map_err(into_io_error)?)?;
-        if fingerprint != srs_fingerprint {
+        let checksum: [u8; 32] = FromBytes::read_le(&mut reader)?;
+        if srs.checksum() != checksum {
             return Err(error("CommitterKey refers to a different SRS"));
         }
 

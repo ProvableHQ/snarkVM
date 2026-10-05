@@ -101,6 +101,11 @@ impl<E: PairingEngine> UniversalParams<E> {
         self.powers.beta_h()
     }
 
+    /// The checksum of this SRS, built into `snarkvm-parameters`.
+    pub fn checksum(&self) -> [u8; 32] {
+        self.powers.checksum()
+    }
+
     pub fn max_degree(&self) -> usize {
         self.powers.max_num_powers() - 1
     }
