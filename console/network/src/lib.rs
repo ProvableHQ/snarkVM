@@ -315,9 +315,8 @@ pub trait Network:
     const _CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS];
 
     ///  A list of (consensus_version, size) pairs indicating the maximum number of validators in a committee.
-    //  Note: This value must **not** decrease without considering the impact on serialization.
-    //  Decreasing this value will break backwards compatibility of serialization without explicit
-    //  declaration of migration based on round number rather than block height.
+    //  Note: Height-agnostic bounds (such as deserialization) use the largest value in this list
+    //  (see `LATEST_MAX_CERTIFICATES`), so a later decrease does not reject previously valid data.
     //  Increasing this value will require a migration to prevent forking during network upgrades.
     const MAX_CERTIFICATES: [(ConsensusVersion, u16); 6];
 
@@ -375,10 +374,18 @@ pub trait Network:
             .expect("MAX_PLAINTEXT_TYPE_SIZE_IN_BITS must have at least one entry")
             .1
     }
-    /// Returns the last `MAX_CERTIFICATES` value.
+    /// Returns the largest `MAX_CERTIFICATES` value across all consensus versions.
+    ///
+    /// Height-agnostic bounds (deserialization, committee construction, cache sizes) use this
+    /// value, so a version that lowers the limit never rejects data that an earlier version
+    /// accepted. Height-aware checks use `consensus_config_value!(N, MAX_CERTIFICATES, height)`.
     #[allow(non_snake_case)]
     fn LATEST_MAX_CERTIFICATES() -> u16 {
-        Self::MAX_CERTIFICATES.last().expect("MAX_CERTIFICATES must have at least one entry").1
+        Self::MAX_CERTIFICATES
+            .iter()
+            .map(|(_, value)| *value)
+            .max()
+            .expect("MAX_CERTIFICATES must have at least one entry")
     }
 
     /// Returns the last `MAX_MAPPINGS` value.
