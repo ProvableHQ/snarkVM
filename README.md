@@ -1,4 +1,4 @@
-<p align="center">
+<p align="center"> 
     <img alt="snarkVM" width="1412" src=".resources/snarkVM-banner.png">
 </p>
 
