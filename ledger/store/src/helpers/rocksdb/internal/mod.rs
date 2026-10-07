@@ -301,6 +301,7 @@ impl Database for RocksDB {
 
         // Return the DataMap.
         Ok(NestedDataMap {
+            decoded_entries: Default::default(),
             database,
             context,
             batch_in_progress: Default::default(),

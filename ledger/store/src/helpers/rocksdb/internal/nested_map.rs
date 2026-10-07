@@ -44,6 +44,9 @@ pub struct NestedDataMap<
     pub(super) atomic_owner: Arc<AtomicU64>,
     /// The database transaction.
     pub(super) atomic_batch: Arc<Mutex<Vec<(M, Option<K>, Option<V>)>>>,
+    /// Decoded entries keyed by full database key and guarded by exact serialized-value equality.
+    /// At most 256 entries of at most 4096 serialized bytes each are retained.
+    pub(super) decoded_entries: Arc<Mutex<std::collections::HashMap<Vec<u8>, (Vec<u8>, K, V)>>>,
     /// The checkpoint stack for the batched operations within the map.
     pub(super) checkpoints: Arc<Mutex<Vec<usize>>>,
 }
@@ -481,7 +484,7 @@ impl<
             // If the 'entry_map' matches 'serialized_map', deserialize the key and value.
             if entry_map == serialized_map {
                 // Push the key-value pair to the vector.
-                entries.push((entry_key.to_owned(), value));
+                entries.push((entry_key.to_owned(), map_key, value));
             } else {
                 // If the 'entry_map' no longer matches the 'serialized_map',
                 // we've moved past the relevant keys and can break the loop.
@@ -491,11 +494,37 @@ impl<
 
         // Possibly deserialize the entries in parallel.
         cfg_into_iter!(entries)
-            .map(|(k, v)| {
-                let k = unchecked_deserialize::<K>(&k);
-                let v = unchecked_deserialize::<V>(&v);
+            .map(|(k, cache_key, v)| {
+                let cacheable = cache_key.len().saturating_add(v.len()) <= 4096;
+                let cached_key = if cacheable {
+                    let cache = self.decoded_entries.lock();
+                    match cache.get(cache_key.as_ref()) {
+                        Some((bytes, key, value)) if bytes.as_slice() == v.as_ref() => {
+                            return Ok((key.clone(), value.clone()));
+                        }
+                        Some((_, key, _)) => Some(key.clone()),
+                        None => None,
+                    }
+                } else {
+                    None
+                };
 
-                k.and_then(|k| v.map(|v| (k, v)))
+                // Misses use the original decoder, including its point validation.
+                let key = match cached_key {
+                    Some(key) => Ok(key),
+                    None => unchecked_deserialize::<K>(&k),
+                };
+                let value = unchecked_deserialize::<V>(&v);
+                let pair = key.and_then(|key| value.map(|value| (key, value)))?;
+
+                if cacheable {
+                    let mut cache = self.decoded_entries.lock();
+                    if cache.len() >= 256 && !cache.contains_key(cache_key.as_ref()) {
+                        cache.clear();
+                    }
+                    cache.insert(cache_key.to_vec(), (v.to_vec(), pair.0.clone(), pair.1.clone()));
+                }
+                Ok(pair)
             })
             .collect::<Result<_, bincode::Error>>()
             .with_context(|| "Failed to deserialize map entries")
@@ -842,6 +871,7 @@ mod tests {
 
         // Return the NestedDataMap.
         NestedDataMap {
+            decoded_entries: Default::default(),
             database,
             context,
             atomic_batch: Default::default(),
