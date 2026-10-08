@@ -743,7 +743,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-ledger
-          flags: --release --features=rocks,snarkvm-synthesizer/rocks --partition count:1/2 -- --test-threads=10
+          flags: --release --features=rocks --partition count:1/2 -- --test-threads=10
           no_output_timeout: 20m
           timeout: 30m
 
@@ -753,7 +753,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-ledger
-          flags: --release --features=rocks,snarkvm-synthesizer/rocks --partition count:2/2 -- --test-threads=10
+          flags: --release --features=rocks --partition count:2/2 -- --test-threads=10
           no_output_timeout: 20m
           timeout: 30m
 
@@ -1322,10 +1322,9 @@ workflows:
 
   # Jobs specific to this branch to run
   custom-workflow:
-    when: pipeline.git.branch == "ci/ledger-rocks-with-synthesizer-rocks"
+    when: pipeline.git.branch == "fix_target_adjustment_tests"
     jobs:
-      - ledger-with-rocksdb-partition1
-      - ledger-with-rocksdb-partition2
+      - ledger-block
 
   # Run additional but unlikely to fail checks on merges only
   merge-workflow:
