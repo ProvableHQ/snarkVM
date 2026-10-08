@@ -124,42 +124,6 @@ impl<E: PairingEngine> UniversalParams<E> {
     }
 }
 
-impl<E: PairingEngine> FromBytes for UniversalParams<E> {
-    fn read_le<R: Read>(mut reader: R) -> io::Result<Self> {
-        // Deserialize `powers`.
-        let powers = Arc::new(PowersOfG::read_le(&mut reader)?);
-
-        // Deserialize `h`.
-        let h: E::G2Affine = FromBytes::read_le(&mut reader)?;
-
-        // Deserialize `prepared_h`.
-        let prepared_h: <E::G2Affine as PairingCurve>::Prepared = FromBytes::read_le(&mut reader)?;
-
-        // Deserialize `prepared_beta_h`.
-        let prepared_beta_h: <E::G2Affine as PairingCurve>::Prepared = FromBytes::read_le(&mut reader)?;
-
-        Ok(Self { powers, h, prepared_h, prepared_beta_h })
-    }
-}
-
-impl<E: PairingEngine> ToBytes for UniversalParams<E> {
-    fn write_le<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        // Serialize powers.
-        self.powers.write_le(&mut writer)?;
-
-        // Serialize `h`.
-        self.h.write_le(&mut writer)?;
-
-        // Serialize `prepared_h`.
-        self.prepared_h.write_le(&mut writer)?;
-
-        // Serialize `prepared_beta_h`.
-        self.prepared_beta_h.write_le(&mut writer)?;
-
-        Ok(())
-    }
-}
-
 /// `Powers` is used to commit to and create evaluation proofs for a given
 /// polynomial.
 #[derive(Clone, Debug, Default, Hash)]
