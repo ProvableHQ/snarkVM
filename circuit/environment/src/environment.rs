@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Assignment, ConstraintUnsatisfied, Inject, LinearCombination, Mode, R1CS, Variable, witness_mode};
+use crate::{Assignment, ConstraintUnsatisfied, EjectedR1cs, Inject, LinearCombination, Mode, Variable, witness_mode};
 use snarkvm_curves::AffineCurve;
 use snarkvm_fields::traits::*;
 
@@ -185,11 +185,11 @@ pub trait Environment: 'static + Copy + Clone + fmt::Debug + fmt::Display + Eq +
         <Self::Network as console::Environment>::halt(message)
     }
 
-    /// Returns the R1CS circuit, resetting the circuit.
-    fn inject_r1cs(r1cs: R1CS<Self::BaseField>);
+    /// Injects the ejected R1CS circuit and restores the preserved environment state.
+    fn inject_r1cs(ejected: EjectedR1cs<Self::BaseField>);
 
-    /// Returns the R1CS circuit, resetting the circuit.
-    fn eject_r1cs_and_reset() -> R1CS<Self::BaseField>;
+    /// Returns the R1CS circuit and preserved environment state, resetting the circuit.
+    fn eject_r1cs_and_reset() -> EjectedR1cs<Self::BaseField>;
 
     /// Returns the R1CS assignment of the circuit, resetting the circuit.
     fn eject_assignment_and_reset() -> Assignment<<Self::Network as console::Environment>::Field>;

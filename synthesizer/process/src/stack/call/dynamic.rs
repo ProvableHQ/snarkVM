@@ -298,7 +298,12 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             let is_root = false;
 
             // Eject the existing circuit.
-            let r1cs = A::eject_r1cs_and_reset();
+            let mut r1cs = A::eject_r1cs_and_reset();
+
+            if matches!(registers.call_stack_ref(), CallStack::CheckDeployment(_, _, _, _, _, Some((_, _, _, true)))) {
+                r1cs.remove_nonzero_limit();
+            }
+
             let (request, caller_response_outputs) = {
                 // Resolve the program and function.
                 let target = resolve_dynamic_target(

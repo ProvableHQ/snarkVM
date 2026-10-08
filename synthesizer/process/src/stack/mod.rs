@@ -140,7 +140,14 @@ pub enum CallStack<N: Network> {
     /// Synthesize a function circuit before a `Deploy` transaction.
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
     /// Validate a `Deploy` transaction's function circuit.
-    CheckDeployment(Vec<Request<N>>, PrivateKey<N>, Assignments<N>, Option<u64>, Option<u64>, Option<(u64, u64, u64)>),
+    CheckDeployment(
+        Vec<Request<N>>,
+        PrivateKey<N>,
+        Assignments<N>,
+        Option<u64>,
+        Option<u64>,
+        Option<(u64, u64, u64, bool)>,
+    ),
     /// Evaluate a function.
     Evaluate(Authorization<N>),
     /// Execute a function and produce a proof.
