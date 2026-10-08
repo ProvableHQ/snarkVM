@@ -98,7 +98,7 @@ workspace = true
 workspace = true
 
 [dependencies.rocksdb]
-version = "0.24"
+version = "0.25"
 default-features = false
 features = [ "lz4" ]
 optional = true
