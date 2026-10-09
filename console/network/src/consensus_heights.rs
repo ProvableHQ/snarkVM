@@ -187,7 +187,8 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V20, 22_175_000),
     // Target: October 1, 2026 at 21:00 UTC (2 PM PDT)
     (ConsensusVersion::V21, 22_437_000),
-    (ConsensusVersion::V22, u32::MAX),
+    // Target: October 15, 2026 at ~16:00 UTC
+    (ConsensusVersion::V22, 22_846_000),
 ];
 
 /// The consensus version heights for `TestnetV0`.
