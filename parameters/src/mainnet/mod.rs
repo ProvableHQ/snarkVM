@@ -332,7 +332,8 @@ mod tests {
 
         let holder = InclusionProver::lock_download(&file_path).expect("Failed to take the download lock");
         let waiter = std::thread::spawn(InclusionProver::load_bytes);
-        // Give the waiter time to find the file missing and wait for the lock.
+        // Give the waiter time to find the file missing and wait for the lock. A waiter that reaches its first
+        // check after the FIFO exists never takes the lock, and the test then passes without testing anything.
         std::thread::sleep(Duration::from_millis(300));
 
         // Reading a FIFO blocks until a writer opens and closes it, which keeps the waiter inside its read.
