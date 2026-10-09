@@ -319,12 +319,14 @@ mod tests {
     fn test_to_leaf_deployment_functions() -> Result<()> {
         let rng = &mut TestRng::default();
 
-        for (version, has_translation_keys) in [(1, false), (2, false), (2, true), (3, false)] {
+        for (version, has_translation_keys, is_fee_private) in
+            [(1, false, true), (2, false, false), (2, true, true), (3, false, false)]
+        {
             let transaction = crate::transaction::test_helpers::sample_deployment_transaction(
                 version,
                 Uniform::rand(rng),
                 has_translation_keys,
-                false,
+                is_fee_private,
                 rng,
             );
             let Transaction::Deploy(_, _, _, deployment, fee) = &transaction else {
