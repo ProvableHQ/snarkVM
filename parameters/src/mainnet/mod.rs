@@ -274,7 +274,7 @@ mod tests {
     use wasm_bindgen_test::*;
     wasm_bindgen_test_configure!(run_in_browser);
 
-    #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
+    #[cfg(all(feature = "filesystem", not(feature = "wasm"), not(target_env = "sgx")))]
     #[test]
     fn test_lock_download_waits_for_holder() {
         use std::time::Duration;
