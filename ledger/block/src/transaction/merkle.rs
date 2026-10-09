@@ -347,7 +347,10 @@ mod tests {
 
                 // A function hash without the header is not a leaf.
                 let headerless_id = CurrentNetwork::hash_bhp1024(&function.to_bytes_le()?.to_bits_le())?;
-                assert!(transaction.to_leaf(&headerless_id).is_err());
+                assert!(matches!(
+                    transaction.to_leaf(&headerless_id),
+                    Err(e) if e.to_string().contains("Function hash not found")
+                ));
             }
 
             let fee_leaf = transaction.to_leaf(&**fee.id())?;
