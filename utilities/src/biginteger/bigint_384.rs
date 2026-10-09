@@ -51,7 +51,7 @@ impl BigInteger for BigInteger384 {
     #[inline]
     fn add_nocarry(&mut self, other: &Self) -> bool {
         #[cfg(target_arch = "x86_64")]
-        unsafe {
+        {
             use core::arch::x86_64::_addcarry_u64;
             let mut carry = 0;
             carry = _addcarry_u64(carry, self.0[0], other.0[0], &mut self.0[0]);
@@ -78,7 +78,7 @@ impl BigInteger for BigInteger384 {
     #[inline]
     fn sub_noborrow(&mut self, other: &Self) -> bool {
         #[cfg(target_arch = "x86_64")]
-        unsafe {
+        {
             use core::arch::x86_64::_subborrow_u64;
             let mut borrow = 0;
             borrow = _subborrow_u64(borrow, self.0[0], other.0[0], &mut self.0[0]);

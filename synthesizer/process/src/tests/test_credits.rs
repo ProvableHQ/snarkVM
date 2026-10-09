@@ -2869,7 +2869,7 @@ mod sanity_checks {
         };
         // Sample 'root_tvk'.
         let root_tvk = None;
-        // Sample 'is_root'.
+        // Set 'is_root' to true.
         let is_root = true;
         // Compute the request.
         let request = Request::sign(

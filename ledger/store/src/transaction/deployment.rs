@@ -1428,10 +1428,14 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
         // Initialize the deployment storage.
         let storage = D::open(fee_store)?;
 
-        // Insert `credits.aleo`, which is the default program.
-        let credits_id = ProgramID::from_str("credits.aleo")?;
-        storage.edition_map().insert(credits_id, 0)?;
-        storage.program_map().insert((credits_id, 0), Program::credits()?)?;
+        // Do not introduce any records if the storage is used in readonly mode,
+        // as a secondary RocksDB instance.
+        if !matches!(storage.storage_mode(), StorageMode::Custom(_, Some(_))) {
+            // Insert `credits.aleo`, which is the default program.
+            let credits_id = ProgramID::from_str("credits.aleo")?;
+            storage.edition_map().insert(credits_id, 0)?;
+            storage.program_map().insert((credits_id, 0), Program::credits()?)?;
+        }
 
         // Return the deployment store.
         Ok(Self { storage, _phantom: PhantomData })

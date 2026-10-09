@@ -246,8 +246,11 @@ pub fn types_equivalent<N: Network>(
     // struct shared by many members is compared at most once. Without this, a program in which every member of
     // each struct refers to the same earlier struct forms an acyclic graph with exponentially many paths, and the
     // walk below would make up to `MAX_STRUCT_ENTRIES ^ MAX_STRUCTS` recursive calls.
+    // `in_progress` holds the pairs currently on the recursion path, and re-entering one means the cross-program
+    // struct graph is cyclic.
     let mut confirmed = HashSet::new();
-    types_equivalent_inner(stack0, type0, stack1, type1, &mut confirmed)
+    let mut in_progress = HashSet::new();
+    types_equivalent_inner(stack0, type0, stack1, type1, &mut confirmed, &mut in_progress)
 }
 
 /// The memoized inner traversal for [`types_equivalent`].
@@ -257,6 +260,7 @@ fn types_equivalent_inner<N: Network>(
     stack1: &impl StackTrait<N>,
     type1: &PlaintextType<N>,
     confirmed: &mut HashSet<(ProgramID<N>, ProgramID<N>, Identifier<N>)>,
+    in_progress: &mut HashSet<(ProgramID<N>, ProgramID<N>, Identifier<N>)>,
 ) -> Result<bool> {
     use PlaintextType::*;
 
@@ -269,10 +273,11 @@ fn types_equivalent_inner<N: Network>(
                 stack1,
                 array1.next_element_type(),
                 confirmed,
+                in_progress,
             )?),
         (Literal(lit0), Literal(lit1)) => Ok(lit0 == lit1),
         (Struct(id0), Struct(id1)) => match id0 == id1 {
-            true => structs_equivalent_inner(stack0, stack1, id0, confirmed),
+            true => structs_equivalent_inner(stack0, stack1, id0, confirmed, in_progress),
             false => Ok(false),
         },
         (ExternalStruct(loc0), ExternalStruct(loc1)) => match loc0.resource() == loc1.resource() {
@@ -281,15 +286,28 @@ fn types_equivalent_inner<N: Network>(
                 &*stack1.get_external_stack(loc1.program_id())?,
                 loc0.resource(),
                 confirmed,
+                in_progress,
             ),
             false => Ok(false),
         },
         (ExternalStruct(loc), Struct(id)) => match loc.resource() == id {
-            true => structs_equivalent_inner(&*stack0.get_external_stack(loc.program_id())?, stack1, id, confirmed),
+            true => structs_equivalent_inner(
+                &*stack0.get_external_stack(loc.program_id())?,
+                stack1,
+                id,
+                confirmed,
+                in_progress,
+            ),
             false => Ok(false),
         },
         (Struct(id), ExternalStruct(loc)) => match id == loc.resource() {
-            true => structs_equivalent_inner(stack0, &*stack1.get_external_stack(loc.program_id())?, id, confirmed),
+            true => structs_equivalent_inner(
+                stack0,
+                &*stack1.get_external_stack(loc.program_id())?,
+                id,
+                confirmed,
+                in_progress,
+            ),
             false => Ok(false),
         },
         _ => Ok(false),
@@ -299,6 +317,9 @@ fn types_equivalent_inner<N: Network>(
 /// Compares the struct named `name` in `stack0` against the one of that name in `stack1`, threading the
 /// memoization set from [`types_equivalent_inner`].
 ///
+/// `in_progress` holds the pairs currently on the recursion path, and re-entering one means the cross-program
+/// struct graph is cyclic.
+///
 /// The key is `(program0, program1, name)`, which uniquely identifies the pair being compared, since a name
 /// resolves to one struct per program.
 fn structs_equivalent_inner<N: Network>(
@@ -306,6 +327,7 @@ fn structs_equivalent_inner<N: Network>(
     stack1: &impl StackTrait<N>,
     name: &Identifier<N>,
     confirmed: &mut HashSet<(ProgramID<N>, ProgramID<N>, Identifier<N>)>,
+    in_progress: &mut HashSet<(ProgramID<N>, ProgramID<N>, Identifier<N>)>,
 ) -> Result<bool> {
     // If this pair of structs has already been confirmed equivalent, there is nothing left to compare.
     let key = (*stack0.program_id(), *stack1.program_id(), *name);
@@ -313,17 +335,36 @@ fn structs_equivalent_inner<N: Network>(
         return Ok(true);
     }
 
-    let st0 = stack0.program().get_struct(name)?;
-    let st1 = stack1.program().get_struct(name)?;
-
-    if st0.members().len() != st1.members().len() {
-        return Ok(false);
+    // Reject cyclic struct references instead of recursing until the process exhausts its stack.
+    if !in_progress.insert(key) {
+        bail!(
+            "Cyclic struct reference detected while comparing '{name}' in '{}' and '{}'",
+            stack0.program_id(),
+            stack1.program_id()
+        )
     }
 
-    for ((name0, type0), (name1, type1)) in st0.members().iter().zip(st1.members()) {
-        if name0 != name1 || !types_equivalent_inner(stack0, type0, stack1, type1, confirmed)? {
+    let result: Result<bool> = (|| {
+        let st0 = stack0.program().get_struct(name)?;
+        let st1 = stack1.program().get_struct(name)?;
+
+        if st0.members().len() != st1.members().len() {
             return Ok(false);
         }
+
+        for ((name0, type0), (name1, type1)) in st0.members().iter().zip(st1.members()) {
+            if name0 != name1 || !types_equivalent_inner(stack0, type0, stack1, type1, confirmed, in_progress)? {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    })();
+
+    in_progress.remove(&key);
+
+    if !result? {
+        return Ok(false);
     }
 
     // Record only confirmed equivalences: a mismatch short-circuits the whole comparison to `false`, so a hit

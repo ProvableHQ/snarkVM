@@ -272,16 +272,37 @@ impl<F: FftField> EvaluationDomain<F> {
             }
             u
         } else {
-            let mut l = (t_size - one) * self.size_inv;
-            let mut r = one;
+            let l0 = (t_size - one) * self.size_inv;
             let mut u = vec![F::zero(); size];
             let mut ls = vec![F::zero(); size];
-            for i in 0..size {
-                u[i] = tau - r;
-                ls[i] = l;
-                l *= &self.group_gen;
-                r *= &self.group_gen;
-            }
+
+            // Fill `u[i] = tau - g^i` and `ls[i] = l0 * g^i`, where `g = group_gen`. Both
+            // sequences are powers of `g`, so a block can seed itself with `g^start`
+            // instead of walking there from zero, which is what lets the fill
+            // run in parallel.
+            //
+            // Same shape as `distribute_powers_and_mul_by_const` above.
+            #[cfg(not(feature = "serial"))]
+            let chunk = core::cmp::max(size / max_available_threads(), 1024);
+            #[cfg(feature = "serial")]
+            let chunk = core::cmp::max(size, 1);
+
+            // The chunks run unordered, so each seeds itself rather than carrying `r` from
+            // its predecessor. `chunk_gen^i` is the same seed as `g^(i*chunk)` from a
+            // ladder over `log2(chunks)` bits instead of 64.
+            let chunk_gen = self.group_gen.pow([chunk as u64]);
+            cfg_chunks_mut!(u, chunk).zip(cfg_chunks_mut!(ls, chunk)).enumerate().for_each(
+                |(i, (u_chunk, ls_chunk))| {
+                    let mut r = chunk_gen.pow([i as u64]);
+                    let mut l = l0 * r;
+                    u_chunk.iter_mut().zip(ls_chunk.iter_mut()).for_each(|(tau_minus_r, l_i)| {
+                        *tau_minus_r = tau - r;
+                        *l_i = l;
+                        r *= &self.group_gen;
+                        l *= &self.group_gen;
+                    });
+                },
+            );
 
             batch_inversion(u.as_mut_slice());
             cfg_iter_mut!(u, 1_000).zip_eq(ls).for_each(|(tau_minus_r, l)| {
@@ -1221,6 +1242,22 @@ mod tests {
                 println!("cuda error!");
             }
             assert_eq!(random_polynomial.coeffs, polynomial_evaluations_cuda, "domain size = {domain_size}");
+        }
+    }
+
+    #[test]
+    fn test_reindex_by_subdomain_is_a_permutation() {
+        // `(4, 2)` makes `period - 1` equal 1, and `(8, 1)` is the smallest subdomain.
+        for (big, small) in [(8usize, 2usize), (16, 4), (32, 8), (64, 2), (128, 32), (4, 2), (8, 1)] {
+            let g = EvaluationDomain::<Fr>::new(big).unwrap();
+            let s = EvaluationDomain::<Fr>::new(small).unwrap();
+            let mut image = (0..g.size()).map(|i| g.reindex_by_subdomain(&s, i).unwrap()).collect::<Vec<_>>();
+            // The subdomain's elements are every `period`-th element of the domain.
+            for (i, j) in image.iter().enumerate().take(s.size()) {
+                assert_eq!(*j, i * (big / small), "big={big} small={small} i={i}");
+            }
+            image.sort_unstable();
+            assert_eq!(image, (0..g.size()).collect::<Vec<_>>(), "big={big} small={small} not a permutation");
         }
     }
 }

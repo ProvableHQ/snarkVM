@@ -34,7 +34,9 @@ macro_rules! remove_file {
         // Safely remove the corrupt file, if it exists.
         #[cfg(not(feature = "wasm"))]
         if std::path::PathBuf::from(&$filepath).exists() {
-            match std::fs::remove_file(&$filepath) {
+            let _removed = std::fs::remove_file(&$filepath);
+            #[cfg(not(feature = "no_std_out"))]
+            match _removed {
                 Ok(()) => println!("Removed {:?}. Please retry the command.", $filepath),
                 Err(err) => eprintln!("Failed to remove {:?}: {err}", $filepath),
             }
@@ -79,14 +81,35 @@ macro_rules! impl_store_and_remote_fetch {
                 println!("{}", output.dimmed());
             }
 
+            use std::time::Duration;
+            const CONNECT: Option<Duration> = Some(Duration::from_secs(10));
+            const HEADERS: Option<Duration> = Some(Duration::from_secs(30));
+
+            // `CONNECT` covers the DNS lookup, the TCP connect and the TLS handshake (ureq 3.4).
+            let agent: ureq::Agent = ureq::Agent::config_builder()
+                .max_redirects(10)
+                .timeout_resolve(CONNECT)
+                .timeout_connect(CONNECT)
+                .timeout_send_request(CONNECT)
+                .timeout_recv_response(HEADERS)
+                .build()
+                .into();
+
+            // A mid-body stall is not bounded: ureq 3.4's `timeout_recv_body` is a total budget and these files
+            // reach 12.9 GB. A per-chunk bound on `Range` requests would close it.
+            let fetch_once = |buffer: &mut Vec<u8>| -> Result<(), ureq::Error> {
+                let mut response = agent.get(url).call()?;
+                // Read inside the retried unit, so a mid-body failure reaches the retry arms below.
+                buffer.clear();
+                response.body_mut().as_reader().read_to_end(buffer)?;
+                Ok(())
+            };
+
             // Retry up to 3 times on transient errors (5xx, 429, IO, timeout).
             let mut attempts = 3u32;
             loop {
-                match ureq::get(url).config().max_redirects(10).build().call() {
-                    Ok(mut response) => {
-                        response.body_mut().as_reader().read_to_end(buffer)?;
-                        break;
-                    }
+                match fetch_once(buffer) {
+                    Ok(()) => break,
                     Err(ureq::Error::StatusCode(code)) if attempts > 0 && (code >= 500 || code == 429) => {
                         attempts -= 1;
                     }
@@ -272,6 +295,7 @@ macro_rules! impl_load_bytes_logic_remote {
                 // Ensure the checksum matches.
                 let candidate_checksum = checksum!(buffer.as_slice());
                 if $expected_checksum != candidate_checksum {
+                    remove_file!(file_path);
                     return checksum_error!($expected_checksum, candidate_checksum)
                 }
                 return Ok(buffer);

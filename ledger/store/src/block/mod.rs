@@ -49,7 +49,7 @@ use snarkvm_synthesizer_program::{FinalizeOperation, Program};
 
 use aleo_std_storage::StorageMode;
 #[cfg(feature = "rocks")]
-use aleo_std_storage::aleo_ledger_dir;
+use aleo_std_storage::{aleo_ledger_dir, aleo_secondary_ledger_dir};
 use anyhow::{Context, Result};
 #[cfg(feature = "locktick")]
 use locktick::{LockGuard, parking_lot::RwLock};
@@ -119,9 +119,16 @@ fn to_confirmed_transaction<N: Network>(
 #[cfg(feature = "rocks")]
 pub(crate) const BLOCK_TREE_CACHE_PREFIX: &[u8; 12] = b"aleo.tree.01";
 
+/// Returns the path to the block tree cache file, or `None` if the block tree is not to be cached.
 pub(crate) fn block_tree_cache_path<N: Network, B: BlockStorage<N>>(storage: &B) -> Option<std::path::PathBuf> {
     #[cfg(feature = "rocks")]
     {
+        // A secondary instance must not touch the primary's cache, and it can't keep one of its own
+        // either, as it catches up with the primary on startup, which would make its cache stale.
+        if aleo_secondary_ledger_dir(N::ID, storage.storage_mode()).is_some() {
+            return None;
+        }
+
         let mut path = aleo_ledger_dir(N::ID, storage.storage_mode());
         path.push("block_tree");
         Some(path)
@@ -703,7 +710,16 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         let block_path = block_tree.prove(block.height() as usize, &block.hash().to_bits_le())?;
 
         // Ensure the global state root exists in storage.
-        if !self.reverse_state_root_map().contains_key_confirmed(&global_state_root.into())? {
+        // Height 0 stores `Field::one()` as its state root.
+        #[cfg(feature = "dev_genesis_state_root")]
+        let root_in_storage = if block.height() == 0 {
+            self.get_state_root(0)?.as_ref() == Some(&Field::<N>::one().into())
+        } else {
+            self.reverse_state_root_map().contains_key_confirmed(&global_state_root.into())?
+        };
+        #[cfg(not(feature = "dev_genesis_state_root"))]
+        let root_in_storage = self.reverse_state_root_map().contains_key_confirmed(&global_state_root.into())?;
+        if !root_in_storage {
             bail!("The global state root '{global_state_root}' for commitment '{commitment}' is missing in storage");
         }
 
@@ -1053,6 +1069,10 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     #[cfg(feature = "rocks")]
     fn backup_database<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), String>;
 
+    /// Catches up with the primary instance; only applicable to secondary instances.
+    #[cfg(feature = "rocks")]
+    fn catch_up_with_primary(&self) -> Result<()>;
+
     fn create_block_tree(&self) -> Result<BlockTree<N>>;
 }
 
@@ -1110,8 +1130,24 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         if block.height() != u32::try_from(updated_tree.number_of_leaves())? - 1 {
             bail!("Attempted to insert a block at the incorrect height into storage")
         }
+        // A fixed genesis state root facilitates deterministic creation of transactions for easier testing.
+        //
+        // At height 0 the stored state root is `Field::one()`. `contains_state_root` accepts that
+        // value and rejects the block tree root. `current_state_root` and `Query::VM` return the fixed
+        // root while the tree contains only genesis, so a transaction built from `current_state_root`
+        // verifies at height 0.
+        // `get_state_path_for_commitment` still embeds the block tree root. That root is not stored at
+        // height 0, so spending a genesis record fails with `global state root does not exist (yet)`
+        // until block 1 stores the tree root.
+        // Never enable this feature on a real network. Start the ledger from genesis with the feature
+        // already on. Turning it on or off against an existing store fails the state-root check in
+        // `Ledger::load`.
+        #[cfg(feature = "dev_genesis_state_root")]
+        let state_root = if block.height() == 0 { Field::<N>::one().into() } else { (*updated_tree.root()).into() };
+        #[cfg(not(feature = "dev_genesis_state_root"))]
+        let state_root = (*updated_tree.root()).into();
         // Insert the (state root, block height) pair.
-        self.storage.insert((*updated_tree.root()).into(), block)?;
+        self.storage.insert(state_root, block)?;
         // Update the block tree, preserving the previous Merkle tree allocation for performance.
         updated_tree.preserve_tree_allocation(&mut tree);
         *tree = updated_tree;
@@ -1261,12 +1297,24 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         self.storage.backup_database(path)
     }
 
+    /// Catches up with the primary instance, making all the blocks it has inserted so far
+    /// readable from storage; only applicable to storage opened in secondary mode.
+    ///
+    /// # Note
+    /// This only refreshes the contents of the database, and not any in-memory state (e.g. the
+    /// block tree), so the latest block height should be obtained via [`Self::max_height`].
+    #[cfg(feature = "rocks")]
+    pub fn catch_up_with_primary(&self) -> Result<()> {
+        self.storage.catch_up_with_primary()
+    }
+
     /// Serializes and persists the current block tree.
     #[cfg(feature = "rocks")]
     pub fn cache_block_tree(&self) -> Result<()> {
         // Prepare the path for the target file.
         let Some(path) = block_tree_cache_path::<N, _>(&self.storage) else {
-            bail!("Failed to determine the block tree cache path");
+            // The block tree is not cached for this storage.
+            return Ok(());
         };
 
         // Take an owned snapshot of the tree, so that the read lock is released before the write
@@ -1344,7 +1392,13 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
     /// Returns the current state root.
     pub fn current_state_root(&self) -> N::StateRoot {
-        (*self.tree.read().root()).into()
+        let tree = self.tree.read();
+        // Height 0 stores `Field::one()` as its state root.
+        #[cfg(feature = "dev_genesis_state_root")]
+        if tree.number_of_leaves() == 1 {
+            return Field::<N>::one().into();
+        }
+        (*tree.root()).into()
     }
 
     /// Returns the current block height.
@@ -1820,6 +1874,42 @@ mod tests {
         assert!(matches!(txn3, Transaction::Fee(..)));
         assert_ne!(txn1, txn3);
         assert_eq!(txn3, txn4);
+    }
+
+    /// The stored genesis state root is the fixed value when `dev_genesis_state_root` is enabled.
+    #[cfg(feature = "dev_genesis_state_root")]
+    #[test]
+    fn test_dev_genesis_state_root() {
+        let rng = &mut TestRng::default();
+
+        let private_key = snarkvm_ledger_test_helpers::sample_genesis_private_key(rng);
+        let transactions = Transactions::from_iter(Vec::<ConfirmedTransaction<CurrentNetwork>>::new());
+        let ratifications = Ratifications::try_from(vec![]).unwrap();
+        let header = Header::genesis(&ratifications, &transactions, vec![]).unwrap();
+        let previous_hash = <CurrentNetwork as Network>::BlockHash::default();
+
+        // Construct the genesis block.
+        let block = Block::new_beacon(
+            &private_key,
+            previous_hash,
+            header,
+            ratifications,
+            None.into(),
+            vec![],
+            transactions,
+            vec![],
+            rng,
+        )
+        .unwrap();
+
+        // Initialize a new block store.
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
+        // Insert the block.
+        block_store.insert(&block).unwrap();
+
+        // The stored genesis state root is the fixed value.
+        let state_root = block_store.get_state_root(0).unwrap().unwrap().to_string();
+        assert_eq!(state_root, "sr1qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqquwxeur");
     }
 
     #[test]
