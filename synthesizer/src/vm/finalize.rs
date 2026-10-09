@@ -943,6 +943,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         self.store.finalize_store().block_height().store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
+        // Mapping and staking events are emitted only while canonical finalize is in progress.
+        #[cfg(not(target_arch = "wasm32"))]
+        let finalize_mode = Arc::clone(self.store.finalize_store().is_finalize_mode());
+        #[cfg(not(target_arch = "wasm32"))]
+        finalize_mode.store(true, std::sync::atomic::Ordering::SeqCst);
+        #[cfg(not(target_arch = "wasm32"))]
+        defer! {
+            finalize_mode.store(false, std::sync::atomic::Ordering::SeqCst);
+        }
+
         // Perform the finalize operation on the preset finalize mode.
         let finalize_result = atomic_finalize!(self.finalize_store(), FinalizeMode::RealRun, {
             // Initialize an iterator for ratifications before finalize.
@@ -1871,6 +1881,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             warn!("Failed to write JSON history for block {height}: {error}");
                         }
                     }
+
+                    // Emit one reward per current staker when slipstream is enabled during canonical finalize.
+                    #[cfg(not(target_arch = "wasm32"))]
+                    store.notify_staking_rewards(&current_stakers, &next_stakers, state.block_height());
 
                     // Store the finalize operations for updating the committee and bonded mapping.
                     finalize_operations.extend(&[

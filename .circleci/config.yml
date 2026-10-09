@@ -1095,6 +1095,20 @@ jobs:
       - run_test:
           workspace_member: snarkvm-utilities-derives
 
+  slipstream-plugin-interface:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.small >>
+    steps:
+      - run_test:
+          workspace_member: snarkvm-slipstream-plugin-interface
+
+  slipstream-plugin-manager:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.small >>
+    steps:
+      - run_test:
+          workspace_member: snarkvm-slipstream-plugin-manager
+
   wasm:
     executor: rust-docker
     resource_class: << pipeline.parameters.medium >>
@@ -1318,6 +1332,8 @@ workflows:
       - snarkvm
       - utilities
       - utilities-derives
+      - slipstream-plugin-interface
+      - slipstream-plugin-manager
       - wasm
 
   # Jobs specific to this branch to run

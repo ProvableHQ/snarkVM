@@ -557,6 +557,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 }) {
                     self.partially_verified_transactions().write().clear();
                 }
+                // The block is committed. Deliver it when slipstream is enabled.
+                #[cfg(not(target_arch = "wasm32"))]
+                self.finalize_store().notify_block(&block, block.height());
                 Ok(())
             }
             Err(finalize_error) => {
