@@ -193,6 +193,15 @@ commands:
       use_cache:
         type: boolean
         default: true
+      # Nextest filter expression. Empty keeps the expression derived from flags.
+      filter_expr:
+        type: string
+        default: ""
+      # `fail` makes a job with zero selected tests fail.
+      no_tests:
+        type: enum
+        enum: ["pass", "fail"]
+        default: "pass"
     steps:
       - checkout
 
@@ -360,6 +369,12 @@ commands:
               fi
             fi
 
+            # A job can name the tests it must run.
+            PARAM_FILTER="<< parameters.filter_expr >>"
+            if [ -n "$PARAM_FILTER" ]; then
+              FILTER_EXPR="$PARAM_FILTER"
+            fi
+
             # Detect and extract --test-threads value (used to set JOBS)
             TEST_THREADS=""
             if [ -n "$RIGHT_OF_SEP" ]; then
@@ -413,7 +428,7 @@ commands:
                 -p "<< parameters.workspace_member >>" $BUILD_FLAGS_SANITIZED \
                 --profile ci -j "${JOBS}" "${CFG_ARGS[@]}" \
                 --status-level fail --hide-progress-bar \
-                --no-tests=pass \
+                --no-tests=<< parameters.no_tests >> \
                 ${FILTER_EXPR:+--filter-expr "$FILTER_EXPR"} \
                 2>&1 | tee "$OUT" || FAILED=1
             fi
@@ -439,7 +454,7 @@ commands:
                     -p "<< parameters.workspace_member >>" $BUILD_FLAGS_SANITIZED \
                     --profile ci -j "${JOBS}" "${CFG_ARGS[@]}" \
                     --status-level fail --hide-progress-bar \
-                    --no-tests=pass \
+                    --no-tests=<< parameters.no_tests >> \
                     ${FILTER_EXPR:+--filter-expr "$FILTER_EXPR"} \
                     2>&1 | tee "$OUT"
                 fi
@@ -875,6 +890,21 @@ jobs:
       - run_test:
           workspace_member: snarkvm-ledger-store
           flags: --features=rocks
+
+  # snarkvm-ledger-store dev* and test* features are dev_genesis_state_root and test.
+  # test_genesis_commitment_checks_passed_block_tree_root is compiled only with the first.
+  ledger-store-dev-features:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.xlarge >>
+    steps:
+      - run_test:
+          workspace_member: snarkvm-ledger-store
+          flags: --lib --features dev_genesis_state_root,test -- --test-threads=1
+          filter_expr: "test(test_genesis_commitment_checks_passed_block_tree_root)"
+          no_tests: fail
+          cache_key_suffix: -dev-features
+          no_output_timeout: 20m
+          timeout: 25m
 
   ledger-store-prerelease:
     executor: rust-docker
@@ -1325,6 +1355,12 @@ workflows:
     when: pipeline.git.branch == "fix_target_adjustment_tests"
     jobs:
       - ledger-block
+
+  # The genesis commitment check is cfg-gated, so the default ledger-store job does not compile it.
+  genesis-commitment-workflow:
+    when: pipeline.git.branch == "fix/genesis-commitment-block-tree-root"
+    jobs:
+      - ledger-store-dev-features
 
   # Run additional but unlikely to fail checks on merges only
   merge-workflow:
