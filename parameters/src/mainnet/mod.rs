@@ -307,14 +307,20 @@ mod tests {
     fn test_load_bytes_reads_without_lock() {
         // `load_bytes` stores files under `$HOME`, so the scenario runs in a child process with a temporary `HOME`.
         let home = std::env::temp_dir().join(format!("snarkvm-load-bytes-home-{}", std::process::id()));
-        let status = std::process::Command::new(std::env::current_exe().expect("Failed to locate the test binary"))
+        let output = std::process::Command::new(std::env::current_exe().expect("Failed to locate the test binary"))
             .args(["--exact", "mainnet::tests::load_bytes_reads_without_lock_in_home", "--ignored"])
             .env("HOME", &home)
             .env(TEMPORARY_HOME, &home)
-            .status()
+            .output()
             .expect("Failed to run the child test");
         let _ = std::fs::remove_dir_all(&home);
-        assert!(status.success(), "The child test failed");
+        // libtest also succeeds when `--exact` matches no test.
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success() && stdout.contains("test result: ok. 1 passed"),
+            "The child test failed or did not run:\n{stdout}{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     #[cfg(all(feature = "filesystem", not(feature = "wasm"), not(target_env = "sgx"), unix))]
@@ -341,7 +347,13 @@ mod tests {
         assert!(mkfifo.success(), "Failed to create a FIFO");
         drop(holder);
         // Opening the write end blocks until the waiter opens the read end.
-        let writer = std::fs::OpenOptions::new().write(true).open(&file_path).expect("Failed to open the FIFO");
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let fifo_path = file_path.clone();
+        std::thread::spawn(move || sender.send(std::fs::OpenOptions::new().write(true).open(fifo_path)));
+        let writer = receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("The waiter did not open the FIFO")
+            .expect("Failed to open the FIFO");
 
         let mut lock_path = file_path.into_os_string();
         lock_path.push(".lock");
