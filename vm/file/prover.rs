@@ -187,7 +187,8 @@ impl<N: Network> ToBytes for ProverFile<N> {
     /// Writes the prover file to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         self.function_name.write_le(&mut writer)?;
-        self.proving_key.write_le(&mut writer)
+        // In full, as `read_le` has no universal SRS to read a reference to it with.
+        self.proving_key.write_le_full(&mut writer)
     }
 }
 

@@ -50,6 +50,11 @@ const NUM_POWERS_28: usize = 1 << 28;
 pub const MAX_NUM_POWERS: usize = NUM_POWERS_28;
 
 lazy_static::lazy_static! {
+    static ref SRS_CHECKSUM: [u8; 32] = {
+        let metadata: serde_json::Value = serde_json::from_str(Degree15::METADATA).expect("Metadata was not well-formatted");
+        let checksum = metadata["checksum"].as_str().expect("Failed to parse checksum");
+        hex::decode(checksum).ok().and_then(|bytes| bytes.try_into().ok()).expect("The checksum is not 32 hex bytes")
+    };
     static ref POWERS_OF_BETA_G_15: Vec<u8> = Degree15::load_bytes().expect("Failed to load powers of beta in universal SRS");
     static ref SHIFTED_POWERS_OF_BETA_G_15: Vec<u8> = ShiftedDegree15::load_bytes().expect("Failed to load powers of beta in universal SRS");
     static ref POWERS_OF_BETA_GAMMA_G: Vec<u8> = Gamma::load_bytes().expect("Failed to load powers of beta wrt gamma * G in universal SRS");
@@ -80,6 +85,15 @@ pub struct PowersOfG<E: PairingEngine> {
     prepared_negative_powers_of_beta_h: Arc<BTreeMap<usize, <E::G2Affine as PairingCurve>::Prepared>>,
     /// beta * h
     beta_h: E::G2Affine,
+    /// The checksum of the SRS these powers belong to; see `srs_checksum`.
+    checksum: [u8; 32],
+}
+
+/// The checksum of the SRS that `PowersOfG::load` loads: the checksum built in
+/// for `powers-of-beta-15`, the file every load reads first. That file holds
+/// `G` and `beta * G`, which fix every other power of beta G.
+pub fn srs_checksum() -> [u8; 32] {
+    *SRS_CHECKSUM
 }
 
 impl<E: PairingEngine> PowersOfG<E> {
@@ -107,7 +121,13 @@ impl<E: PairingEngine> PowersOfG<E> {
             negative_powers_of_beta_h,
             prepared_negative_powers_of_beta_h,
             beta_h,
+            checksum: srs_checksum(),
         })
+    }
+
+    /// The checksum of the SRS these powers belong to.
+    pub fn checksum(&self) -> [u8; 32] {
+        self.checksum
     }
 
     /// Download the powers of beta G specified by `range`.
