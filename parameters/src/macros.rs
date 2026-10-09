@@ -258,8 +258,8 @@ macro_rules! impl_load_bytes_logic_remote {
                 file_path.push($local_dir);
                 file_path.push($filename);
 
-                // Loaders of a missing file hold this lock until the file is stored, so the first downloads it and
-                // the rest wait, then read and verify the stored file concurrently.
+                // A loader that finds the file missing holds this lock until the file is stored, so the first
+                // downloads it and the rest wait, then read and verify the stored file concurrently.
                 // A download that stalls blocks every waiting loader until the stalled process exits.
                 #[cfg(not(target_env = "sgx"))]
                 let lock = if file_path.exists() { None } else { Self::lock_download(&file_path) };

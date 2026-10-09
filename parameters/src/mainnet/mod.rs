@@ -307,6 +307,8 @@ mod tests {
     fn test_load_bytes_reads_without_lock() {
         // `load_bytes` stores files under `$HOME`, so the scenario runs in a child process with a temporary `HOME`.
         let home = std::env::temp_dir().join(format!("snarkvm-load-bytes-home-{}", std::process::id()));
+        // A killed run can leave its FIFO behind.
+        let _ = std::fs::remove_dir_all(&home);
         let output = std::process::Command::new(std::env::current_exe().expect("Failed to locate the test binary"))
             .args(["--exact", "mainnet::tests::load_bytes_reads_without_lock_in_home", "--ignored"])
             .env("HOME", &home)
