@@ -1332,7 +1332,7 @@ workflows:
       or pipeline.git.branch == "canary"
       or pipeline.git.branch == "testnet"
       or pipeline.git.branch == "mainnet"
-      or pipeline.git.branch == "test_net_v4120"
+      or pipeline.git.branch == "main_net_v4120"
     jobs:
       - check-unused-dependencies # This can be cleaned up before releases
       - check-cargo-semver-checks # This can be cleaned up before releases
@@ -1361,7 +1361,7 @@ workflows:
     when: pipeline.git.branch == "canary"
       or pipeline.git.branch == "testnet"
       or pipeline.git.branch == "mainnet"
-      or pipeline.git.branch == "test_net_v4120"
+      or pipeline.git.branch == "main_net_v4120"
     jobs:
       - verify-windows: # Windows has never failed us when linux passed
           matrix:
