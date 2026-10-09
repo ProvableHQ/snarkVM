@@ -274,7 +274,7 @@ mod tests {
     use wasm_bindgen_test::*;
     wasm_bindgen_test_configure!(run_in_browser);
 
-    #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
+    #[cfg(all(feature = "filesystem", not(feature = "wasm"), not(target_env = "sgx")))]
     #[test]
     fn test_lock_download_waits_for_holder() {
         use std::time::Duration;
@@ -296,6 +296,60 @@ mod tests {
         assert!(waiter.join().expect("The waiter panicked").is_some());
 
         let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// Set to the temporary `HOME` of the child process that runs `load_bytes_reads_without_lock_in_home`.
+    #[cfg(all(feature = "filesystem", not(feature = "wasm"), not(target_env = "sgx"), unix))]
+    const TEMPORARY_HOME: &str = "SNARKVM_PARAMETERS_TEMPORARY_HOME";
+
+    #[cfg(all(feature = "filesystem", not(feature = "wasm"), not(target_env = "sgx"), unix))]
+    #[test]
+    fn test_load_bytes_reads_without_lock() {
+        // `load_bytes` stores files under `$HOME`, so the scenario runs in a child process with a temporary `HOME`.
+        let home = std::env::temp_dir().join(format!("snarkvm-load-bytes-home-{}", std::process::id()));
+        let status = std::process::Command::new(std::env::current_exe().expect("Failed to locate the test binary"))
+            .args(["--exact", "mainnet::tests::load_bytes_reads_without_lock_in_home", "--ignored"])
+            .env("HOME", &home)
+            .env(TEMPORARY_HOME, &home)
+            .status()
+            .expect("Failed to run the child test");
+        let _ = std::fs::remove_dir_all(&home);
+        assert!(status.success(), "The child test failed");
+    }
+
+    #[cfg(all(feature = "filesystem", not(feature = "wasm"), not(target_env = "sgx"), unix))]
+    #[test]
+    #[ignore = "test_load_bytes_reads_without_lock runs this with a temporary HOME"]
+    fn load_bytes_reads_without_lock_in_home() {
+        use std::time::Duration;
+
+        let Some(home) = std::env::var_os(TEMPORARY_HOME) else { return };
+        let metadata: serde_json::Value =
+            serde_json::from_str(InclusionProver::METADATA).expect("Metadata was not well-formatted");
+        let checksum = metadata["prover_checksum"].as_str().expect("Failed to parse checksum");
+        let file_path = aleo_std::aleo_dir().join("resources").join(format!("inclusion.prover.{}", &checksum[..7]));
+        assert!(file_path.starts_with(home), "The parameter file is outside the temporary HOME");
+
+        let holder = InclusionProver::lock_download(&file_path).expect("Failed to take the download lock");
+        let waiter = std::thread::spawn(InclusionProver::load_bytes);
+        // Give the waiter time to find the file missing and wait for the lock.
+        std::thread::sleep(Duration::from_millis(300));
+
+        // Reading a FIFO blocks until a writer opens and closes it, which keeps the waiter inside its read.
+        let mkfifo = std::process::Command::new("mkfifo").arg(&file_path).status().expect("Failed to run mkfifo");
+        assert!(mkfifo.success(), "Failed to create a FIFO");
+        drop(holder);
+        // Opening the write end blocks until the waiter opens the read end.
+        let writer = std::fs::OpenOptions::new().write(true).open(&file_path).expect("Failed to open the FIFO");
+
+        let mut lock_path = file_path.into_os_string();
+        lock_path.push(".lock");
+        let lock = std::fs::File::open(lock_path).expect("Failed to open the lock file");
+        assert!(lock.try_lock().is_ok(), "The waiter holds the lock while it reads the file");
+
+        drop(writer);
+        let result = waiter.join().expect("The waiter panicked");
+        assert!(matches!(result, Err(crate::errors::ParameterError::SizeMismatch(_, 0))), "Unexpected result");
     }
 
     #[ignore]

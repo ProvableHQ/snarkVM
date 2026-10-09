@@ -258,12 +258,15 @@ macro_rules! impl_load_bytes_logic_remote {
                 file_path.push($local_dir);
                 file_path.push($filename);
 
-                // Concurrent loaders of a missing file take turns, so the first downloads it and the rest read it.
+                // Loaders of a missing file hold this lock until the file is stored, so the first downloads it and
+                // the rest wait, then read and verify the stored file concurrently.
                 // A download that stalls blocks every waiting loader until the stalled process exits.
                 #[cfg(not(target_env = "sgx"))]
-                let _lock = if file_path.exists() { None } else { Self::lock_download(&file_path) };
+                let lock = if file_path.exists() { None } else { Self::lock_download(&file_path) };
 
                 let buffer = if file_path.exists() {
+                    #[cfg(not(target_env = "sgx"))]
+                    drop(lock);
                     // Attempts to load the parameter file locally with an absolute path.
                     std::fs::read(&file_path)?
                 } else {
@@ -329,7 +332,9 @@ macro_rules! impl_load_bytes_logic_remote {
                                 return Err(err);
                             }
 
-                            match Self::store_bytes(&buffer, &file_path) {
+                            let stored = Self::store_bytes(&buffer, &file_path);
+                            drop(lock);
+                            match stored {
                                 Ok(()) => buffer,
                                 Err(_) => {
                                     eprintln!(
