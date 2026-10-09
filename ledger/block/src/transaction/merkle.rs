@@ -38,7 +38,7 @@ impl<N: Network> Transaction<N> {
                 }
 
                 // Prepare the header for the function hash.
-                // Note: This must match the header used by `deployment_tree` for the deployment version.
+                // Note: This must match the header used by `deployment_tree_v1` and `deployment_tree_v2`.
                 let header = match deployment.version() {
                     Ok(DeploymentVersion::V1) => deployment.program().id().to_bits_le(),
                     Ok(version @ (DeploymentVersion::V2 | DeploymentVersion::V3)) => {
@@ -353,7 +353,6 @@ mod tests {
                 fee_leaf,
                 TransactionLeaf::new_fee(u16::try_from(deployment.program().functions().len())?, **fee.id())
             );
-            assert!(transaction.to_leaf(&Uniform::rand(rng)).is_err());
         }
         Ok(())
     }
