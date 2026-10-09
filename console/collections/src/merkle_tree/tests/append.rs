@@ -653,6 +653,22 @@ fn test_append_fills_a_shallow_tree() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn test_append_if_matches() -> Result<()> {
+    let (lh, ph, leaves) = poseidon_setup(&mut TestRng::default())?;
+    let new = |n: usize| PoseidonTree::new(&lh, &ph, &leaves[..n]);
+
+    for (old, k) in [(5, 2), (5, 4), (0, 1), (1, 1), (5, 0)] {
+        let expected = new(old + k)?;
+        let mut tree = new(old)?;
+        assert!(tree.append_if_matches(&leaves[old..old + k], &Field::zero()).is_err());
+        assert_same(&tree, &new(old)?);
+        tree.append_if_matches(&leaves[old..old + k], expected.root())?;
+        assert_same(&tree, &expected);
+    }
+    Ok(())
+}
+
 /// A path hasher that fails once it has hashed `budget` pairs.
 #[derive(Clone)]
 struct FailingPathHasher(PathHasher, Arc<AtomicIsize>);

@@ -386,8 +386,28 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
     ///
     /// Nothing is written until every hash has succeeded.
     pub fn append(&mut self, new_leaves: &[LH::Leaf]) -> Result<()> {
+        self.append_checked(new_leaves, None)
+    }
+
+    /// Appends the given new leaves, failing without changing the tree unless the root they make is `root`.
+    ///
+    /// This checks that the leaves agree with `root`, not that `root` is right: `root` must come from a source the
+    /// caller trusts, or be verified against one.
+    pub fn append_if_matches(&mut self, new_leaves: &[LH::Leaf], root: &PH::Hash) -> Result<()> {
+        self.append_checked(new_leaves, Some(root))
+    }
+
+    /// Appends the given new leaves, failing without changing the tree if `expected` is given and is not the root
+    /// they make.
+    ///
+    /// Nothing is written until every hash has succeeded and the root matches `expected`.
+    fn append_checked(&mut self, new_leaves: &[LH::Leaf], expected: Option<&PH::Hash>) -> Result<()> {
+        let check = |root: &PH::Hash| match expected {
+            Some(expected) if expected != root => bail!("The Merkle root would be {root}, but {expected} was expected"),
+            _ => Ok(()),
+        };
         if new_leaves.is_empty() {
-            return Ok(());
+            return check(&self.root);
         }
         let timer = timer!("MerkleTree::append");
 
@@ -399,7 +419,9 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
         // Crossing a power of two moves every node to a new index, so the tree is rebuilt. Otherwise every node
         // keeps its index, and only the new leaves and their paths to the root change.
         if number_of_leaves.checked_next_power_of_two() != Some(max_leaves) {
-            *self = self.prepare_append(new_leaves)?;
+            let updated_tree = self.prepare_append(new_leaves)?;
+            check(&updated_tree.root)?;
+            *self = updated_tree;
             finish!(timer);
             return Ok(());
         }
@@ -413,6 +435,8 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
         let tree_len = start + leaf_hashes.len();
         let (root, updated_hashes) =
             self.path_updates((start..).zip(leaf_hashes).collect(), tree_depth::<DEPTH>(num_nodes + max_leaves)?)?;
+
+        check(&root)?;
 
         // `resize` alone would grow the capacity by doubling, past the size of the whole power of two.
         self.tree.reserve_exact(num_nodes + max_leaves - self.tree.len());
