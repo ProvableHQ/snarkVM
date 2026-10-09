@@ -93,6 +93,16 @@ impl<E: PairingEngine> UniversalParams<E> {
         self.powers.shared_powers_of_beta_g(lower..upper)
     }
 
+    /// The powers in `lower..upper`, as `shared_powers_of_beta_g` gives them,
+    /// if this SRS already holds them; downloads nothing.
+    pub fn held_shared_powers_of_beta_g(
+        &self,
+        lower: usize,
+        upper: usize,
+    ) -> Option<(Arc<Vec<E::G1Affine>>, Range<usize>)> {
+        self.powers.held_shared_powers_of_beta_g(lower..upper)
+    }
+
     pub fn powers_of_beta_times_gamma_g(&self) -> &BTreeMap<usize, E::G1Affine> {
         self.powers.powers_of_beta_gamma_g()
     }

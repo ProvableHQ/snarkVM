@@ -14,8 +14,8 @@
 // limitations under the License.
 
 use super::{LabeledPolynomial, PolynomialInfo};
-use crate::{crypto_hash::sha256::sha256, fft::EvaluationDomain, polycommit::kzg10};
-use snarkvm_curves::PairingEngine;
+use crate::{crypto_hash::sha256::Sha256Writer, fft::EvaluationDomain, polycommit::kzg10};
+use snarkvm_curves::{AffineCurve, PairingEngine};
 use snarkvm_fields::{ConstraintFieldError, Field, PrimeField, ToConstraintField};
 use snarkvm_parameters::mainnet::MAX_NUM_POWERS;
 use snarkvm_utilities::{FromBytes, ToBytes, error, into_io_error, serialize::*};
@@ -145,7 +145,26 @@ pub struct CommitterKey<E: PairingEngine> {
 }
 
 impl<E: PairingEngine> FromBytes for CommitterKey<E> {
-    fn read_le<R: Read>(mut reader: R) -> io::Result<Self> {
+    fn read_le<R: Read>(reader: R) -> io::Result<Self> {
+        Self::read_le_sharing(reader, None)
+    }
+}
+
+impl<E: PairingEngine> CommitterKey<E> {
+    /// Reads the bytes `read_le` reads, but shares each end of the powers of
+    /// beta G with `srs` when `srs` already holds it, skipping those points in
+    /// `reader`. It never grows `srs`: an end `srs` does not hold is read as
+    /// owned points. Skipped points are never parsed or used: the key's hash
+    /// checks the shared points in their place.
+    ///
+    /// A key shares the snapshot `srs` holds when it is read, so `srs` should
+    /// first be grown to the largest degree it will need: growing it later
+    /// leaves keys read before holding the older snapshot.
+    pub fn read_le_with_srs<R: Read>(reader: R, srs: &UniversalParams<E>) -> io::Result<Self> {
+        Self::read_le_sharing(reader, Some(srs))
+    }
+
+    pub(crate) fn read_le_sharing<R: Read>(mut reader: R, srs: Option<&UniversalParams<E>>) -> io::Result<Self> {
         // Deserialize `powers`.
         let powers_len: u32 = FromBytes::read_le(&mut reader)?;
         // Ensure the number of powers is within bounds.
@@ -154,11 +173,8 @@ impl<E: PairingEngine> FromBytes for CommitterKey<E> {
                 "CommitterKey (from 'read_le') has too many points ({powers_len} > {MAX_NUM_POWERS})"
             )));
         }
-        let mut powers_of_beta_g = Vec::with_capacity(powers_len as usize);
-        for _ in 0..powers_len {
-            let power: E::G1Affine = FromBytes::read_le(&mut reader)?;
-            powers_of_beta_g.push(power);
-        }
+        let held = srs.and_then(|srs| srs.held_shared_powers_of_beta_g(0, powers_len as usize));
+        let powers_of_beta_g = read_bases(&mut reader, powers_len as usize, held)?;
 
         // Deserialize `lagrange_basis_at_beta`.
         let lagrange_bases_at_beta_len: u32 = FromBytes::read_le(&mut reader)?;
@@ -186,13 +202,19 @@ impl<E: PairingEngine> FromBytes for CommitterKey<E> {
         let shifted_powers_of_beta_g = match has_shifted_powers_of_beta_g {
             true => {
                 let shifted_powers_len: u32 = FromBytes::read_le(&mut reader)?;
-                let mut shifted_powers_of_beta_g = Vec::with_capacity(shifted_powers_len as usize);
-                for _ in 0..shifted_powers_len {
-                    let shifted_power: E::G1Affine = FromBytes::read_le(&mut reader)?;
-                    shifted_powers_of_beta_g.push(shifted_power);
+                // Ensure the number of shifted powers is within bounds.
+                if shifted_powers_len as usize > MAX_NUM_POWERS {
+                    return Err(error(format!(
+                        "CommitterKey (from 'read_le') has too many shifted points ({shifted_powers_len} > {MAX_NUM_POWERS})"
+                    )));
                 }
-
-                Some(shifted_powers_of_beta_g)
+                // The shifted powers are the highest powers of the SRS.
+                let held = srs.and_then(|srs| {
+                    let end = srs.max_degree() + 1;
+                    let start = end.checked_sub(shifted_powers_len as usize)?;
+                    srs.held_shared_powers_of_beta_g(start, end)
+                });
+                Some(read_bases(&mut reader, shifted_powers_len as usize, held)?)
             }
             false => None,
         };
@@ -237,41 +259,24 @@ impl<E: PairingEngine> FromBytes for CommitterKey<E> {
             false => None,
         };
 
-        // Construct the hash of the group elements.
-        let mut hash_input = powers_of_beta_g.to_bytes_le().map_err(|_| error("Could not serialize powers"))?;
-        powers_of_beta_times_gamma_g
-            .write_le(&mut hash_input)
-            .map_err(|_| error("Could not serialize powers_of_beta_times_gamma_g"))?;
-
-        if let Some(shifted_powers_of_beta_g) = &shifted_powers_of_beta_g {
-            shifted_powers_of_beta_g
-                .write_le(&mut hash_input)
-                .map_err(|_| error("Could not serialize shifted_powers_of_beta_g"))?;
-        }
-
-        if let Some(shifted_powers_of_beta_times_gamma_g) = &shifted_powers_of_beta_times_gamma_g {
-            for value in shifted_powers_of_beta_times_gamma_g.values() {
-                value.write_le(&mut hash_input).map_err(|_| error("Could not serialize shifted_power_of_gamma_g"))?;
-            }
-        }
-
-        // Deserialize `hash`.
-        let hash = sha256(&hash_input);
-        let expected_hash: [u8; 32] = FromBytes::read_le(&mut reader)?;
-
-        // Enforce the group elements construct the expected hash.
-        if expected_hash != hash {
-            return Err(error("Mismatching group elements"));
-        }
-
-        Ok(Self {
-            powers_of_beta_g: powers_of_beta_g.into(),
+        let key = Self {
+            powers_of_beta_g,
             lagrange_bases_at_beta_g,
             powers_of_beta_times_gamma_g,
-            shifted_powers_of_beta_g: shifted_powers_of_beta_g.map(Bases::from),
+            shifted_powers_of_beta_g,
             shifted_powers_of_beta_times_gamma_g,
             enforced_degree_bounds,
-        })
+        };
+
+        // Deserialize `hash`.
+        let expected_hash: [u8; 32] = FromBytes::read_le(&mut reader)?;
+
+        // Enforce the group elements construct the expected hash. This also
+        // checks the points shared with `srs` in place of the skipped ones.
+        if key.points_hash()? != expected_hash {
+            return Err(error("Mismatching group elements"));
+        }
+        Ok(key)
     }
 }
 
@@ -329,8 +334,44 @@ impl<E: PairingEngine> ToBytes for CommitterKey<E> {
             }
         }
 
+        // Serialize `hash`
+        self.points_hash()?.write_le(&mut writer)
+    }
+}
+
+/// Reads `len` points, or, given the SRS range that holds them, skips them in
+/// `reader` and shares that range.
+fn read_bases<G: AffineCurve, R: Read>(
+    mut reader: R,
+    len: usize,
+    held: Option<(Arc<Vec<G>>, Range<usize>)>,
+) -> io::Result<Bases<G>> {
+    match held {
+        Some((store, range)) => {
+            let point_size = G::zero().to_bytes_le().map_err(into_io_error)?.len() as u64;
+            let skip = point_size * len as u64;
+            if io::copy(&mut (&mut reader).take(skip), &mut io::sink())? != skip {
+                return Err(io::ErrorKind::UnexpectedEof.into());
+            }
+            Ok(Bases::shared(store, range))
+        }
+        _ => {
+            let mut points = Vec::with_capacity(len);
+            for _ in 0..len {
+                points.push(G::read_le(&mut reader)?);
+            }
+            Ok(Bases::Owned(points))
+        }
+    }
+}
+
+impl<E: PairingEngine> CommitterKey<E> {
+    /// The hash a key's bytes end with. It covers every point except the
+    /// Lagrange bases.
+    fn points_hash(&self) -> io::Result<[u8; 32]> {
         // Construct the hash of the group elements.
-        let mut hash_input = self.powers_of_beta_g.to_bytes_le().map_err(|_| error("Could not serialize powers"))?;
+        let mut hash_input = Sha256Writer::default();
+        self.powers_of_beta_g.write_le(&mut hash_input).map_err(|_| error("Could not serialize powers"))?;
         self.powers_of_beta_times_gamma_g
             .write_le(&mut hash_input)
             .map_err(|_| error("Could not serialize powers_of_beta_times_gamma_g"))?;
@@ -347,9 +388,7 @@ impl<E: PairingEngine> ToBytes for CommitterKey<E> {
             }
         }
 
-        // Serialize `hash`
-        let hash = sha256(&hash_input);
-        hash.write_le(&mut writer)
+        Ok(hash_input.finalize())
     }
 }
 
