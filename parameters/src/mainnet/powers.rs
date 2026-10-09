@@ -150,13 +150,20 @@ impl<E: PairingEngine> PowersOfG<E> {
     /// their range within it, fetching them first if needed. The snapshot never
     /// changes, so a caller may hold it, and slice it, for as long as it likes.
     pub fn shared_powers_of_beta_g(&self, range: Range<usize>) -> Result<(PowersSnapshot<E>, Range<usize>)> {
-        if range.is_empty() {
-            return Ok((Arc::new(Vec::new()), 0..0));
-        }
         self.download_powers_for(range.clone())?;
+        self.held_shared_powers_of_beta_g(range)
+            .ok_or_else(|| anyhow!("Requested range is not contained in the available powers"))
+    }
+
+    /// The powers of `beta * G` in `range`, as `shared_powers_of_beta_g` gives
+    /// them, if they are already held; downloads nothing.
+    pub fn held_shared_powers_of_beta_g(&self, range: Range<usize>) -> Option<(PowersSnapshot<E>, Range<usize>)> {
+        if range.is_empty() {
+            return Some((Arc::new(Vec::new()), 0..0));
+        }
         let powers = self.powers_of_beta_g.read();
-        let (store, within) = powers.locate(range)?;
-        Ok((store.clone(), within))
+        let (store, within) = powers.locate(range).ok()?;
+        Some((store.clone(), within))
     }
 
     pub fn negative_powers_of_beta_h(&self) -> &BTreeMap<usize, E::G2Affine> {
