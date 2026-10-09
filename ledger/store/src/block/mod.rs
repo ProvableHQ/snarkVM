@@ -710,9 +710,10 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         let block_path = block_tree.prove(block.height() as usize, &block.hash().to_bits_le())?;
 
         // Ensure the global state root exists in storage.
-        // Height 0 stores `Field::one()` as its state root.
+        // A block tree that contains only genesis uses the `Field::one()` stored at height 0.
+        // Any other block tree must have its root stored.
         #[cfg(feature = "dev_genesis_state_root")]
-        let root_in_storage = if block.height() == 0 {
+        let root_in_storage = if block_tree.number_of_leaves() == 1 {
             self.get_state_root(0)?.as_ref() == Some(&Field::<N>::one().into())
         } else {
             self.reverse_state_root_map().contains_key_confirmed(&global_state_root.into())?
@@ -1910,6 +1911,35 @@ mod tests {
         // The stored genesis state root is the fixed value.
         let state_root = block_store.get_state_root(0).unwrap().unwrap().to_string();
         assert_eq!(state_root, "sr1qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqquwxeur");
+    }
+
+    /// A genesis commitment checks the passed block tree's root.
+    ///
+    /// Height 0 stores `Field::one()`. That substitution applies only while the passed
+    /// block tree contains genesis alone. A taller tree must have its own root stored.
+    #[cfg(feature = "dev_genesis_state_root")]
+    #[test]
+    fn test_genesis_commitment_checks_passed_block_tree_root() {
+        let rng = &mut TestRng::default();
+
+        let block = snarkvm_ledger_test_helpers::sample_genesis_block(rng);
+        let commitment = block.transactions().commitments().next().unwrap();
+
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
+        block_store.insert(&block).unwrap();
+
+        let storage = &block_store.storage;
+        let genesis_tree = storage.create_block_tree().unwrap();
+
+        // The store's genesis tree is accepted. Height 0 stores `Field::one()`.
+        storage.get_state_path_for_commitment(commitment, &genesis_tree).unwrap();
+
+        // A tree that is not the stored genesis tree is rejected, even for a genesis commitment.
+        let mut extra_leaf = block.hash().to_bits_le();
+        extra_leaf[0] = !extra_leaf[0];
+        let foreign_tree = genesis_tree.prepare_append(&[extra_leaf]).unwrap();
+        let error = storage.get_state_path_for_commitment(commitment, &foreign_tree).unwrap_err();
+        assert!(error.to_string().contains("is missing in storage"), "{error:?}");
     }
 
     #[test]
