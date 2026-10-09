@@ -76,9 +76,11 @@ pub enum ConsensusVersion {
     /// V20: Adds more accurate type checking for the root call, and bounds the size of every
     /// `PlaintextType` declared in a deployed program.
     V20 = 20,
-    /// V21: Activates Varuna V3.
+    /// V21:  Activates Varuna V3.
     V21 = 21,
-    /// V22: TBD
+    /// V22: Increases the maximum number of mappings in a program to 128.
+    ///      Lowers the maximum committee size on testnet to 40.
+    ///      Modifies the cost of the rand.chacha opcode to a more accurate value.
     V22 = 22,
 }
 
@@ -185,7 +187,8 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V20, 22_175_000),
     // Target: October 1, 2026 at 21:00 UTC (2 PM PDT)
     (ConsensusVersion::V21, 22_437_000),
-    (ConsensusVersion::V22, u32::MAX),
+    // Target: October 15, 2026 at ~16:00 UTC
+    (ConsensusVersion::V22, 22_846_000),
 ];
 
 /// The consensus version heights for `TestnetV0`.
@@ -210,8 +213,9 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V18, 18_296_000),
     (ConsensusVersion::V19, 18_813_000),
     (ConsensusVersion::V20, 19_374_000),
-    (ConsensusVersion::V21, u32::MAX),
-    (ConsensusVersion::V22, u32::MAX),
+    (ConsensusVersion::V21, 20_234_000),
+    // Target: October 13, 2026 at ~08:00 UTC (evening of October 12 PT)
+    (ConsensusVersion::V22, 20_415_000),
 ];
 
 /// The consensus version heights when the `test_consensus_heights` feature is enabled.
@@ -243,6 +247,29 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V22, 25),
 ];
 
+/// Asserts that the given consensus version heights are well-formed.
+///
+/// A height of `u32::MAX` means the version is unscheduled. Scheduled heights strictly increase,
+/// and once a version is unscheduled every later version must also be unscheduled.
+#[cfg(any(test, feature = "test", feature = "test_consensus_heights", feature = "wasm"))]
+pub(crate) fn verify_consensus_heights(heights: &[(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS]) {
+    assert_eq!(heights[0].1, 0, "Genesis height must be 0.");
+    for window in heights.windows(2) {
+        let ((previous_version, previous_height), (version, height)) = (window[0], window[1]);
+        if previous_height == u32::MAX {
+            assert!(
+                height == u32::MAX,
+                "{previous_version:?} is unscheduled, so all later versions must be unscheduled, but {version:?} is at height {height}."
+            );
+        } else {
+            assert!(
+                height > previous_height,
+                "Scheduled heights must strictly increase, but {previous_version:?} is at height {previous_height} and {version:?} is at height {height}."
+            );
+        }
+    }
+}
+
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
 pub fn load_test_consensus_heights() -> [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
     // Attempt to read the test consensus heights from the environment variable.
@@ -253,18 +280,6 @@ pub fn load_test_consensus_heights() -> [(ConsensusVersion, u32); NUM_CONSENSUS_
 pub(crate) fn load_test_consensus_heights_inner(
     consensus_version_heights: Option<String>,
 ) -> [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
-    // Define a closure to verify the consensus heights.
-    let verify_consensus_heights = |heights: &[(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS]| {
-        // Assert that the genesis height is 0.
-        assert_eq!(heights[0].1, 0, "Genesis height must be 0.");
-        // Assert that the consensus heights are strictly increasing.
-        for window in heights.windows(2) {
-            if window[0] >= window[1] {
-                panic!("Heights must be strictly increasing, but found: {window:?}");
-            }
-        }
-    };
-
     // Define consensus version heights container used for testing.
     let mut test_consensus_heights = TEST_CONSENSUS_VERSION_HEIGHTS;
 
@@ -412,6 +427,11 @@ mod tests {
             assert!(*version > previous_version);
             previous_version = *version;
         }
+        let mut previous_version = N::MAX_MAPPINGS.first().unwrap().0;
+        for (version, _) in N::MAX_MAPPINGS.iter().skip(1) {
+            assert!(*version > previous_version);
+            previous_version = *version;
+        }
         let mut previous_version = N::MAX_PROGRAM_SIZE.first().unwrap().0;
         for (version, _) in N::MAX_PROGRAM_SIZE.iter().skip(1) {
             assert!(*version > previous_version);
@@ -473,6 +493,12 @@ mod tests {
             // Double-check that consensus_config_value returns the correct value.
             assert_eq!(consensus_config_value!(N, MAX_ARRAY_ELEMENTS, height).unwrap(), *value);
         }
+        for (version, value) in N::MAX_MAPPINGS.iter() {
+            // Ensure that the height at which an update occurs are present in CONSENSUS_VERSION_HEIGHTS.
+            let height = N::CONSENSUS_VERSION_HEIGHTS().iter().find(|(c_version, _)| *c_version == *version).unwrap().1;
+            // Double-check that consensus_config_value returns the correct value.
+            assert_eq!(consensus_config_value!(N, MAX_MAPPINGS, height).unwrap(), *value);
+        }
         for (version, value) in N::MAX_PROGRAM_SIZE.iter() {
             // Ensure that the height at which an update occurs are present in CONSENSUS_VERSION_HEIGHTS.
             let height = N::CONSENSUS_VERSION_HEIGHTS().iter().find(|(c_version, _)| *c_version == *version).unwrap().1;
@@ -504,6 +530,7 @@ mod tests {
             assert!(consensus_config_value!(N, TRANSACTION_SPEND_LIMIT, *height).is_some());
             assert!(consensus_config_value!(N, CREDITS_PER_SECOND_OF_RUNTIME, *height).is_some());
             assert!(consensus_config_value!(N, MAX_ARRAY_ELEMENTS, *height).is_some());
+            assert!(consensus_config_value!(N, MAX_MAPPINGS, *height).is_some());
             assert!(consensus_config_value!(N, MAX_PROGRAM_SIZE, *height).is_some());
             assert!(consensus_config_value!(N, MAX_TRANSACTION_SIZE, *height).is_some());
             assert!(consensus_config_value!(N, MAX_WRITES, *height).is_some());
@@ -513,10 +540,13 @@ mod tests {
 
     /// Ensure that `MAX_CERTIFICATES` increases and is correctly defined.
     /// See the constant declaration for an explanation why.
-    fn max_certificates_increasing<N: Network>() {
+    /// The versions in `exempt_versions` are permitted to decrease the value.
+    fn max_certificates_increasing<N: Network>(exempt_versions: &[ConsensusVersion]) {
         let mut previous_value = N::MAX_CERTIFICATES.first().unwrap().1;
-        for (_, value) in N::MAX_CERTIFICATES.iter().skip(1) {
-            assert!(*value >= previous_value);
+        for (version, value) in N::MAX_CERTIFICATES.iter().skip(1) {
+            if !exempt_versions.contains(version) {
+                assert!(*value >= previous_value, "MAX_CERTIFICATES must not decrease at {version:?}");
+            }
             previous_value = *value;
         }
     }
@@ -526,6 +556,15 @@ mod tests {
     fn max_array_elements_increasing<N: Network>() {
         let mut previous_value = N::MAX_ARRAY_ELEMENTS.first().unwrap().1;
         for (_, value) in N::MAX_ARRAY_ELEMENTS.iter().skip(1) {
+            assert!(*value >= previous_value);
+            previous_value = *value;
+        }
+    }
+
+    /// Ensure that `MAX_MAPPINGS` increases and is correctly defined.
+    fn max_mappings_increasing<N: Network>() {
+        let mut previous_value = N::MAX_MAPPINGS.first().unwrap().1;
+        for (_, value) in N::MAX_MAPPINGS.iter().skip(1) {
             assert!(*value >= previous_value);
             previous_value = *value;
         }
@@ -590,6 +629,7 @@ mod tests {
         let _ =
             [N1::CREDITS_PER_SECOND_OF_RUNTIME, N2::CREDITS_PER_SECOND_OF_RUNTIME, N3::CREDITS_PER_SECOND_OF_RUNTIME];
         let _ = [N1::MAX_ARRAY_ELEMENTS, N2::MAX_ARRAY_ELEMENTS, N3::MAX_ARRAY_ELEMENTS];
+        let _ = [N1::MAX_MAPPINGS, N2::MAX_MAPPINGS, N3::MAX_MAPPINGS];
         let _ = [N1::MAX_PROGRAM_SIZE, N2::MAX_PROGRAM_SIZE, N3::MAX_PROGRAM_SIZE];
         let _ = [N1::MAX_TRANSACTION_SIZE, N2::MAX_TRANSACTION_SIZE, N3::MAX_TRANSACTION_SIZE];
         let _ = [N1::MAX_WRITES, N2::MAX_WRITES, N3::MAX_WRITES];
@@ -601,6 +641,8 @@ mod tests {
     fn latest_max_functions_are_safe<N: Network>() {
         // Verify LATEST_MAX_CERTIFICATES returns a positive value.
         assert!(N::LATEST_MAX_CERTIFICATES() > 0, "LATEST_MAX_CERTIFICATES must be positive");
+        // Verify LATEST_MAX_MAPPINGS returns a positive value.
+        assert!(N::LATEST_MAX_MAPPINGS() > 0, "LATEST_MAX_MAPPINGS must be positive");
         // Verify LATEST_MAX_PROGRAM_SIZE returns a positive value.
         assert!(N::LATEST_MAX_PROGRAM_SIZE() > 0, "LATEST_MAX_PROGRAM_SIZE must be positive");
         // Verify LATEST_MAX_TRANSACTION_SIZE returns a positive value.
@@ -632,13 +674,18 @@ mod tests {
         consensus_config_returns_some::<TestnetV0>();
         consensus_config_returns_some::<CanaryV0>();
 
-        max_certificates_increasing::<MainnetV0>();
-        max_certificates_increasing::<TestnetV0>();
-        max_certificates_increasing::<CanaryV0>();
+        max_certificates_increasing::<MainnetV0>(&[]);
+        // Testnet lowers the maximum committee size at `V22`.
+        max_certificates_increasing::<TestnetV0>(&[ConsensusVersion::V22]);
+        max_certificates_increasing::<CanaryV0>(&[]);
 
         max_array_elements_increasing::<MainnetV0>();
         max_array_elements_increasing::<TestnetV0>();
         max_array_elements_increasing::<CanaryV0>();
+
+        max_mappings_increasing::<MainnetV0>();
+        max_mappings_increasing::<TestnetV0>();
+        max_mappings_increasing::<CanaryV0>();
 
         transaction_size_exceeds_program_size::<MainnetV0>();
         transaction_size_exceeds_program_size::<TestnetV0>();
@@ -699,5 +746,60 @@ mod tests {
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V20), VarunaVersion::V2);
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V21), VarunaVersion::V3);
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V22), VarunaVersion::V3);
+    }
+
+    /// Ensure that every published consensus height table is well-formed.
+    #[test]
+    fn test_published_consensus_heights_are_valid() {
+        verify_consensus_heights(&CANARY_V0_CONSENSUS_VERSION_HEIGHTS);
+        verify_consensus_heights(&MAINNET_V0_CONSENSUS_VERSION_HEIGHTS);
+        verify_consensus_heights(&TESTNET_V0_CONSENSUS_VERSION_HEIGHTS);
+        verify_consensus_heights(&TEST_CONSENSUS_VERSION_HEIGHTS);
+    }
+
+    /// Renders the default test heights as a `CONSENSUS_VERSION_HEIGHTS` string, with the given overrides applied.
+    fn test_heights_string(overrides: &[(usize, u32)]) -> String {
+        let mut heights = TEST_CONSENSUS_VERSION_HEIGHTS.map(|(_, height)| height);
+        for (index, height) in overrides {
+            heights[*index] = *height;
+        }
+        heights.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
+    }
+
+    /// Ensure that a decreasing height is rejected.
+    #[test]
+    #[should_panic(expected = "must strictly increase")]
+    fn test_consensus_heights_reject_decreasing() {
+        load_test_consensus_heights_inner(Some(test_heights_string(&[(2, 4)])));
+    }
+
+    /// Ensure that a duplicated height is rejected.
+    #[test]
+    #[should_panic(expected = "must strictly increase")]
+    fn test_consensus_heights_reject_duplicate() {
+        load_test_consensus_heights_inner(Some(test_heights_string(&[(2, 5)])));
+    }
+
+    /// Ensure that a scheduled version following an unscheduled one is rejected.
+    #[test]
+    #[should_panic(expected = "all later versions must be unscheduled")]
+    fn test_consensus_heights_reject_scheduled_after_unscheduled() {
+        load_test_consensus_heights_inner(Some(test_heights_string(&[(18, u32::MAX)])));
+    }
+
+    /// Ensure that a trailing run of unscheduled versions is accepted.
+    #[test]
+    fn test_consensus_heights_accept_trailing_unscheduled() {
+        let heights = load_test_consensus_heights_inner(Some(test_heights_string(&[
+            (18, u32::MAX),
+            (19, u32::MAX),
+            (20, u32::MAX),
+            (21, u32::MAX),
+        ])));
+        assert_eq!(heights[17].1, 21);
+        assert_eq!(heights[18].1, u32::MAX);
+        assert_eq!(heights[19].1, u32::MAX);
+        assert_eq!(heights[20].1, u32::MAX);
+        assert_eq!(heights[21].1, u32::MAX);
     }
 }

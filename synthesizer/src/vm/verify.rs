@@ -623,13 +623,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         "Invalid deployment transaction '{id}' - the existing program does not have a constructor, but the deployment program does"
                                     );
                                     // If the consensus version is V10 or greater, then check that each function's **record** output registers match the existing program.
-                                    if consensus_version >= ConsensusVersion::V10 {
-                                        if let Err(e) = check_output_register_indices_unchanged(
+                                    if consensus_version >= ConsensusVersion::V10
+                                        && let Err(e) = check_output_register_indices_unchanged(
                                             existing_program,
                                             deployment.program(),
-                                        ) {
-                                            bail!("Invalid deployment transaction '{id}' - {e}")
-                                        }
+                                        )
+                                    {
+                                        bail!("Invalid deployment transaction '{id}' - {e}")
                                     }
                                 }
                             }
@@ -967,7 +967,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // TODO (howardwu): This check is technically insufficient. Consider moving this upstream
         //  to the speculation layer.
-        // If the fee is public, speculatively check the account balance.
+        // If the fee is public, check the confirmed account balance.
         if fee.is_fee_public() {
             // Retrieve the payer.
             let Some(payer) = fee.payer() else {
@@ -975,7 +975,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             };
             // Retrieve the account balance of the payer.
             let Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) =
-                self.finalize_store().get_value_speculative(
+                self.finalize_store().get_value_confirmed(
                     ProgramID::from_str("credits.aleo")?,
                     Identifier::from_str("account")?,
                     &Plaintext::from(Literal::Address(payer)),

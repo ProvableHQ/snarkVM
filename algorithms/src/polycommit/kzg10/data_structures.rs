@@ -86,6 +86,13 @@ impl<E: PairingEngine> UniversalParams<E> {
         self.powers.powers_of_beta_g(lower..upper)
     }
 
+    /// The powers in `lower..upper`, as the SRS snapshot holding them and their
+    /// range within it, fetched first if needed. The snapshot never changes, so
+    /// a key may share it for as long as it lives.
+    pub fn shared_powers_of_beta_g(&self, lower: usize, upper: usize) -> Result<(Arc<Vec<E::G1Affine>>, Range<usize>)> {
+        self.powers.shared_powers_of_beta_g(lower..upper)
+    }
+
     pub fn powers_of_beta_times_gamma_g(&self) -> &BTreeMap<usize, E::G1Affine> {
         self.powers.powers_of_beta_gamma_g()
     }

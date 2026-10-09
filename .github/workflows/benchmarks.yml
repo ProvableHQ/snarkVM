@@ -21,7 +21,7 @@ jobs:
       RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -33,7 +33,7 @@ jobs:
           DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends \
             clang libclang-dev llvm-dev llvm lld pkg-config xz-utils make libssl-dev
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -128,7 +128,7 @@ jobs:
 
       # Download previous benchmark result from cache (if exists)
       - name: Download previous benchmark data
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ./cache
           key: ${{ runner.os }}-benchmark

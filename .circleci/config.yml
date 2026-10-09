@@ -18,24 +18,12 @@ parameters:
     default: 2xlarge
   # The toolchain `check-fmt` formats with.
   #
-  # `.rustfmt.toml` uses options that only exist on nightly -- imports_layout,
-  # imports_granularity, overflow_delimited_expr, reorder_impl_items and
-  # style_edition -- so the formatter cannot be the 1.88.0 this project builds
-  # with, and `cargo fmt` without a toolchain silently drops all five rather
-  # than refusing. The formatter is therefore a second toolchain, and pinning
-  # it is the same act as pinning the first.
+  # `.rustfmt.toml` uses nightly-only options, so the formatter is a second
+  # toolchain, pinned separately. Bumping it may reformat the tree.
   #
-  # Resolves to rustfmt 1.9.0-nightly (7e46c5f6fb 2026-04-01); rustup's dated
-  # nightlies are built from the previous day's commit. Bumping it may reformat
-  # the tree, so it should be a deliberate change with the reformatting in the
-  # same commit.
-  #
-  # `enum` rather than `string`: this value is interpolated unquoted into the
-  # `rustup toolchain install` and `cargo fmt` commands below, so a `string`
-  # parameter would let anyone able to trigger a pipeline with custom
-  # parameters inject arbitrary shell commands into the job. `enum` rejects
-  # any pipeline-trigger value that isn't in the list below before the config
-  # is compiled, closing that off. Add the new pin to the list when bumping.
+  # `enum` rather than `string`: the value is interpolated unquoted into the
+  # commands below, where a `string` would admit shell injection from a
+  # pipeline trigger.
   fmt_nightly:
     type: enum
     enum: [nightly-2026-04-02]
@@ -48,7 +36,7 @@ executors:
   # The default docker image used in the main-workflow
   rust-docker:
     docker:
-      - image: cimg/rust:1.88.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.96.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     environment:
       RUSTFLAGS: "" # override the config.toml flags
 
@@ -75,17 +63,17 @@ commands:
                 Write-Host "rustup not found, installing..."
                 $rustupPath = "$env:TEMP\rustup-init.exe"
                 Invoke-WebRequest -Uri "https://win.rustup.rs/" -OutFile $rustupPath
-                & $rustupPath -y --default-toolchain "1.88.0-x86_64-pc-windows-msvc" --no-modify-path --profile minimal
+                & $rustupPath -y --default-toolchain "1.96.0-x86_64-pc-windows-msvc" --no-modify-path --profile minimal
             } else {
-                Write-Host "rustup already installed, ensuring toolchain 1.88.0-x86_64-pc-windows-msvc is present..."
-                rustup toolchain install 1.88.0-x86_64-pc-windows-msvc
+                Write-Host "rustup already installed, ensuring toolchain 1.96.0-x86_64-pc-windows-msvc is present..."
+                rustup toolchain install 1.96.0-x86_64-pc-windows-msvc
             }
 
             # Put cargo/rustup first in PATH for this step and subsequent steps
             $Env:Path = "$Env:USERPROFILE\.cargo\bin;$Env:Path"
 
             # Select the toolchain
-            rustup default 1.88.0-x86_64-pc-windows-msvc
+            rustup default 1.96.0-x86_64-pc-windows-msvc
 
             # Verify the installation.
             cargo --version --verbose
@@ -114,7 +102,7 @@ commands:
     parameters:
       cache_key:
         type: string
-        default: v4.7.3-rust-1.88.0-snarkvm-cache
+        default: v4.7.3-rust-1.96.0-snarkvm-cache
     steps:
       - run:
           name: Prepare environment variables and install dependencies
@@ -158,8 +146,8 @@ commands:
               clang libclang-dev llvm-dev llvm lld pkg-config xz-utils make libssl-dev
       - restore_cache:
           keys:
-            - v4.7.3-rust-1.88.0-deps-{{ checksum "Cargo.lock" }}-
-            - v4.7.3-rust-1.88.0-deps-
+            - v4.7.3-rust-1.96.0-deps-{{ checksum "Cargo.lock" }}-
+            - v4.7.3-rust-1.96.0-deps-
       - restore_cache:
           keys:
             - << parameters.cache_key >>
@@ -169,11 +157,11 @@ commands:
     parameters:
       cache_key:
         type: string
-        default: v4.7.3-rust-1.88.0-snarkvm-cache
+        default: v4.7.3-rust-1.96.0-snarkvm-cache
     steps:
       - run: set +e
       - save_cache:
-          key: v4.7.3-rust-1.88.0-deps-{{ checksum "Cargo.lock" }}
+          key: v4.7.3-rust-1.96.0-deps-{{ checksum "Cargo.lock" }}
           paths:
             - /home/circleci/.cache/sccache
             - /home/circleci/.cargo/registry
@@ -212,7 +200,7 @@ commands:
           condition: << parameters.use_cache >>
           steps:
             - setup_environment:
-                cache_key: v4.7.3-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
+                cache_key: v4.7.3-rust-1.96.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
 
       - run:
           name: Install debian packages (always)
@@ -494,7 +482,7 @@ commands:
           condition: << parameters.use_cache >>
           steps:
             - clear_environment:
-                cache_key: v4.7.3-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
+                cache_key: v4.7.3-rust-1.96.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
 
   install_rust_nightly:
     description: "Install the pinned Rust nightly toolchain used for formatting"
@@ -963,10 +951,8 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer
-          # `history` enables the per-key historical update map that the `view` evaluation path
-          # depends on; gating it here ensures the v15 view tests are exercised in CI.
           flags: >
-            --release --lib --bins --features test,history
+            --release --lib --bins --features test
             --partition count:1/2
             -- --test-threads 8
           cache_key_suffix: -test1
@@ -979,13 +965,13 @@ jobs:
       - run_test:
           workspace_member: snarkvm-synthesizer
           flags: >
-            --release --lib --bins --features test,history
+            --release --lib --bins --features test
             --partition count:2/2
             -- --test-threads 8
           cache_key_suffix: -test2
           timeout: 25m
 
-  # Regenerate expectations using: cd synthesizer && REWRITE_EXPECTATIONS=1 cargo test --test '*' --features test,dev-print,history
+  # Regenerate expectations using: cd synthesizer && REWRITE_EXPECTATIONS=1 cargo test --test '*' --features test,dev-print
   synthesizer-integration:
     executor: rust-docker
     resource_class: << pipeline.parameters.twoxlarge >>
@@ -994,7 +980,7 @@ jobs:
           timeout: 30m # test_vm_execute_and_finalize can take over 10 minutes in the current setup
           no_output_timeout: 20m
           workspace_member: snarkvm-synthesizer
-          flags: --test '*' --features test,dev-print,history -- --test-threads=4
+          flags: --test '*' --features test,dev-print -- --test-threads=4
           cache_key_suffix: -integration
 
   synthesizer-process:
@@ -1003,8 +989,6 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-process
-          # See `synthesizer-test-partition1` for why `history` is enabled.
-          flags: --features history
 
   synthesizer-process-with-rocksdb:
     executor: rust-docker
@@ -1117,7 +1101,7 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.7.3-rust-1.88.0-snarkvm-wasm-cache
+          cache_key: v4.7.3-rust-1.96.0-snarkvm-wasm-cache
       - run:
           no_output_timeout: 30m
           command: |
@@ -1138,7 +1122,7 @@ jobs:
             # Run the tests
             cd wasm && wasm-pack test --node
       - clear_environment:
-          cache_key: v4.7.3-rust-1.88.0-snarkvm-wasm-cache
+          cache_key: v4.7.3-rust-1.96.0-snarkvm-wasm-cache
 
   check-fmt:
     executor: rust-docker
@@ -1147,13 +1131,13 @@ jobs:
       - checkout
       - install_rust_nightly
       - setup_environment:
-          cache_key: v4.7.3-rust-1.88.0-snarkvm-fmt-cache
+          cache_key: v4.7.3-rust-1.96.0-snarkvm-fmt-cache
       - run:
           name: Check style
           no_output_timeout: 35m
           command: cargo +<< pipeline.parameters.fmt_nightly >> fmt --all -- --check
       - clear_environment:
-          cache_key: v4.7.3-rust-1.88.0-snarkvm-fmt-cache
+          cache_key: v4.7.3-rust-1.96.0-snarkvm-fmt-cache
 
   check-unused-dependencies:
     executor: rust-docker
@@ -1161,7 +1145,7 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.7.3-rust-1.88.0-machete-cache
+          cache_key: v4.7.3-rust-1.96.0-machete-cache
       - run:
           name: Check for unused dependencies
           no_output_timeout: 10m
@@ -1172,23 +1156,23 @@ jobs:
             fi
             cargo machete
       - clear_environment:
-          cache_key: v4.7.3-rust-1.88.0-machete-cache
+          cache_key: v4.7.3-rust-1.96.0-machete-cache
 
-  check-cargo-audit:
+  check-cargo-deny:
     executor: rust-docker
     resource_class: << pipeline.parameters.medium >>
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.7.3-rust-1.88.0-cargo-audit-cache
+          cache_key: v4.7.3-rust-1.96.0-cargo-deny-cache
       - run:
-          name:  Check for security vulnerabilities
+          name: Check advisories, licenses, bans, and sources
           no_output_timeout: 10m
           command: |
-            cargo install cargo-audit@0.22.0 --locked --force
-            cargo audit -D warnings
+            cargo install cargo-deny@0.20.2 --locked
+            cargo deny check
       - clear_environment:
-          cache_key: v4.7.3-rust-1.88.0-cargo-audit-cache
+          cache_key: v4.7.3-rust-1.96.0-cargo-deny-cache
 
   check-cargo-semver-checks:
     executor: rust-docker
@@ -1197,14 +1181,14 @@ jobs:
       - checkout:
           method: full
       - setup_environment:
-          cache_key: v4.7.3-rust-1.88.0-cargo-semver-checks-cache
+          cache_key: v4.7.3-rust-1.96.0-cargo-semver-checks-cache
       - run:
           name: Check for semver violations
           no_output_timeout: 15m
           command: |
             bash ./.circleci/semver-checks.sh
       - clear_environment:
-          cache_key: v4.7.3-rust-1.88.0-cargo-semver-checks-cache
+          cache_key: v4.7.3-rust-1.96.0-cargo-semver-checks-cache
 
   check-clippy:
     executor: rust-docker
@@ -1212,7 +1196,7 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.7.3-rust-1.88.0-snarkvm-clippy-cache
+          cache_key: v4.7.3-rust-1.96.0-snarkvm-clippy-cache
       - run:
           name: Check Clippy (default features)
           timeout: 20m
@@ -1224,7 +1208,7 @@ jobs:
           command: |
             cargo clippy --workspace --all-targets --all-features -- -D warnings
       - clear_environment:
-          cache_key: v4.7.3-rust-1.88.0-snarkvm-clippy-cache
+          cache_key: v4.7.3-rust-1.96.0-snarkvm-clippy-cache
 
   check-all-targets:
     executor: rust-docker
@@ -1232,13 +1216,13 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.7.3-rust-1.88.0-snarkvm-all-targets-cache
+          cache_key: v4.7.3-rust-1.96.0-snarkvm-all-targets-cache
       - run:
           name: Check all targets
           no_output_timeout: 35m
           command: cargo check --release --workspace --all-targets
       - clear_environment:
-          cache_key: v4.7.3-rust-1.88.0-snarkvm-all-targets-cache
+          cache_key: v4.7.3-rust-1.96.0-snarkvm-all-targets-cache
 
   verify-windows:
     executor:
@@ -1261,7 +1245,7 @@ workflows:
     jobs:
       - check-fmt
       - check-clippy
-      - check-cargo-audit
+      - check-cargo-deny
       - check-all-targets
 
   circuit-workflow:
@@ -1348,7 +1332,7 @@ workflows:
       or pipeline.git.branch == "canary"
       or pipeline.git.branch == "testnet"
       or pipeline.git.branch == "mainnet"
-      or pipeline.git.branch == "main_net_v4110"
+      or pipeline.git.branch == "main_net_v4120"
     jobs:
       - check-unused-dependencies # This can be cleaned up before releases
       - check-cargo-semver-checks # This can be cleaned up before releases
@@ -1377,7 +1361,7 @@ workflows:
     when: pipeline.git.branch == "canary"
       or pipeline.git.branch == "testnet"
       or pipeline.git.branch == "mainnet"
-      or pipeline.git.branch == "main_net_v4110"
+      or pipeline.git.branch == "main_net_v4120"
     jobs:
       - verify-windows: # Windows has never failed us when linux passed
           matrix:

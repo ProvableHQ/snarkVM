@@ -506,7 +506,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
             // Inject the `tcm` (from the request) as `Mode::Public`.
             let tcm = circuit::Field::new(circuit::Mode::Public, *request.tcm());
             // Compute the transition commitment as `Hash(tvk)`.
-            let candidate_tcm = A::hash_psd2(&[tvk.clone()]);
+            let candidate_tcm = A::hash_psd2(std::slice::from_ref(&tvk));
             // Ensure the transition commitment matches the computed transition commitment.
             A::assert_eq(&tcm, candidate_tcm)?;
             // Inject the input IDs (from the request) as `Mode::Public`.

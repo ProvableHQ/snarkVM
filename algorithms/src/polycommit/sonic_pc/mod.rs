@@ -41,6 +41,27 @@ pub use data_structures::*;
 mod polynomial;
 pub use polynomial::*;
 
+/// A linear combination whose polynomial has not been formed.
+///
+/// `open_combinations` resolves each combination to the polynomials it names
+/// and the scalar in front of each, and leaves the coefficient arithmetic to
+/// `open_lazy_combinations`, which folds in the Fiat-Shamir challenge and
+/// accumulates once. Holding the polynomial by reference is the
+/// point: `LabeledPolynomial` owns a `Cow<'static, _>`, so putting one into a
+/// combination is a clone of every coefficient.
+struct LazyCombination<'a, E: PairingEngine> {
+    label: String,
+    /// `(coefficient, polynomial)` per term, with the `LCTerm::One` constants
+    /// already filtered out -- the verifier uses those directly and nothing
+    /// is committed to them.
+    terms: Vec<(E::Fr, &'a LabeledPolynomial<E::Fr>)>,
+    /// `Some` only for a single-term combination whose coefficient is one,
+    /// which is what `open_combinations` enforces; `open_lazy_combinations`
+    /// relies on it.
+    degree_bound: Option<usize>,
+    randomness: Randomness<E>,
+}
+
 /// Polynomial commitment based on [\[KZG10\]][kzg], with degree enforcement and
 /// batching taken from [[MBKM19, “Sonic”]][sonic] (more precisely, their
 /// counterparts in [[Gabizon19, “AuroraLight”]][al] that avoid negative G1
@@ -78,19 +99,37 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             v
         });
 
-        let (shifted_powers_of_beta_g, shifted_powers_of_beta_times_gamma_g) = if let Some(enforced_degree_bounds) =
-            enforced_degree_bounds.as_ref()
+        // Every argument is validated before anything is downloaded, so a
+        // rejected call leaves the SRS as it was.
+        let supported_lagrange_sizes: Vec<usize> = supported_lagrange_sizes.into_iter().collect();
+        for &size in &supported_lagrange_sizes {
+            if !size.is_power_of_two() {
+                bail!("The Lagrange basis size ({size}) is not a power of two")
+            }
+            if size > max_degree + 1 {
+                bail!("The Lagrange basis size ({size}) is larger than the supported degree ({})", max_degree + 1)
+            }
+        }
+        if let Some([.., highest_enforced_degree_bound]) = enforced_degree_bounds.as_deref()
+            && *highest_enforced_degree_bound > supported_degree
         {
-            if enforced_degree_bounds.is_empty() {
-                (None, None)
-            } else {
-                let highest_enforced_degree_bound = *enforced_degree_bounds.last().unwrap();
-                if highest_enforced_degree_bound > supported_degree {
-                    bail!(
-                        "The highest enforced degree bound {highest_enforced_degree_bound} is larger than the supported degree {supported_degree}"
-                    );
-                }
+            bail!(
+                "The highest enforced degree bound {highest_enforced_degree_bound} is larger than the supported degree {supported_degree}"
+            );
+        }
 
+        // Every prefix download before anything is shared: a later one would
+        // replace a snapshot this key already shared, which the key would then
+        // keep alive after the SRS moved on. The suffix is downloaded, and shared,
+        // below, and touches only the suffix.
+        pp.download_powers_for(0..supported_degree + 1)?;
+        for &size in &supported_lagrange_sizes {
+            pp.download_powers_for(0..size)?;
+        }
+
+        let (shifted_powers_of_beta_g, shifted_powers_of_beta_times_gamma_g) = match enforced_degree_bounds.as_deref() {
+            // The bounds are sorted, so the last is the highest.
+            Some(enforced_degree_bounds @ [.., highest_enforced_degree_bound]) => {
                 let lowest_shift_degree = max_degree - highest_enforced_degree_bound;
 
                 let shifted_ck_time = start_timer!(|| format!(
@@ -98,7 +137,8 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                     max_degree - lowest_shift_degree + 1
                 ));
 
-                let shifted_powers_of_beta_g = pp.powers_of_beta_g(lowest_shift_degree, pp.max_degree() + 1)?;
+                let (store, range) = pp.shared_powers_of_beta_g(lowest_shift_degree, pp.max_degree() + 1)?;
+                let shifted_powers_of_beta_g = Bases::shared(store, range);
                 let mut shifted_powers_of_beta_times_gamma_g = BTreeMap::new();
                 // Also add degree 0.
                 for degree_bound in enforced_degree_bounds {
@@ -117,11 +157,11 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 
                 (Some(shifted_powers_of_beta_g), Some(shifted_powers_of_beta_times_gamma_g))
             }
-        } else {
-            (None, None)
+            _ => (None, None),
         };
 
-        let powers_of_beta_g = pp.powers_of_beta_g(0, supported_degree + 1)?;
+        let (store, range) = pp.shared_powers_of_beta_g(0, supported_degree + 1)?;
+        let powers_of_beta_g = Bases::shared(store, range);
         let powers_of_beta_times_gamma_g = pp
             .powers_of_beta_times_gamma_g()
             .range(0..=(supported_hiding_bound + 1))
@@ -136,12 +176,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         let mut lagrange_bases_at_beta_g = BTreeMap::new();
         for size in supported_lagrange_sizes {
             let lagrange_time = start_timer!(|| format!("Constructing `lagrange_bases` of size {size}"));
-            if !size.is_power_of_two() {
-                bail!("The Lagrange basis size ({size}) is not a power of two")
-            }
-            if size > pp.max_degree() + 1 {
-                bail!("The Lagrange basis size ({size}) is larger than the supported degree ({})", pp.max_degree() + 1)
-            }
+            // Validated above: the size is a power of two no larger than the SRS.
             let domain = crate::fft::EvaluationDomain::new(size).unwrap();
             let lagrange_basis_at_beta_g = pp.lagrange_basis(domain)?;
             assert!(lagrange_basis_at_beta_g.len().is_power_of_two());
@@ -287,6 +322,117 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
     /// On input a list of labeled polynomials and a query set, `open` outputs a
     /// proof of evaluation of the polynomials at the points in the query
     /// set.
+    /// `batch_open` over combinations whose polynomials have not been formed.
+    ///
+    /// Both levels of the opening are linear in the coefficients. A combination
+    /// is `Σ c_i · P_i`, and `combine_for_open` then scales that by a
+    /// Fiat-Shamir challenge `d_j` and sums the results. So
+    ///
+    /// ```text
+    ///     Σ_j d_j · ( Σ_i c_ji · P_i )  =  Σ_i ( Σ_j d_j · c_ji ) · P_i
+    /// ```
+    ///
+    /// and composing the two coefficients accumulates the same polynomial in
+    /// **one** pass over each term instead of two. What made the second
+    /// pass easy to miss is that most of Varuna's combinations have a
+    /// single term, so their first pass is a whole scaled copy of a polynomial
+    /// that the second pass then walks again.
+    ///
+    /// This is safe to compose only because the sponge is **squeezed and never
+    /// absorbed** between here and the KZG open, so every challenge is
+    /// determined before any polynomial arithmetic happens. Squeeze order
+    /// is preserved exactly: groups in query-set order, combinations in
+    /// label order within a group, and the trailing squeeze per group.
+    fn open_lazy_combinations(
+        universal_prover: &UniversalProver<E>,
+        ck: &CommitterUnionKey<E>,
+        combinations: &[LazyCombination<'_, E>],
+        query_set: &QuerySet<E::Fr>,
+        fs_rng: &mut S,
+    ) -> Result<BatchProof<E>> {
+        let open_time = start_timer!(|| format!(
+            "Opening {} combinations at query set of size {}",
+            combinations.len(),
+            query_set.len(),
+        ));
+
+        let by_label: BTreeMap<&str, &LazyCombination<'_, E>> =
+            combinations.iter().map(|c| (c.label.as_str(), c)).collect();
+
+        let mut query_to_labels_map = BTreeMap::new();
+        for (label, (point_name, point)) in query_set.iter() {
+            let labels = query_to_labels_map.entry(point_name).or_insert((point, BTreeSet::new()));
+            labels.1.insert(label);
+        }
+
+        let mut proofs = Vec::new();
+        for (_point_name, (&query, labels)) in query_to_labels_map.into_iter() {
+            let mut group = Vec::with_capacity(labels.len());
+            for label in labels {
+                let c = by_label.get(label as &str).ok_or(PCError::MissingPolynomial { label: label.to_string() })?;
+                group.push(*c);
+            }
+
+            let mut challenges = Vec::with_capacity(group.len());
+            for c in &group {
+                // `check_degrees_and_bounds` returns immediately unless the polynomial carries
+                // a degree bound, and a combination only carries one when it
+                // has a single term with coefficient one -- in which case the
+                // combination's polynomial *is* that term's. So checking the
+                // term is the same check on the same coefficients.
+                if let Some(bound) = c.degree_bound {
+                    // Enforced rather than asserted. The invariant is real -- `open_combinations`
+                    // bails unless `lc.len() == 1` before it can set `degree_bound` -- but it is
+                    // established in another function, and `debug_assert!` is compiled out of the
+                    // builds that ship. If it ever broke, nothing would panic: the bound would be
+                    // checked against the first term while the opening covered the whole sum, the
+                    // proof would still verify, and what would quietly be gone is a soundness
+                    // property of the commitment scheme.
+                    ensure!(
+                        c.terms.len() == 1,
+                        "combination {} carries degree bound {bound} with {} terms; \
+                         a degree-bounded combination must have exactly one",
+                        c.label,
+                        c.terms.len(),
+                    );
+                    let enforced_degree_bounds: Option<&[usize]> = ck.enforced_degree_bounds.as_deref();
+                    kzg10::KZG10::<E>::check_degrees_and_bounds(
+                        universal_prover.max_degree,
+                        enforced_degree_bounds,
+                        c.terms[0].1,
+                    )?;
+                }
+                challenges.push(fs_rng.squeeze_short_nonnative_field_element::<E::Fr>());
+            }
+
+            let combine_time = start_timer!(|| format!("Combining {} combinations for the opening", group.len()));
+            let mut polynomial = DensePolynomial::zero();
+            let mut rand = Randomness::empty();
+            for (c, challenge) in group.iter().zip_eq(challenges.iter()) {
+                rand += (*challenge, &c.randomness);
+                for (coeff, p) in &c.terms {
+                    let scale = *challenge * coeff;
+                    if scale.is_one() {
+                        polynomial += p.polynomial();
+                    } else {
+                        polynomial += (scale, p.polynomial());
+                    }
+                }
+            }
+            end_timer!(combine_time);
+
+            let proof_time = start_timer!(|| "Creating proof");
+            let proof = kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand)?;
+            end_timer!(proof_time);
+            proofs.push(proof);
+
+            let _ = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
+        }
+        end_timer!(open_time);
+
+        Ok(BatchProof(proofs))
+    }
+
     pub fn batch_open<'a>(
         universal_prover: &UniversalProver<E>,
         ck: &CommitterUnionKey<E>,
@@ -435,16 +581,21 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         let label_map =
             polynomials.into_iter().zip_eq(rands).map(|(p, r)| (p.to_label(), (p, r))).collect::<BTreeMap<_, _>>();
 
-        let mut lc_polynomials = Vec::new();
-        let mut lc_randomness = Vec::new();
-        let mut lc_info = Vec::new();
-
+        // Resolve each combination to its terms without forming its polynomial.
+        //
+        // The arithmetic below is over scalars: `lc` is symbolic, its terms naming
+        // polynomials rather than holding them. Forming the polynomial here is
+        // exactly what `open_lazy_combinations` avoids.
+        let resolve_time = start_timer!(|| "Resolving combination terms");
+        let mut combinations = Vec::new();
         for lc in linear_combinations {
             let lc_label = lc.label().to_string();
-            let mut poly = DensePolynomial::zero();
+            // `lc.len()` counts terms *before* the `is_one()` filter below, so this
+            // over-reserves by the number of constant terms. Left as is because
+            // that pre-filter reading is what the degree-bound guard relies on.
+            let mut terms = Vec::with_capacity(lc.len());
             let mut randomness = Randomness::empty();
             let mut degree_bound = None;
-            let mut hiding_bound = None;
 
             let num_polys = lc.len();
             // We filter out l.is_one() entries because those constants are not committed to
@@ -464,20 +615,19 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                         degree_bound = cur_poly.degree_bound();
                     }
                 }
-                // Some(_) > None, always.
-                hiding_bound = core::cmp::max(hiding_bound, cur_poly.hiding_bound());
-                poly += (*coeff, cur_poly.polynomial());
+                terms.push((*coeff, cur_poly));
                 randomness += (*coeff, *cur_rand);
             }
 
-            let lc_poly = LabeledPolynomial::new(lc_label.clone(), poly, degree_bound, hiding_bound);
-            lc_polynomials.push(lc_poly);
-            lc_randomness.push(randomness);
-            lc_info.push((lc_label, degree_bound));
+            // The hiding bound is not carried. It was only ever handed to the
+            // `LabeledPolynomial` built here, and nothing downstream of the
+            // opening reads it: the hiding bound is enforced when the
+            // polynomial is committed, not when it is opened.
+            combinations.push(LazyCombination { label: lc_label, terms, degree_bound, randomness });
         }
+        end_timer!(resolve_time);
 
-        let proof =
-            Self::batch_open(universal_prover, ck, lc_polynomials.iter(), query_set, lc_randomness.iter(), fs_rng)?;
+        let proof = Self::open_lazy_combinations(universal_prover, ck, &combinations, query_set, fs_rng)?;
 
         Ok(BatchLCProof { proof })
     }
@@ -694,11 +844,12 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 mod tests {
     #![allow(non_camel_case_types)]
 
-    use super::{CommitterKey, SonicKZG10};
+    use super::{Bases, CommitterKey, CommitterUnionKey, SonicKZG10};
     use crate::{crypto_hash::PoseidonSponge, polycommit::test_templates::*};
     use snarkvm_curves::bls12_377::{Bls12_377, Fq};
     use snarkvm_utilities::{FromBytes, ToBytes, rand::TestRng};
 
+    use itertools::Itertools;
     use rand::distr::Distribution;
 
     type Sponge = PoseidonSponge<Fq, 2, 1>;
@@ -721,6 +872,137 @@ mod tests {
         let ck_recovered_bytes = ck_recovered.to_bytes_le().unwrap();
 
         assert_eq!(&ck_bytes, &ck_recovered_bytes);
+    }
+
+    /// `trim` shares its bases with the SRS instead of copying them, and they
+    /// are the same points a copy held.
+    #[test]
+    fn trim_shares_its_bases_with_the_srs() {
+        let pp = PC_Bls12_377::load_srs((1 << 12) - 1).unwrap();
+        let (ck, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
+        let top = pp.max_degree();
+
+        assert!(matches!(ck.powers_of_beta_g, Bases::Shared { .. }));
+        assert_eq!(ck.powers_of_beta_g.owned_capacity(), 0, "a shared prefix owns nothing");
+        assert_eq!(&*ck.powers_of_beta_g, pp.powers_of_beta_g(0, 1001).unwrap().as_slice());
+
+        let shifted = ck.shifted_powers_of_beta_g.as_ref().unwrap();
+        assert!(matches!(shifted, Bases::Shared { .. }));
+        assert_eq!(shifted.owned_capacity(), 0, "a shared suffix owns nothing");
+        assert_eq!(&**shifted, pp.powers_of_beta_g(top - 500, top + 1).unwrap().as_slice());
+
+        // Bytes, and so the key's hash, are those of the points, however held.
+        let bytes = ck.to_bytes_le().unwrap();
+        let read: CommitterKey<Bls12_377> = FromBytes::read_le(&bytes[..]).unwrap();
+        assert!(matches!(read.powers_of_beta_g, Bases::Owned(_)), "a key read from bytes owns its bases");
+        assert_eq!(read.to_bytes_le().unwrap(), bytes);
+    }
+
+    /// Growing the SRS replaces its snapshot, never mutating the one a key
+    /// shares: a key trimmed before the growth reads the same points after it.
+    #[test]
+    fn a_key_keeps_its_snapshot_across_a_growth() {
+        let pp = PC_Bls12_377::load_srs((1 << 15) - 1).unwrap();
+        let (before, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
+        let points = before.powers_of_beta_g.to_vec();
+
+        pp.download_powers_for(0..(1 << 16)).unwrap();
+        let (after, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
+
+        assert_eq!(&*before.powers_of_beta_g, points.as_slice(), "the older snapshot changed");
+        assert_eq!(&*after.powers_of_beta_g, points.as_slice());
+        assert_ne!(
+            before.powers_of_beta_g.as_ptr(),
+            after.powers_of_beta_g.as_ptr(),
+            "a key trimmed after the growth should share the new snapshot"
+        );
+    }
+
+    /// A `trim` whose Lagrange sizes grow the SRS shares the snapshot that
+    /// growth made, not the one it replaced.
+    #[test]
+    fn trim_shares_the_snapshot_left_after_its_own_downloads() {
+        let pp = PC_Bls12_377::load_srs((1 << 15) - 1).unwrap();
+        let (ck, _) = PC_Bls12_377::trim(&pp, 1000, [1 << 16], 1, Some(&[500])).unwrap();
+        let (current, _) = pp.shared_powers_of_beta_g(0, 1).unwrap();
+        match &ck.powers_of_beta_g {
+            Bases::Shared { store, .. } => {
+                assert!(std::sync::Arc::ptr_eq(store, &current), "the key shares a snapshot its own trim replaced")
+            }
+            Bases::Owned(_) => panic!("trim should share"),
+        }
+    }
+
+    /// An empty range asks for nothing, so it neither downloads nor replaces
+    /// the snapshot keys share, even one starting where the held prefix ends.
+    #[test]
+    fn an_empty_range_leaves_the_snapshot_alone() {
+        let pp = PC_Bls12_377::load_srs((1 << 15) - 1).unwrap();
+        let (before, _) = pp.shared_powers_of_beta_g(0, 1).unwrap();
+        let held = 1 << 15;
+        assert!(pp.powers_of_beta_g(held, held).unwrap().is_empty());
+        assert!(pp.powers_of_beta_g(0, 0).unwrap().is_empty());
+        let (after, _) = pp.shared_powers_of_beta_g(0, 1).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&before, &after), "an empty range replaced the snapshot");
+    }
+
+    /// A `trim` that fails validation downloads nothing first, so a rejected
+    /// call leaves the SRS, snapshot included, as it was.
+    #[test]
+    fn a_rejected_trim_downloads_nothing() {
+        let pp = PC_Bls12_377::load_srs((1 << 15) - 1).unwrap();
+        let (before, _) = pp.shared_powers_of_beta_g(0, 1).unwrap();
+        let grown = 1 << 16;
+        // A degree bound above the supported degree.
+        assert!(PC_Bls12_377::trim(&pp, grown - 1, [], 1, Some(&[grown])).is_err());
+        // A Lagrange size that is not a power of two, and one beyond the SRS.
+        assert!(PC_Bls12_377::trim(&pp, grown - 1, [3], 1, None).is_err());
+        assert!(PC_Bls12_377::trim(&pp, grown - 1, [1 << 29], 1, None).is_err());
+        let (after, _) = pp.shared_powers_of_beta_g(0, 1).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&before, &after), "a rejected trim grew the SRS");
+    }
+
+    /// `to_mut` turns a shared range into an owned copy, leaving the SRS as it
+    /// was.
+    #[test]
+    fn editing_a_shared_key_copies_it_first() {
+        use super::Bases;
+        let pp = PC_Bls12_377::load_srs((1 << 12) - 1).unwrap();
+        let (mut ck, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
+        ck.powers_of_beta_g.to_mut().swap(0, 1);
+        assert!(matches!(ck.powers_of_beta_g, Bases::Owned(_)));
+        assert_ne!(&*ck.powers_of_beta_g, pp.powers_of_beta_g(0, 1001).unwrap().as_slice());
+        let (fresh, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
+        assert_eq!(&*fresh.powers_of_beta_g, pp.powers_of_beta_g(0, 1001).unwrap().as_slice());
+    }
+
+    #[test]
+    fn test_union_takes_each_array_from_the_key_where_it_is_longest() {
+        let pp = PC_Bls12_377::load_srs(32).unwrap();
+        // Each key holds the longest of a different array: the prefix, the shifted
+        // powers, and the hiding powers, including for the bound all three enforce.
+        let (long_prefix, _) = PC_Bls12_377::trim(&pp, 16, [], 0, Some(&[4])).unwrap();
+        let (long_suffix, _) = PC_Bls12_377::trim(&pp, 12, [], 0, Some(&[4, 10])).unwrap();
+        let (long_hiding, _) = PC_Bls12_377::trim(&pp, 8, [], 1, Some(&[4])).unwrap();
+        let shifted_hiding = |ck: &CommitterKey<Bls12_377>, bound| {
+            ck.shifted_powers_of_beta_times_gamma_g.as_ref().unwrap()[&bound].clone()
+        };
+
+        for keys in [&long_prefix, &long_suffix, &long_hiding].into_iter().permutations(3) {
+            let union = CommitterUnionKey::union(keys);
+            assert_eq!(&*union.powers().powers_of_beta_g, &*long_prefix.powers_of_beta_g);
+            assert_eq!(union.powers().powers_of_beta_times_gamma_g, long_hiding.powers_of_beta_times_gamma_g);
+            for (bound, hiding) in [(4, shifted_hiding(&long_hiding, 4)), (10, shifted_hiding(&long_suffix, 10))] {
+                let shifted = union.shifted_powers_of_beta_g(bound).unwrap();
+                let top = pp.max_degree();
+                assert_eq!(
+                    shifted.powers_of_beta_g,
+                    pp.powers_of_beta_g(top - bound, top + 1).unwrap(),
+                    "bound {bound}"
+                );
+                assert_eq!(shifted.powers_of_beta_times_gamma_g, hiding, "bound {bound}");
+            }
+        }
     }
 
     #[test]

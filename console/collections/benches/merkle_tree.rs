@@ -17,14 +17,14 @@
 extern crate criterion;
 
 use snarkvm_console_algorithms::{BHP512, BHP1024};
-use snarkvm_console_collections::merkle_tree::MerkleTreeState;
+use snarkvm_console_collections::merkle_tree::{MerkleTree, MerkleTreeState, PathHash};
 use snarkvm_console_network::{
     BHP_512,
     BHP_1024,
     BHPMerkleTree,
     MainnetV0,
     Network,
-    prelude::{Rng, TestRng, ToBits, Uniform},
+    prelude::{Rng, TestRng, ToBits, Uniform, Zero},
 };
 use snarkvm_console_types::Field;
 
@@ -59,6 +59,44 @@ fn new(c: &mut Criterion) {
             })
         });
     }
+}
+
+/// Constructing the shallow trees a block is made of: the header tree (`HEADER_DEPTH`,
+/// 3), a transaction's and a transition's (`TRANSACTION_DEPTH` and `TRANSITION_DEPTH`,
+/// both 5), and the transactions tree (`TRANSACTIONS_DEPTH`, 20).
+///
+/// [`new`] above is at `BLOCKS_DEPTH`, where a 32-hash padding chain dominates and hides
+/// everything else. These are the shapes a node builds per block, and the shapes in which
+/// the one `PathHash::hash_empty` every tree needs is worth measuring.
+fn new_block_tree_shapes(c: &mut Criterion) {
+    let mut rng = TestRng::default();
+    let leaves = generate_leaves!(16, &mut rng);
+    macro_rules! shape {
+        ($depth:expr, $num_leaves:expr) => {
+            c.bench_function(&format!("MerkleTree/new/depth{}/{}", $depth, $num_leaves), |b| {
+                b.iter(|| {
+                    MerkleTree::<MainnetV0, _, _, $depth>::new(&*BHP_1024, &*BHP_512, &leaves[..$num_leaves]).unwrap()
+                })
+            });
+        };
+    }
+    shape!(3, 8);
+    shape!(5, 2);
+    shape!(5, 4);
+    shape!(5, 16);
+    shape!(20, 1);
+    shape!(20, 8);
+}
+
+/// The empty hash, which every tree construction needs: `hash_empty` is the read of the
+/// value the path hasher remembers, `hash_children` the work that read skips.
+fn empty_hash(c: &mut Criterion) {
+    c.bench_function("MerkleTree/hash_empty", |b| b.iter(|| PathHash::hash_empty(&*BHP_512).unwrap()));
+
+    let zero = Field::<MainnetV0>::zero();
+    c.bench_function("MerkleTree/hash_children/zeros", |b| {
+        b.iter(|| PathHash::hash_children(&*BHP_512, &zero, &zero).unwrap())
+    });
 }
 
 fn append(c: &mut Criterion) {
@@ -278,7 +316,7 @@ fn legacy_state(c: &mut Criterion) {
 criterion_group! {
     name = merkle_tree;
     config = Criterion::default().sample_size(10);
-    targets = new, append, update, update_many, update_vs_update_many
+    targets = new, new_block_tree_shapes, empty_hash, append, update, update_many, update_vs_update_many
 }
 criterion_group! {
     name = merkle_tree_state;

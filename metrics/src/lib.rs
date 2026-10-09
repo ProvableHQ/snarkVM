@@ -24,7 +24,6 @@ const GAUGE_NAMES: &[&str] = &[
     rocksdb::MEM_TABLE_FLUSH_PENDING,
     rocksdb::TOTAL_SST_FILES_SIZE,
     rocksdb::LIVE_SST_FILES_SIZE,
-    rocksdb::ESTIMATE_NUM_KEYS,
     rocksdb::NUM_SNAPSHOTS,
     rocksdb::NUM_FILES_AT_LEVEL[0],
     rocksdb::NUM_FILES_AT_LEVEL[1],
@@ -37,6 +36,19 @@ const GAUGE_NAMES: &[&str] = &[
 
 pub mod committee {
     pub const TOTAL_STAKE: &str = "snarkvm_ledger_committee_total_stake";
+}
+
+/// Per-map atomic-batch contention.
+///
+/// Overlay `ATOMIC_BATCH_LOCK_WAIT_SECONDS` with `ATOMIC_BATCH_OFF_THREAD_SPECULATIVE_READ_TOTAL`
+/// to detect off-thread speculative readers stalling the sequential dry-run thread.
+pub mod store {
+    /// Wall time spent waiting to acquire a per-map atomic-batch mutex, in seconds.
+    /// Recorded only for waits of at least 1ms.
+    pub const ATOMIC_BATCH_LOCK_WAIT_SECONDS: &str = "snarkvm_store_atomic_batch_lock_wait_seconds";
+    /// Speculative reads that skipped the pending batch because they ran off the owner thread.
+    pub const ATOMIC_BATCH_OFF_THREAD_SPECULATIVE_READ_TOTAL: &str =
+        "snarkvm_store_atomic_batch_off_thread_speculative_read_total";
 }
 
 /// RocksDB internal database metrics.
@@ -59,8 +71,12 @@ pub mod rocksdb {
     pub const TOTAL_SST_FILES_SIZE: &str = "snarkvm_rocksdb_total_sst_files_size_bytes";
     /// Size of live (referenced) SST files only.
     pub const LIVE_SST_FILES_SIZE: &str = "snarkvm_rocksdb_live_sst_files_size_bytes";
-    /// Estimated number of keys in the database.
-    pub const ESTIMATE_NUM_KEYS: &str = "snarkvm_rocksdb_estimate_num_keys";
+    /// Cumulative bytes read by compaction.
+    pub const COMPACT_READ_BYTES: &str = "snarkvm_rocksdb_compact_read_bytes_total";
+    /// Cumulative bytes written by compaction.
+    pub const COMPACT_WRITE_BYTES: &str = "snarkvm_rocksdb_compact_write_bytes_total";
+    /// Cumulative bytes written by memtable flushes.
+    pub const FLUSH_WRITE_BYTES: &str = "snarkvm_rocksdb_flush_write_bytes_total";
     /// Number of snapshots currently held (non-zero blocks deletion of old SST files).
     pub const NUM_SNAPSHOTS: &str = "snarkvm_rocksdb_num_snapshots";
     /// Number of SST files per LSM level (levels 0–6).
