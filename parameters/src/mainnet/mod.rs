@@ -310,7 +310,7 @@ mod tests {
         // A killed run can leave its FIFO behind.
         let _ = std::fs::remove_dir_all(&home);
         let output = std::process::Command::new(std::env::current_exe().expect("Failed to locate the test binary"))
-            .args(["--exact", "mainnet::tests::load_bytes_reads_without_lock_in_home", "--ignored"])
+            .args(["--exact", "mainnet::tests::load_bytes_reads_without_lock_in_home", "--ignored", "--nocapture"])
             .env("HOME", &home)
             .env(TEMPORARY_HOME, &home)
             .output()
@@ -322,6 +322,12 @@ mod tests {
             output.status.success() && stdout.contains("test result: ok. 1 passed"),
             "The child test failed or did not run:\n{stdout}{}",
             String::from_utf8_lossy(&output.stderr)
+        );
+        // `lock_download` prints this when the waiter blocks on the held lock. A waiter that never blocks would
+        // read the FIFO without taking the lock, and the child test would pass without testing anything.
+        assert!(
+            cfg!(feature = "no_std_out") || stdout.contains("Waiting for a concurrent download"),
+            "The waiter did not wait for the lock:\n{stdout}"
         );
     }
 
@@ -340,8 +346,7 @@ mod tests {
 
         let holder = InclusionProver::lock_download(&file_path).expect("Failed to take the download lock");
         let waiter = std::thread::spawn(InclusionProver::load_bytes);
-        // Give the waiter time to find the file missing and wait for the lock. A waiter that reaches its first
-        // check after the FIFO exists never takes the lock, and the test then passes without testing anything.
+        // Give the waiter time to find the file missing and wait for the lock.
         std::thread::sleep(Duration::from_millis(300));
 
         // Reading a FIFO blocks until a writer opens and closes it, which keeps the waiter inside its read.
