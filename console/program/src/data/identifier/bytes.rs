@@ -15,9 +15,9 @@
 
 use super::*;
 
-impl<N: Network> FromBytes for Identifier<N> {
-    /// Reads in an identifier from a buffer.
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+impl<N: Network> Identifier<N> {
+    /// Reads the identifier string from a buffer.
+    fn read_string_le<R: Read>(mut reader: R) -> IoResult<String> {
         // Read the number of bytes.
         let size = u8::read_le(&mut reader)?;
 
@@ -25,10 +25,26 @@ impl<N: Network> FromBytes for Identifier<N> {
         let mut buffer = vec![0u8; size as usize];
         reader.read_exact(&mut buffer)?;
 
+        String::from_utf8(buffer).map_err(|e| error(format!("Failed to decode identifier: {e}")))
+    }
+
+    /// Reads in the identifier of a member access from a buffer. This also accepts `_nonce`.
+    pub(crate) fn read_member_le<R: Read>(reader: R) -> IoResult<Self> {
+        let string = Self::read_string_le(reader)?;
+        match string == Self::RECORD_NONCE {
+            true => Self::record_nonce(),
+            false => Self::from_str(&string),
+        }
+        .map_err(|e| error(format!("{e}")))
+    }
+}
+
+impl<N: Network> FromBytes for Identifier<N> {
+    /// Reads in an identifier from a buffer.
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
         // from_str the identifier.
         // Note: `Self::from_str` ensures that the identifier string is not empty.
-        Self::from_str(&String::from_utf8(buffer).map_err(|e| error(format!("Failed to decode identifier: {e}")))?)
-            .map_err(|e| error(format!("{e}")))
+        Self::from_str(&Self::read_string_le(reader)?).map_err(|e| error(format!("{e}")))
     }
 }
 
@@ -81,5 +97,24 @@ mod tests {
     #[test]
     fn test_zero_identifier_fails() {
         assert!(Identifier::<CurrentNetwork>::read_le(&[0u8; 1][..]).is_err())
+    }
+
+    #[test]
+    fn test_record_nonce_fails() {
+        let bytes = [&[6u8][..], b"_nonce"].concat();
+        assert!(Identifier::<CurrentNetwork>::read_le(&bytes[..]).is_err());
+    }
+
+    #[test]
+    fn test_read_member() -> Result<()> {
+        let record_nonce = Identifier::<CurrentNetwork>::record_nonce()?;
+        let bytes = record_nonce.to_bytes_le()?;
+        assert_eq!(bytes, [&[6u8][..], b"_nonce"].concat());
+        assert_eq!(record_nonce, Identifier::read_member_le(&bytes[..])?);
+        assert!(Identifier::<CurrentNetwork>::read_member_le(&[&[4u8][..], b"_foo"].concat()[..]).is_err());
+
+        let identifier = Identifier::<CurrentNetwork>::from_str("foo")?;
+        assert_eq!(identifier, Identifier::read_member_le(&identifier.to_bytes_le()?[..])?);
+        Ok(())
     }
 }

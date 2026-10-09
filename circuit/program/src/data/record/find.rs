@@ -18,6 +18,15 @@ use super::*;
 impl<A: Aleo> Record<A, Plaintext<A>> {
     /// Returns the entry from the given path.
     pub fn find<A0: Into<Access<A>> + Clone + Debug>(&self, path: &[A0]) -> Result<Entry<A, Plaintext<A>>> {
+        // Check the nonce before the `owner`: comparing `Access` values ejects them, and ejecting `_nonce` halts.
+        // Building a constant identifier for this check would add counted variables on every one-segment record access.
+        if let [access] = path
+            && let Access::Member(identifier) = access.clone().into()
+            && identifier.to_field().eject_value()
+                == console::ToField::to_field(&console::Identifier::<A::Network>::record_nonce()?)?
+        {
+            return Ok(Entry::Private(Plaintext::from(Literal::Group(self.nonce.clone()))));
+        }
         // If the path is of length one, check if the path is requesting the `owner`.
         if path.len() == 1 && path[0].clone().into() == Access::Member(Identifier::from_str("owner")?) {
             return Ok(self.owner.to_entry());
@@ -42,5 +51,97 @@ impl<A: Aleo> Record<A, Plaintext<A>> {
         } else {
             bail!("Attempted to find record entry with an empty path.")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Circuit;
+
+    type CurrentNetwork = <Circuit as Environment>::Network;
+
+    #[test]
+    fn test_find_nonce_and_owner() -> Result<()> {
+        let console_record = console::Record::<CurrentNetwork, console::Plaintext<CurrentNetwork>>::from_str(
+            r"{
+    owner: aleo14tlamssdmg3d0p5zmljma573jghe2q9n6wz29qf36re2glcedcpqfg4add.private,
+    amount: 5u64.private,
+    _nonce: 2293253577170800572742339369209137467208538700597121244293392265726446806023group.public
+}",
+        )?;
+        let record = Record::<Circuit, Plaintext<Circuit>>::new(Mode::Private, console_record.clone());
+
+        let nonce = record.find(&[Access::constant(console::Access::Member(console::Identifier::record_nonce()?))])?;
+        match nonce {
+            Entry::Private(Plaintext::Literal(Literal::Group(nonce), _)) => {
+                assert_eq!(*console_record.nonce(), nonce.eject_value())
+            }
+            _ => bail!("Expected the record nonce to be a private group entry"),
+        }
+
+        let owner =
+            record.find(&[Access::constant(console::Access::Member(console::Identifier::from_str("owner")?))])?;
+        match owner {
+            Entry::Private(Plaintext::Literal(Literal::Address(owner), _)) => {
+                assert_eq!(**console_record.owner(), owner.eject_value())
+            }
+            _ => bail!("Expected the record owner to be a private address entry"),
+        }
+        Ok(())
+    }
+
+    /// Counts added by one circuit scope: constants, public, private, constraints.
+    fn scope_counts() -> (u64, u64, u64, u64) {
+        (
+            Circuit::num_constants_in_scope(),
+            Circuit::num_public_in_scope(),
+            Circuit::num_private_in_scope(),
+            Circuit::num_constraints_in_scope(),
+        )
+    }
+
+    #[test]
+    fn test_find_member_does_not_allocate_nonce_variables() -> Result<()> {
+        let console_record = console::Record::<CurrentNetwork, console::Plaintext<CurrentNetwork>>::from_str(
+            r"{
+    owner: aleo14tlamssdmg3d0p5zmljma573jghe2q9n6wz29qf36re2glcedcpqfg4add.private,
+    amount: 5u64.private,
+    _nonce: 2293253577170800572742339369209137467208538700597121244293392265726446806023group.public
+}",
+        )?;
+        let record = Record::<Circuit, Plaintext<Circuit>>::new(Mode::Private, console_record);
+        let nonce_access = Access::constant(console::Access::Member(console::Identifier::record_nonce()?));
+        let amount_access = Access::constant(console::Access::Member(console::Identifier::from_str("amount")?));
+        let owner_access = Access::constant(console::Access::Member(console::Identifier::from_str("owner")?));
+
+        // A one-segment member read allocates only the `owner` identifier used by the owner check.
+        let owner_counts = Circuit::scope("owner identifier", || -> Result<_> {
+            let _owner = Identifier::<Circuit>::from_str("owner")?;
+            Ok(scope_counts())
+        })?;
+
+        // A nonce read returns before that comparison, so it adds no variables.
+        let nonce_counts = Circuit::scope("find nonce", || -> Result<_> {
+            let _nonce = record.find(&[nonce_access])?;
+            Ok(scope_counts())
+        })?;
+        assert_eq!(nonce_counts, (0, 0, 0, 0));
+
+        // `amount` and `owner` add the same variables as the `owner` identifier alone.
+        let amount_counts = Circuit::scope("find amount", || -> Result<_> {
+            let _amount = record.find(&[amount_access])?;
+            Ok(scope_counts())
+        })?;
+        assert_eq!(amount_counts, owner_counts);
+
+        let owner_find_counts = Circuit::scope("find owner", || -> Result<_> {
+            let _owner = record.find(&[owner_access])?;
+            Ok(scope_counts())
+        })?;
+        assert_eq!(owner_find_counts, owner_counts);
+
+        Circuit::reset();
+        Ok(())
     }
 }

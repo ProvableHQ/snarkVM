@@ -20,7 +20,7 @@ impl<N: Network> FromBytes for Access<N> {
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         let variant = u8::read_le(&mut reader)?;
         match variant {
-            0 => Ok(Self::Member(Identifier::read_le(&mut reader)?)),
+            0 => Ok(Self::Member(Identifier::read_member_le(&mut reader)?)),
             1 => Ok(Self::Index(U32::read_le(&mut reader)?)),
             2.. => Err(error(format!("Failed to deserialize access variant {variant}"))),
         }
@@ -73,6 +73,7 @@ mod tests {
             let index = U32::<CurrentNetwork>::rand(rng);
             check_bytes(Access::Index(index))?;
         }
+        check_bytes(Access::Member(Identifier::record_nonce()?))?;
         Ok(())
     }
 }

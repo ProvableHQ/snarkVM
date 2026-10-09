@@ -19,6 +19,8 @@ impl<N: Network> Parser for Access<N> {
     fn parse(string: &str) -> ParserResult<'_, Self> {
         alt((
             map(pair(tag("["), pair(U32::parse, tag("]"))), |(_, (index, _))| Self::Index(index)),
+            // `_nonce` fails `Identifier::parse`. It is accepted only here, as a record member.
+            map_res(tag("._nonce"), |_| Identifier::<N>::record_nonce().map(Self::Member)),
             map(pair(tag("."), Identifier::parse), |(_, identifier)| Self::Member(identifier)),
         ))(string)
     }
@@ -71,6 +73,8 @@ mod tests {
     #[test]
     fn test_parse() -> Result<()> {
         assert_eq!(Access::parse(".data"), Ok(("", Access::<CurrentNetwork>::Member(Identifier::from_str("data")?))));
+        assert_eq!(Access::parse("._nonce"), Ok(("", Access::<CurrentNetwork>::Member(Identifier::record_nonce()?))));
+        assert_eq!(Access::<CurrentNetwork>::Member(Identifier::record_nonce()?).to_string(), "._nonce");
         assert_eq!(Access::parse("[0u32]"), Ok(("", Access::<CurrentNetwork>::Index(U32::new(0)))));
         Ok(())
     }

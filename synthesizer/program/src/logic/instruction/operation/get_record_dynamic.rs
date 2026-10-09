@@ -123,6 +123,10 @@ impl<N: Network> GetRecordDynamic<N> {
         let (prepared_operands, entry_identifier) =
             if let Operand::Register(Register::Access(index, accesses)) = operand {
                 if let [Access::Member(identifier)] = accesses.as_slice() {
+                    ensure!(
+                        !identifier.is_record_nonce(),
+                        "A record nonce is read as `r{index}._nonce`, not with `get.record.dynamic`"
+                    );
                     ([Operand::Register(Register::Locator(index))], *identifier)
                 } else {
                     bail!("Expected a single entry identifier, found {accesses:?}")

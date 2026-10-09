@@ -106,6 +106,7 @@ use console::{
         },
     },
     program::{
+        Access,
         EntryType,
         FinalizeType,
         Identifier,
@@ -113,6 +114,7 @@ use console::{
         PlaintextType,
         ProgramID,
         RecordType,
+        Register,
         RegisterType,
         StructType,
         ValueType,
@@ -1459,6 +1461,46 @@ impl<N: Network> ProgramCore<N> {
         command_contains || view_output_contains
     }
 
+    /// Returns `true` if a program reads a record `_nonce`.
+    /// This is enforced to be `false` for programs before `ConsensusVersion::V23`.
+    #[inline]
+    pub fn contains_v23_syntax(&self) -> bool {
+        /// Returns `true` when `operand` reads a record nonce.
+        fn reads_record_nonce<N: Network>(operand: &Operand<N>) -> bool {
+            match operand {
+                Operand::Register(Register::Access(_, path)) => path
+                    .iter()
+                    .any(|access| matches!(access, Access::Member(identifier) if identifier.is_record_nonce())),
+                _ => false,
+            }
+        }
+
+        let instructions_contain = cfg_iter!(self.functions())
+            .flat_map(|(_, function)| function.instructions())
+            .chain(cfg_iter!(self.closures()).flat_map(|(_, closure)| closure.instructions()))
+            .any(|instruction| instruction.operands().iter().any(reads_record_nonce));
+
+        let outputs_contain = cfg_iter!(self.functions())
+            .flat_map(|(_, function)| function.outputs())
+            .any(|output| reads_record_nonce(output.operand()))
+            || cfg_iter!(self.closures())
+                .flat_map(|(_, closure)| closure.outputs())
+                .any(|output| reads_record_nonce(output.operand()))
+            || cfg_iter!(self.views)
+                .flat_map(|(_, view)| view.outputs())
+                .any(|output| reads_record_nonce(output.operand()));
+
+        let commands_contain = cfg_iter!(self.functions())
+            .flat_map(|(_, function)| function.finalize_logic().map(|finalize| finalize.commands()))
+            .flatten()
+            .chain(cfg_iter!(self.constructor).flat_map(|constructor| constructor.commands()))
+            .chain(cfg_iter!(self.views).flat_map(|(_, view)| view.commands()))
+            .flat_map(|command| command.operands())
+            .any(reads_record_nonce);
+
+        instructions_contain || outputs_contain || commands_contain
+    }
+
     /// Returns `true` if a program contains any string type.
     /// Before ConsensusVersion::V12, variable-length string sampling when using them as inputs caused deployment synthesis to be inconsistent and abort with probability 63/64.
     /// After ConsensusVersion::V12, string types are disallowed.
@@ -1964,6 +2006,71 @@ constructor:
         )?;
         assert!(constructor_v14.contains_v14_syntax()?);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_contains_v23_syntax() -> Result<()> {
+        let without_nonce = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function dummy:
+    input r0 as field.public;
+    output r0 as field.public;",
+        )?;
+        assert!(!without_nonce.contains_v23_syntax());
+
+        let with_nonce = Program::<CurrentNetwork>::from_str(
+            r"program nonce.aleo;
+record token:
+    owner as address.private;
+    amount as u64.private;
+function read:
+    input r0 as token.record;
+    cast r0._nonce into r1 as field;
+    async read into r2;
+    output r2 as nonce.aleo/read.future;
+finalize read:
+    assert.eq true true;
+constructor:
+    assert.eq true true;",
+        )?;
+        assert!(with_nonce.contains_v23_syntax());
+        assert_eq!(with_nonce, Program::from_bytes_le(&with_nonce.to_bytes_le()?)?);
+        assert_eq!(with_nonce, Program::from_str(&with_nonce.to_string())?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_record_nonce_is_not_a_declared_name() -> Result<()> {
+        // Each program declares `xnonce`, which the bytes then rename to `_nonce`.
+        let programs = [
+            r"program test.aleo;
+record token:
+    owner as address.private;
+    xnonce as u64.private;
+function dummy:
+    input r0 as field.public;
+    output r0 as field.public;",
+            r"program test.aleo;
+struct message:
+    xnonce as field;
+function dummy:
+    input r0 as message.public;
+    output r0 as message.public;",
+            r"program test.aleo;
+function xnonce:
+    input r0 as field.public;
+    output r0 as field.public;",
+        ];
+        for program in programs {
+            let mut bytes = Program::<CurrentNetwork>::from_str(program)?.to_bytes_le()?;
+            let position = bytes
+                .windows(b"xnonce".len())
+                .position(|window| window == b"xnonce")
+                .ok_or_else(|| anyhow!("the declared name is not in the program bytes"))?;
+            bytes[position] = b'_';
+            assert!(Program::<CurrentNetwork>::from_bytes_le(&bytes).is_err());
+        }
         Ok(())
     }
 }

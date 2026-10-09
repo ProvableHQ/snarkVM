@@ -177,6 +177,8 @@ impl<N: Network> RegisterTypes<N> {
                 if access == &Access::Member(Identifier::from_str("owner")?) {
                     // If the member is the owner, then output the address type.
                     RegisterAccessType::Plaintext(literal_address_type)
+                } else if matches!(access, Access::Member(identifier) if identifier.is_record_nonce()) {
+                    RegisterAccessType::Plaintext(PlaintextType::Literal(LiteralType::Group))
                 } else {
                     // Retrieve the path name.
                     let path_name = match access {
@@ -206,6 +208,8 @@ impl<N: Network> RegisterTypes<N> {
                 if access == &Access::Member(Identifier::from_str("owner")?) {
                     // If the member is the owner, then output the address type.
                     RegisterAccessType::Plaintext(literal_address_type)
+                } else if matches!(access, Access::Member(identifier) if identifier.is_record_nonce()) {
+                    RegisterAccessType::Plaintext(PlaintextType::Literal(LiteralType::Group))
                 } else {
                     // Retrieve the path name.
                     let path_name = match access {
@@ -233,9 +237,11 @@ impl<N: Network> RegisterTypes<N> {
                 if access == &Access::Member(Identifier::from_str("owner")?) {
                     // If the member is the owner, then output the address type.
                     RegisterAccessType::Plaintext(literal_address_type)
+                } else if matches!(access, Access::Member(identifier) if identifier.is_record_nonce()) {
+                    RegisterAccessType::Plaintext(PlaintextType::Literal(LiteralType::Group))
                 } else {
                     bail!(
-                        "Only the 'owner' of a dynamic record can be accessed directly, use 'get.record.dynamic' instead."
+                        "Only the 'owner' or '_nonce' of a dynamic record can be accessed directly, use 'get.record.dynamic' for other entries."
                     )
                 }
             }

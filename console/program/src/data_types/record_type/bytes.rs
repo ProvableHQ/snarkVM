@@ -102,4 +102,19 @@ mod tests {
         assert_eq!(expected, candidate);
         Ok(())
     }
+
+    #[test]
+    fn test_record_nonce_entry_fails() -> Result<()> {
+        let record_type = RecordType::<CurrentNetwork>::from_str(
+            "record message:\n    owner as address.private;\n    xnonce as u64.private;",
+        )?;
+        let mut bytes = record_type.to_bytes_le()?;
+        let position = bytes
+            .windows(b"xnonce".len())
+            .position(|window| window == b"xnonce")
+            .ok_or_else(|| anyhow!("the entry name is not in the record type bytes"))?;
+        bytes[position] = b'_';
+        assert!(RecordType::<CurrentNetwork>::from_bytes_le(&bytes).is_err());
+        Ok(())
+    }
 }
