@@ -67,12 +67,12 @@ do or how language constructs work are unhelpful.
 ## Testing
 
 **Synthesizer tests are slow** — run only the specific test function.
-Use `--features test,dev_println` for integration tests.
+Use `--features test,dev-print` for integration tests.
 
 ```bash
 cargo test -p <crate>                                           # Run crate tests
 cargo test -p <crate> -- test_name                              # Run specific test
-cargo test -p snarkvm-synthesizer --features test,dev_println   # Integration tests
+cargo test -p snarkvm-synthesizer --features test,dev-print     # Integration tests
 ```
 
 ## Validation
