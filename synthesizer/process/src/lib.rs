@@ -639,6 +639,51 @@ impl<N: Network> Process<N> {
         Ok(())
     }
 
+    /// Returns the keys that executing the given authorization uses, as pairs of a program ID and a function or
+    /// record name, each mapped to whether `execute` needs to synthesize it as a proving key and a verifying key.
+    ///
+    /// These are the function key of each request, and the translation key of each record in the inputs and
+    /// outputs of a dynamic callee's function. `execute` synthesizes a function key unless its proving key is held,
+    /// and a translation key unless its proving and verifying keys are held.
+    ///
+    /// This takes each request's target and `is_dynamic` flag as given, without checking them against the call that
+    /// takes the request. The result is exact for requests that `Stack::authorize_requests` accepts.
+    ///
+    /// `execute` consumes the requests, and clones of an authorization share them. Call this before executing the
+    /// authorization or any clone of it.
+    #[inline]
+    pub fn execution_keys(
+        &self,
+        authorization: &Authorization<N>,
+    ) -> Result<IndexMap<(ProgramID<N>, Identifier<N>), bool>> {
+        let mut keys = IndexMap::new();
+        for (index, request) in authorization.to_vec_deque().into_iter().enumerate() {
+            let stack = self.get_stack(request.program_id())?;
+            keys.insert(
+                (*request.program_id(), *request.function_name()),
+                !stack.contains_proving_key(request.function_name()),
+            );
+            // The root request has no caller, so `execute` translates none of its records.
+            if index == 0 || !request.is_dynamic() {
+                continue;
+            }
+            let function = stack.get_function_ref(request.function_name())?;
+            let inputs = function.inputs().iter().map(|input| input.value_type());
+            for value_type in inputs.chain(function.outputs().iter().map(|output| output.value_type())) {
+                let (program_id, record_name) = match value_type {
+                    ValueType::Record(record_name) => (*request.program_id(), *record_name),
+                    ValueType::ExternalRecord(locator) => (*locator.program_id(), *locator.resource()),
+                    _ => continue,
+                };
+                let record_stack = self.get_stack(program_id)?;
+                let held = record_stack.contains_proving_key(&record_name)
+                    && record_stack.contains_verifying_key(&record_name);
+                keys.insert((program_id, record_name), !held);
+            }
+        }
+        Ok(keys)
+    }
+
     /// Synthesizes the proving and verifying key for the given program ID and function name.
     #[inline]
     pub fn synthesize_key<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
