@@ -423,7 +423,8 @@ impl<T: CanonicalDeserialize> CanonicalDeserialize for Vec<T> {
         let mut values = Vec::new();
         // `len` comes straight off the wire, so only pre-reserve a small hint from it; a huge
         // value must not force a large upfront allocation. The vector still reaches its real
-        // size via `push`, which only grows as far as the reader actually has data for.
+        // size via `push`, which only grows as far as the reader actually has data for. The hint is
+        // exact: an amortised reserve rounds a short vector up to `Vec`'s minimum capacity.
         let _ = values.try_reserve_exact(len.min(1024) as usize);
         for _ in 0..len {
             values.push(T::deserialize_with_mode(&mut reader, compress, Validate::No)?);
@@ -695,6 +696,16 @@ mod test {
     fn test_vec() {
         test_serialize(vec![1u64, 2, 3, 4, 5]);
         test_serialize(Vec::<u64>::new());
+    }
+
+    #[test]
+    fn test_vec_capacity() {
+        for len in [1, 2, 3, 5] {
+            let mut bytes = vec![];
+            vec![0u64; len].serialize_compressed(&mut bytes).expect("a vec writes");
+            let read = Vec::<u64>::deserialize_compressed(&bytes[..]).expect("a vec reads");
+            assert_eq!(read.capacity(), len);
+        }
     }
 
     #[test]

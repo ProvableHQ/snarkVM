@@ -985,7 +985,7 @@ mod varuna_hiding {
     }
 
     #[test]
-    fn a_proving_key_reads_back_at_its_synthesised_capacity() {
+    fn a_proving_key_reads_back_with_exact_rows() {
         use crate::snark::varuna::{CircuitProvingKey, ahp::indexer::Circuit};
 
         fn exact_rows(c: &Circuit<Fr, VarunaHidingMode>) -> bool {
