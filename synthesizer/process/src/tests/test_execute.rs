@@ -13,12 +13,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{CallStack, InclusionVersion, Process, Trace, execution_cost, execution_cost_for_authorization};
+use crate::{
+    Authorization,
+    CallStack,
+    InclusionVersion,
+    Process,
+    Trace,
+    execution_cost,
+    execution_cost_for_authorization,
+};
 use circuit::{Aleo, network::AleoV0};
 use console::{
     account::{Address, PrivateKey, ViewKey},
     network::{MainnetV0, prelude::*},
-    program::{Identifier, Literal, Plaintext, ProgramID, Record, Value},
+    program::{Identifier, Literal, Plaintext, ProgramID, Record, Request, Value, ValueType},
     types::{Field, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
@@ -2994,4 +3002,113 @@ fn test_program_exceeding_transaction_spend_limit() {
     let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
     // Attempt to verify the deployment, which should fail.
     assert!(process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).is_ok());
+}
+
+/// Executes `caller.aleo/main(1u8)`, whose body is `call`, after re-signing its callee request for
+/// `program/function` on `input`, with the given `is_dynamic` flag, by the caller or by `other_signer`.
+/// Returns the result of `execute`, and whether `twin_a.aleo`, the call's target, then holds any proving key.
+fn execute_with_resigned_callee(
+    call: &str,
+    program: &str,
+    function: &str,
+    is_dynamic: bool,
+    other_signer: bool,
+    input: &str,
+) -> (Result<()>, bool) {
+    let rng = &mut TestRng::default();
+
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    let twin = |name: &str| {
+        format!(
+            "program {name}.aleo;
+            function f: input r0 as u8.private; output r0 as u8.private;
+            function g: input r0 as u8.private; output r0 as u8.private;"
+        )
+    };
+    let caller = format!(
+        "import twin_a.aleo; program caller.aleo; function main: input r0 as u8.private; {call} output r1 as u8.private;"
+    );
+    for source in [twin("twin_a"), twin("twin_b"), caller] {
+        process.lock().add_program(&Program::from_str(&source).unwrap()).unwrap();
+    }
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let authorization = process
+        .authorize::<CurrentAleo, _>(
+            &private_key,
+            ProgramID::from_str("caller.aleo").unwrap(),
+            Identifier::from_str("main").unwrap(),
+            [Value::<CurrentNetwork>::from_str("1u8").unwrap()].iter(),
+            rng,
+        )
+        .unwrap();
+    let root = authorization.to_vec_deque().pop_front().unwrap();
+    let signer = match other_signer {
+        true => PrivateKey::new(rng).unwrap(),
+        false => private_key,
+    };
+    let resigned = Request::sign(
+        &signer,
+        ProgramID::from_str(program).unwrap(),
+        Identifier::from_str(function).unwrap(),
+        [Value::<CurrentNetwork>::from_str(input).unwrap()].iter(),
+        &[ValueType::from_str("u8.private").unwrap()],
+        Some(*root.tvk()),
+        false,
+        None,
+        is_dynamic,
+        rng,
+    )
+    .unwrap();
+    let authorization = Authorization::new(root);
+    authorization.push(resigned).unwrap();
+
+    let result = process.execute::<CurrentAleo, _>(authorization, rng).map(|_| ()).map_err(Error::from);
+    let twin_a = process.get_stack(ProgramID::from_str("twin_a.aleo").unwrap()).unwrap();
+    let holds_key =
+        ["f", "g"].into_iter().any(|name| twin_a.contains_proving_key(&Identifier::from_str(name).unwrap()));
+    (result, holds_key)
+}
+
+#[test]
+fn test_execute_rejects_mismatched_callee_request() {
+    let field = |name: &str| Identifier::<CurrentNetwork>::from_str(name).unwrap().to_field().unwrap();
+    let static_call = "call twin_a.aleo/f r0 into r1;".to_string();
+    let dynamic_call = format!(
+        "call.dynamic {} {} {} with r0 (as u8.private) into r1 (as u8.private);",
+        field("twin_a"),
+        field("aleo"),
+        field("f")
+    );
+
+    for (call, is_dynamic) in [(static_call, false), (dynamic_call, true)] {
+        let (result, holds_key) = execute_with_resigned_callee(&call, "twin_a.aleo", "f", is_dynamic, false, "1u8");
+        assert!(result.is_ok(), "{call}: {result:?}");
+        assert!(holds_key, "{call}");
+
+        let flipped = match is_dynamic {
+            true => "Retrieved a static request",
+            false => "Retrieved a dynamic request",
+        };
+        let inputs = match is_dynamic {
+            true => "different inputs",
+            false => "Inputs do not match",
+        };
+        for (program, function, is_dynamic, other_signer, input, error) in [
+            ("twin_b.aleo", "f", is_dynamic, false, "1u8", "different program ID"),
+            ("twin_a.aleo", "g", is_dynamic, false, "1u8", "different function name"),
+            ("twin_a.aleo", "f", !is_dynamic, false, "1u8", flipped),
+            ("twin_a.aleo", "f", is_dynamic, true, "1u8", "different signer"),
+            ("twin_a.aleo", "f", is_dynamic, false, "2u8", inputs),
+        ] {
+            let case = format!(
+                "{call}: {program}/{function}({input}), is_dynamic: {is_dynamic}, other_signer: {other_signer}"
+            );
+            let (result, holds_key) =
+                execute_with_resigned_callee(&call, program, function, is_dynamic, other_signer, input);
+            let message = format!("{:#}", result.expect_err(&case));
+            assert!(message.contains(error), "{case}: {message}");
+            assert!(!holds_key, "{case}");
+        }
+    }
 }

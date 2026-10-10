@@ -436,6 +436,19 @@ impl<N: Network> CallTrait<N> for Call<N> {
                     CallStack::Execute(authorization, ..) => {
                         // Retrieve the next request (without popping it).
                         let request = authorization.peek_next()?;
+                        // Ensure the request is for the target of the call instruction.
+                        if *request.signer() != registers.signer()? {
+                            return Err(anyhow!("[execute Standard] Retrieved a request with a different signer than the signer in the registers").into());
+                        }
+                        if request.is_dynamic() {
+                            return Err(anyhow!("[execute Standard] Retrieved a dynamic request").into());
+                        }
+                        if request.program_id() != substack.program_id() {
+                            return Err(anyhow!("[execute Standard] Retrieved a request with a different program ID than the one in the call instruction").into());
+                        }
+                        if request.function_name() != function.name() {
+                            return Err(anyhow!("[execute Standard] Retrieved a request with a different function name than the one in the call instruction").into());
+                        }
                         // Ensure the inputs match the original inputs.
                         if request.inputs().len() != inputs.len() {
                             return Err(anyhow!(
