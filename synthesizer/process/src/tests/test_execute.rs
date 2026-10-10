@@ -13,7 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{CallStack, InclusionVersion, Process, Trace, execution_cost, execution_cost_for_authorization};
+use crate::{
+    Authorization,
+    CallStack,
+    InclusionVersion,
+    Process,
+    Trace,
+    execution_cost,
+    execution_cost_for_authorization,
+};
 use circuit::{Aleo, network::AleoV0};
 use console::{
     account::{Address, PrivateKey, ViewKey},
@@ -2994,4 +3002,45 @@ fn test_program_exceeding_transaction_spend_limit() {
     let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
     // Attempt to verify the deployment, which should fail.
     assert!(process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).is_ok());
+}
+
+/// `execute` refuses an authorization with a request that no call takes.
+#[test]
+fn test_execute_rejects_unused_request() {
+    let rng = &mut TestRng::default();
+
+    let program = Program::<CurrentNetwork>::from_str(
+        r"
+program unused.aleo;
+function twice:
+    input r0 as u64.private;
+    add r0 r0 into r1;
+    output r1 as u64.private;",
+    )
+    .unwrap();
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    process.lock().add_program(&program).unwrap();
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let mut authorize = |input: &str| {
+        process
+            .authorize::<CurrentAleo, _>(
+                &private_key,
+                program.id(),
+                Identifier::from_str("twice").unwrap(),
+                [Value::from_str(input).unwrap()].iter(),
+                rng,
+            )
+            .unwrap()
+    };
+    let (first, second) = (authorize("1u64"), authorize("2u64"));
+
+    // The second root request follows the first, so no call takes it.
+    let authorization = Authorization::try_from((
+        first.to_vec_deque().into_iter().chain(second.to_vec_deque()).collect(),
+        first.transitions().into_values().chain(second.transitions().into_values()).collect(),
+    ))
+    .unwrap();
+    let error = process.execute::<CurrentAleo, _>(authorization, rng).map(|_| ()).unwrap_err();
+    assert!(format!("{error:#}").contains("used 1 of its 2 requests"), "{error:#}");
 }

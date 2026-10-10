@@ -41,6 +41,8 @@ impl<N: Network> Process<N> {
         let trace = Arc::new(RwLock::new(Trace::new()));
         // Initialize the translations.
         let translations = Arc::new(RwLock::new(Vec::new()));
+        // Retrieve the number of requests, which `execute_function` consumes.
+        let num_requests = authorization.len();
         // Initialize the call stack.
         let call_stack = CallStack::execute(authorization, trace.clone(), translations)?;
         lap!(timer, "Initialize call stack");
@@ -58,6 +60,14 @@ impl<N: Network> Process<N> {
         // Ensure the trace is not empty.
         if trace.transitions().is_empty() {
             return Err(anyhow!("Execution of '{locator}' is empty").into());
+        }
+        // Ensure every request was used.
+        if trace.transitions().len() != num_requests {
+            return Err(anyhow!(
+                "Execution of '{locator}' used {} of its {num_requests} requests",
+                trace.transitions().len()
+            )
+            .into());
         }
         // Construct the call graph.
         trace.construct_call_graph(self)?;
