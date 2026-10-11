@@ -19,7 +19,7 @@ use crate::{
 };
 use snarkvm_curves::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{ConstraintFieldError, ToConstraintField, Zero};
-use snarkvm_parameters::mainnet::PowersOfG;
+use snarkvm_parameters::mainnet::{PowersFile, PowersOfG};
 use snarkvm_utilities::{
     FromBytes,
     ToBytes,
@@ -70,6 +70,19 @@ impl<E: PairingEngine> UniversalParams<E> {
 
     pub fn download_powers_for(&self, range: Range<usize>) -> Result<()> {
         self.powers.download_powers_for(range)
+    }
+
+    /// The files this SRS still needs to hold `range`, in the order
+    /// `add_powers_file` accepts them. An embedded file is never listed.
+    pub fn missing_files_for(&self, range: Range<usize>) -> Result<Vec<PowersFile>> {
+        self.powers.missing_files_for(range)
+    }
+
+    /// Reads `file` from `reader`, checks its size and checksum, and appends
+    /// its powers. A file already held is not read. `reader` need not be
+    /// buffered.
+    pub fn add_powers_file(&self, file: PowersFile, reader: impl Read) -> Result<()> {
+        self.powers.add_powers_file(file, reader)
     }
 
     pub fn lagrange_basis(&self, domain: EvaluationDomain<E::Fr>) -> Result<Vec<E::G1Affine>> {
