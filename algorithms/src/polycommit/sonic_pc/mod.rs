@@ -918,6 +918,28 @@ mod tests {
         );
     }
 
+    /// Adding a file replaces the snapshot as a download does: a key trimmed
+    /// before it reads the same points after it.
+    #[test]
+    fn a_key_keeps_its_snapshot_across_an_added_file() {
+        let pp = PC_Bls12_377::load_srs((1 << 15) - 1).unwrap();
+        let (before, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
+        let points = before.powers_of_beta_g.to_vec();
+
+        let [file] = pp.missing_files_for(0..(1 << 16)).unwrap()[..] else { panic!("expected one file") };
+        pp.add_powers_file(file, &*snarkvm_parameters::mainnet::Degree16::load_bytes().unwrap()).unwrap();
+        assert!(pp.missing_files_for(0..(1 << 16)).unwrap().is_empty());
+
+        assert_eq!(&*before.powers_of_beta_g, points.as_slice(), "the older snapshot changed");
+        let (after, _) = pp.shared_powers_of_beta_g(0, 1).unwrap();
+        match &before.powers_of_beta_g {
+            Bases::Shared { store, .. } => {
+                assert!(!std::sync::Arc::ptr_eq(store, &after), "the file did not replace the snapshot")
+            }
+            Bases::Owned(_) => panic!("trim should share"),
+        }
+    }
+
     /// A `trim` whose Lagrange sizes grow the SRS shares the snapshot that
     /// growth made, not the one it replaced.
     #[test]
