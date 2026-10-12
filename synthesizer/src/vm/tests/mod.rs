@@ -49,5 +49,9 @@ mod test_v20;
 #[cfg(feature = "test")]
 mod test_v22;
 
+// Scenario tests for a multisig whose owners stay anonymous within the owner set.
+#[cfg(feature = "test")]
+mod private_multisig;
+
 use super::*;
 use crate::vm::test_helpers::*;
