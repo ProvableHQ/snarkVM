@@ -228,6 +228,17 @@ impl<N: Network> Plaintext<N> {
             }
         }
     }
+
+    /// Checks that the bit encoding of this plaintext fits its size prefixes.
+    ///
+    /// Plaintext bit encodings write a `u16` size in front of each struct member and each
+    /// array element, and writing a larger value halts the process. Callers must run this
+    /// check on untrusted values before bit-encoding them, so that oversized values are
+    /// rejected instead of halting.
+    pub fn check_bit_lengths(&self) -> Result<()> {
+        self.size_in_bits_checked()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
