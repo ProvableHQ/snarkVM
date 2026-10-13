@@ -207,6 +207,24 @@ impl<N: Network> DynamicRecord<N> {
         RecordDataTree::new(leaf_hasher, path_hasher, &leaves)
     }
 
+    /// Checks that the bit encoding of the record data fits its size prefixes.
+    ///
+    /// The plaintext bit encoding writes a `u16` size in front of each struct member and
+    /// each array element, and writing a larger value halts the process. Decoders must run
+    /// this check on untrusted data before they merkleize it, so that oversized values are
+    /// rejected instead of halting.
+    fn check_data_bit_lengths(data: &RecordData<N>) -> Result<()> {
+        for entry in data.values() {
+            // Retrieve the plaintext.
+            let plaintext = match entry {
+                Entry::Constant(plaintext) | Entry::Public(plaintext) | Entry::Private(plaintext) => plaintext,
+            };
+            // Ensure the bit encoding of the plaintext fits its size prefixes.
+            plaintext.size_in_bits_checked()?;
+        }
+        Ok(())
+    }
+
     /// Returns the leaf and path hashers used to merkleize record entries.
     pub fn initialize_hashers() -> (&'static Poseidon8<N>, &'static Poseidon2<N>) {
         (N::dynamic_record_leaf_hasher(), N::dynamic_record_path_hasher())

@@ -92,6 +92,9 @@ impl<N: Network> DynamicRecord<N> {
             return Err(error("Duplicate entry type found in dynamic record"));
         }
 
+        // Ensure the bit encoding of the entries fits its size prefixes, so merkleizing cannot halt.
+        Self::check_data_bit_lengths(&data).map_err(|e| error(e.to_string()))?;
+
         // Check that the Merkle root matches the recovered data.
         let tree = Self::merkleize_data(&data).map_err(|e| error(e.to_string()))?;
         if tree.root() != root {
@@ -333,5 +336,54 @@ mod tests {
             DynamicRecord::<CurrentNetwork>::read_le(&padded[..]).is_err(),
             "an entry declaring fewer bytes than it occupies must be rejected"
         );
+    }
+
+    #[test]
+    fn test_read_le_version_2_rejects_oversized_nested_value() {
+        let rng = &mut TestRng::default();
+
+        // An outer array whose sole element is an array of 1024 u64s passes every decoding
+        // limit, but its 108578-bit encoding exceeds the u16 size prefix the outer array
+        // writes before each element. Merkleizing it would halt the process, so the decoder
+        // must reject it before the Merkle computation.
+        let inner = Plaintext::Array(
+            core::iter::repeat_n(Plaintext::<CurrentNetwork>::from(Literal::U64(U64::rand(rng))), 1024).collect(),
+            Default::default(),
+        );
+        let data = indexmap::indexmap! {
+            Identifier::from_str("amount").unwrap() => Entry::Public(Plaintext::Array(vec![inner], Default::default())),
+        };
+        let record =
+            DynamicRecord::new_unchecked(Address::rand(rng), Field::zero(), Group::rand(rng), U8::new(0), Some(data));
+
+        // The writer emits version 2 when the entry data is present.
+        let error = DynamicRecord::<CurrentNetwork>::read_le(&record.to_bytes_le().unwrap()[..]).unwrap_err();
+        assert!(error.to_string().contains("exceeds u16::MAX bits"));
+    }
+
+    #[test]
+    fn test_read_le_version_2_accepts_large_nested_value() {
+        let rng = &mut TestRng::default();
+
+        // An array of 512 u64s stays under the u16 size prefix, and must decode.
+        let data = indexmap::indexmap! {
+            Identifier::from_str("amount").unwrap() => Entry::Public(Plaintext::Array(
+                core::iter::repeat_n(Plaintext::<CurrentNetwork>::from(Literal::U64(U64::rand(rng))), 512).collect(),
+                Default::default(),
+            )),
+        };
+        let owner = Owner::Public(Address::rand(rng));
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            owner,
+            data.clone(),
+            Group::rand(rng),
+            U8::new(0),
+        )
+        .unwrap();
+        let expected = DynamicRecord::from_record(&record).unwrap();
+
+        // The writer emits version 2 when the entry data is present.
+        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&expected.to_bytes_le().unwrap()[..]).unwrap();
+        assert_eq!(candidate.data().as_ref(), Some(&data));
     }
 }

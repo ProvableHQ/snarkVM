@@ -153,6 +153,8 @@ impl<N: Network> Parser for DynamicRecord<N> {
                     }
                     // Construct the record data.
                     let data = IndexMap::from_iter(entries);
+                    // Ensure the bit encoding of the entries fits its size prefixes, so merkleizing cannot halt.
+                    Self::check_data_bit_lengths(&data).map_err(|e| error(e.to_string()))?;
                     // Check that the Merkle root matches the parsed data.
                     let tree = Self::merkleize_data(&data).map_err(|e| error(e.to_string()))?;
                     if tree.root() != &root {
@@ -386,6 +388,23 @@ mod tests {
             Address::<CurrentNetwork>::rand(rng),
             Group::<CurrentNetwork>::rand(rng),
         );
+        assert!(DynamicRecord::<CurrentNetwork>::from_str(&string).is_err());
+    }
+
+    #[test]
+    fn test_parse_with_data_rejects_oversized_nested_value() {
+        let rng = &mut TestRng::default();
+
+        // An outer array whose sole element is an array of 1024 u64s parses within every
+        // limit, but its 108578-bit encoding exceeds the u16 size prefix the outer array
+        // writes before each element. The parser must reject it before the Merkle computation.
+        let elements = core::iter::repeat_n("0u64.private", 1024).collect::<Vec<_>>().join(", ");
+        let string = format!(
+            "{{ owner: {}, _root: 0field, _nonce: {}, _version: 0u8, _data: {{ amount: [ [ {elements} ] ] }} }}",
+            Address::<CurrentNetwork>::rand(rng),
+            Group::<CurrentNetwork>::rand(rng),
+        );
+
         assert!(DynamicRecord::<CurrentNetwork>::from_str(&string).is_err());
     }
 
