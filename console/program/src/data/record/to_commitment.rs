@@ -23,6 +23,9 @@ impl<N: Network> Record<N, Plaintext<N>> {
         record_name: &Identifier<N>,
         record_view_key: &Field<N>,
     ) -> Result<Field<N>> {
+        // Ensure the bit encoding of the record fits its size prefixes, so hashing it cannot halt.
+        self.check_bit_lengths()?;
+
         // Construct the input as `(program_id || record_name || record)`.
         let input = to_bits_le![program_id, record_name, self];
 
@@ -60,5 +63,46 @@ impl<N: Network> Record<N, Ciphertext<N>> {
         _record_view_key: &Field<N>,
     ) -> Result<Field<N>> {
         bail!("Illegal operation: Record::to_commitment() cannot be invoked on the `Ciphertext` variant.")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_console_network::MainnetV0;
+    use snarkvm_console_types::U64;
+    use snarkvm_utilities::{TestRng, Uniform};
+
+    use core::str::FromStr;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_to_commitment_rejects_oversized_entry() {
+        let rng = &mut TestRng::default();
+
+        // A record whose entry holds an outer array whose sole element is an array of 1024
+        // u64s: the entry's bit encoding exceeds the u16 size prefix that bit-encoding the
+        // record writes before each array element.
+        let inner = Plaintext::Array(
+            core::iter::repeat_n(Plaintext::from(Literal::U64(U64::rand(rng))), 1024).collect(),
+            Default::default(),
+        );
+        let data = indexmap::indexmap! {
+            Identifier::from_str("amount").unwrap() => Entry::Private(Plaintext::Array(vec![inner], Default::default())),
+        };
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            Owner::Public(Address::rand(rng)),
+            data,
+            Group::rand(rng),
+            U8::new(0),
+        )
+        .unwrap();
+
+        // Hashing the record would halt the process, so the commitment must fail instead.
+        let program_id = ProgramID::from_str("token.aleo").unwrap();
+        let record_name = Identifier::from_str("token").unwrap();
+        let error = record.to_commitment(&program_id, &record_name, &Field::zero()).unwrap_err();
+        assert!(error.to_string().contains("exceeds u16::MAX bits"));
     }
 }
