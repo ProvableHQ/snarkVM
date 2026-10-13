@@ -37,6 +37,9 @@ pub use transition::*;
 
 use console::prelude::{Result, bail};
 
+#[cfg(not(target_arch = "wasm32"))]
+pub use snarkvm_slipstream_plugin_manager::SlipstreamPluginManager;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum FinalizeMode {
     /// Invoke finalize as a real run.

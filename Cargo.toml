@@ -80,6 +80,8 @@ members = [
   "ledger/testchain-generator",
   "metrics",
   "parameters",
+  "plugins/slipstream_plugin_interface",
+  "plugins/slipstream_plugin_manager",
   "synthesizer",
   "synthesizer/error",
   "synthesizer/process",
@@ -393,6 +395,14 @@ default-features = false
 path = "ledger/store"
 version = "=4.12.0"
 
+[workspace.dependencies.snarkvm-slipstream-plugin-interface]
+path = "plugins/slipstream_plugin_interface"
+version = "=4.12.0"
+
+[workspace.dependencies.snarkvm-slipstream-plugin-manager]
+path = "plugins/slipstream_plugin_manager"
+version = "=4.12.0"
+
 [workspace.dependencies.snarkvm-ledger-test-helpers]
 path = "ledger/test-helpers"
 version = "=4.12.0"
@@ -602,6 +612,12 @@ optional = true
 [dependencies.snarkvm-wasm]
 workspace = true
 optional = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.snarkvm-slipstream-plugin-interface]
+workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.snarkvm-slipstream-plugin-manager]
+workspace = true
 
 [dependencies.anyhow]
 workspace = true
