@@ -104,7 +104,7 @@ pub fn credits_program<N: Network, A: Aleo<Network = N>>() -> Result<()> {
         // println!("Synthesized '{}': {} ms", function_name, timer.elapsed().as_millis());
 
         let proving_key = process.get_proving_key(program_id, function_name)?;
-        let proving_key_bytes = proving_key.to_bytes_le()?;
+        let proving_key_bytes = proving_key.to_bytes_le_full()?;
         let proving_key_checksum = checksum(&proving_key_bytes);
 
         let verifying_key = process.get_verifying_key(program_id, function_name)?;

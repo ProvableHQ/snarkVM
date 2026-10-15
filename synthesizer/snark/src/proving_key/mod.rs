@@ -18,6 +18,7 @@ use super::*;
 mod bytes;
 mod parse;
 mod serialize;
+pub use serialize::ProvingKeySeed;
 
 use std::collections::BTreeMap;
 

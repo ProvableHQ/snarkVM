@@ -214,7 +214,7 @@ pub fn inclusion<N: Network, A: Aleo<Network = N>>() -> Result<()> {
     // Initialize a vector for the commands.
     let mut commands = vec![];
 
-    let proving_key_bytes = proving_key.to_bytes_le()?;
+    let proving_key_bytes = proving_key.to_bytes_le_full()?;
     let proving_key_checksum = checksum(&proving_key_bytes);
 
     let verifying_key_bytes = verifying_key.to_bytes_le()?;

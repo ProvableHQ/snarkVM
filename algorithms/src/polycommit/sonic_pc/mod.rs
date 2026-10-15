@@ -90,6 +90,28 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         enforced_degree_bounds: Option<&[usize]>,
     ) -> Result<(CommitterKey<E>, UniversalVerifier<E>)> {
         let trim_time = start_timer!(|| "Trimming public parameters");
+        let ck = CommitterKey::trim(
+            pp,
+            supported_degree,
+            supported_lagrange_sizes,
+            supported_hiding_bound,
+            enforced_degree_bounds,
+        )?;
+        let vk = pp.to_universal_verifier()?;
+        end_timer!(trim_time);
+        Ok((ck, vk))
+    }
+}
+
+impl<E: PairingEngine> CommitterKey<E> {
+    /// The committer key that `SonicKZG10::trim` returns.
+    pub(crate) fn trim(
+        pp: &UniversalParams<E>,
+        supported_degree: usize,
+        supported_lagrange_sizes: impl IntoIterator<Item = usize>,
+        supported_hiding_bound: usize,
+        enforced_degree_bounds: Option<&[usize]>,
+    ) -> Result<Self> {
         let max_degree = pp.max_degree();
 
         let enforced_degree_bounds = enforced_degree_bounds.map(|bounds| {
@@ -184,21 +206,18 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             end_timer!(lagrange_time);
         }
 
-        let ck = CommitterKey {
+        Ok(Self {
             powers_of_beta_g,
             lagrange_bases_at_beta_g,
             powers_of_beta_times_gamma_g,
             shifted_powers_of_beta_g,
             shifted_powers_of_beta_times_gamma_g,
             enforced_degree_bounds,
-        };
-
-        let vk = pp.to_universal_verifier()?;
-
-        end_timer!(trim_time);
-        Ok((ck, vk))
+        })
     }
+}
 
+impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
     /// Outputs commitments to `polynomials`.
     ///
     /// If `polynomials[i].is_hiding()`, then the `i`-th commitment is hiding
@@ -974,6 +993,66 @@ mod tests {
         assert_ne!(&*ck.powers_of_beta_g, pp.powers_of_beta_g(0, 1001).unwrap().as_slice());
         let (fresh, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
         assert_eq!(&*fresh.powers_of_beta_g, pp.powers_of_beta_g(0, 1001).unwrap().as_slice());
+    }
+
+    /// A key written as a reference to the SRS reads back, trimmed from the
+    /// SRS, as the key it was: the same points, sharing them.
+    #[test]
+    fn an_srs_reference_reads_back_as_the_same_key() {
+        let pp = PC_Bls12_377::load_srs((1 << 12) - 1).unwrap();
+        for (degree, lagrange_sizes, bounds) in
+            [(1000, vec![], Some(&[500, 1][..])), (1000, vec![256, 512], None), (0, vec![], None)]
+        {
+            let (ck, _) = PC_Bls12_377::trim(&pp, degree, lagrange_sizes, 1, bounds).unwrap();
+            assert!(ck.shares_srs());
+            let mut reference = vec![];
+            ck.write_le_srs_reference(&mut reference).unwrap();
+            assert!(reference.len() < 128, "a reference holds no point");
+
+            let read = CommitterKey::<Bls12_377>::read_le_srs_reference(&reference[..], &pp).unwrap();
+            assert!(read.shares_srs());
+            assert_eq!(read.to_bytes_le().unwrap(), ck.to_bytes_le().unwrap());
+            assert_eq!(read.lagrange_bases_at_beta_g, ck.lagrange_bases_at_beta_g);
+        }
+    }
+
+    /// A reference to another SRS, or to a key that `trim` does not return,
+    /// does not read.
+    #[test]
+    fn a_wrong_srs_reference_does_not_read() {
+        let pp = PC_Bls12_377::load_srs((1 << 12) - 1).unwrap();
+        let (mut ck, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
+        let mut reference = vec![];
+        ck.write_le_srs_reference(&mut reference).unwrap();
+
+        // The checksum of another SRS.
+        let mut other_srs = reference.clone();
+        other_srs[0] ^= 1;
+        assert!(CommitterKey::<Bls12_377>::read_le_srs_reference(&other_srs[..], &pp).is_err());
+
+        // A key whose points differ from the ones `trim` returns.
+        ck.powers_of_beta_g.to_mut().swap(2, 3);
+        assert!(!ck.shares_srs());
+        let mut edited = vec![];
+        ck.write_le_srs_reference(&mut edited).unwrap();
+        assert!(CommitterKey::<Bls12_377>::read_le_srs_reference(&edited[..], &pp).is_err());
+
+        // Truncated bytes.
+        assert!(CommitterKey::<Bls12_377>::read_le_srs_reference(&reference[..reference.len() - 1], &pp).is_err());
+    }
+
+    /// A key read from its full bytes owns its points, but still refers to
+    /// the SRS it was trimmed from.
+    #[test]
+    fn an_owned_key_writes_the_same_srs_reference() {
+        let pp = PC_Bls12_377::load_srs((1 << 12) - 1).unwrap();
+        let (ck, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
+        let owned = CommitterKey::<Bls12_377>::read_le(&ck.to_bytes_le().unwrap()[..]).unwrap();
+        assert!(!owned.shares_srs());
+        let (mut reference, mut owned_reference) = (vec![], vec![]);
+        ck.write_le_srs_reference(&mut reference).unwrap();
+        owned.write_le_srs_reference(&mut owned_reference).unwrap();
+        assert_eq!(reference, owned_reference);
     }
 
     #[test]

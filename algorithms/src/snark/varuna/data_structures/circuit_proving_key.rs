@@ -15,7 +15,7 @@
 
 use crate::{
     polycommit::sonic_pc,
-    snark::varuna::{CircuitVerifyingKey, SNARKMode, ahp::indexer::*},
+    snark::varuna::{CircuitVerifyingKey, SNARKMode, UniversalSRS, ahp::indexer::*},
 };
 use snarkvm_curves::PairingEngine;
 use snarkvm_utilities::{FromBytes, ToBytes, serialize::*};
@@ -50,6 +50,27 @@ impl<E: PairingEngine, SM: SNARKMode> FromBytes for CircuitProvingKey<E, SM> {
         let circuit_verifying_key = CanonicalDeserialize::deserialize_compressed(&mut reader)?;
         let circuit = CanonicalDeserialize::deserialize_compressed(&mut reader)?;
         let committer_key = Arc::new(FromBytes::read_le(&mut reader)?);
+
+        Ok(Self { circuit_verifying_key, circuit, committer_key })
+    }
+}
+
+impl<E: PairingEngine, SM: SNARKMode> CircuitProvingKey<E, SM> {
+    /// Writes the key with its committer key as a reference to the SRS; see
+    /// `CommitterKey::write_le_srs_reference`.
+    pub fn write_le_srs_reference<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        CanonicalSerialize::serialize_compressed(&self.circuit_verifying_key, &mut writer)?;
+        CanonicalSerialize::serialize_compressed(&self.circuit, &mut writer)?;
+
+        self.committer_key.write_le_srs_reference(&mut writer)
+    }
+
+    /// Reads a key written by `write_le_srs_reference`, trimming its committer
+    /// key from `srs`.
+    pub fn read_le_srs_reference<R: Read>(mut reader: R, srs: &UniversalSRS<E>) -> io::Result<Self> {
+        let circuit_verifying_key = CanonicalDeserialize::deserialize_compressed(&mut reader)?;
+        let circuit = CanonicalDeserialize::deserialize_compressed(&mut reader)?;
+        let committer_key = Arc::new(sonic_pc::CommitterKey::read_le_srs_reference(&mut reader, srs)?);
 
         Ok(Self { circuit_verifying_key, circuit, committer_key })
     }

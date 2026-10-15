@@ -36,7 +36,18 @@ impl<N: Network> FromStr for ProvingKey<N> {
     type Err = Error;
 
     /// Reads in the proving key string.
+    ///
+    /// A proving key that refers to the universal SRS is rejected; read it
+    /// with `ProvingKey::from_str_with_srs`.
     fn from_str(key: &str) -> Result<Self, Self::Err> {
+        // Decode the proving key data into the proving key.
+        Ok(Self::read_le(&Self::decode_bech32m(key)?[..])?)
+    }
+}
+
+impl<N: Network> ProvingKey<N> {
+    /// Decodes the bytes of a proving key string.
+    fn decode_bech32m(key: &str) -> Result<Vec<u8>> {
         // Decode the proving key string from bech32m.
         let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(key)?;
         let hrp = checked.hrp();
@@ -46,8 +57,13 @@ impl<N: Network> FromStr for ProvingKey<N> {
         } else if data.is_empty() {
             bail!("Failed to decode proving key: data field is empty")
         }
+        Ok(data)
+    }
+
+    /// Reads in a proving key string of either version; see `read_le_with_srs`.
+    pub fn from_str_with_srs(key: &str, universal_srs: &UniversalSRS<N>) -> Result<Self> {
         // Decode the proving key data into the proving key.
-        Ok(Self::read_le(&data[..])?)
+        Ok(Self::read_le_with_srs(&Self::decode_bech32m(key)?[..], universal_srs)?)
     }
 }
 
@@ -67,5 +83,25 @@ impl<N: Network> Display for ProvingKey<N> {
             bech32::encode::<LongBech32m>(bech32::Hrp::parse_unchecked(PROVING_KEY), &bytes).map_err(|_| fmt::Error)?;
         // Output the string.
         Display::fmt(&string, f)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::{CurrentNetwork, sample_keys};
+
+    #[test]
+    fn test_string() -> Result<()> {
+        let (expected, _) = sample_keys();
+        let expected_string = expected.to_string();
+
+        // The key refers to the universal SRS, so it reads only with it.
+        assert!(ProvingKey::<CurrentNetwork>::from_str(&expected_string).is_err());
+        let srs = UniversalSRS::<CurrentNetwork>::load()?;
+        let candidate = ProvingKey::from_str_with_srs(&expected_string, &srs)?;
+        assert_eq!(expected_string, candidate.to_string());
+
+        Ok(())
     }
 }

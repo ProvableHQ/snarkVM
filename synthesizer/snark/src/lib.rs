@@ -35,7 +35,7 @@ mod proof;
 pub use proof::{Proof, proof_size};
 
 mod proving_key;
-pub use proving_key::ProvingKey;
+pub use proving_key::{ProvingKey, ProvingKeySeed};
 
 mod universal_srs;
 pub use universal_srs::UniversalSRS;
