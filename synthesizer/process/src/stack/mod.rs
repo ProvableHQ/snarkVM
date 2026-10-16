@@ -502,6 +502,12 @@ impl<N: Network> Stack<N> {
         }
     }
 
+    /// Returns the proving keys this stack holds, by function or record name, without loading any.
+    #[inline]
+    pub fn proving_keys(&self) -> Vec<(Identifier<N>, ProvingKey<N>)> {
+        self.proving_keys.read().iter().map(|(name, key)| (*name, key.clone())).collect()
+    }
+
     /// Inserts the proving key if the program ID is 'credits.aleo'.
     fn try_insert_credits_function_proving_key(&self, function_name: &Identifier<N>) -> Result<()> {
         // If the program is 'credits.aleo' and it does not exist yet, load the proving key directly.

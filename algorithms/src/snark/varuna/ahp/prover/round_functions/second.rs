@@ -31,7 +31,7 @@ use crate::{
 use anyhow::Result;
 use rand::Rng;
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_reduce};
+use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_reduce, defer};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -54,6 +54,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         _r: &mut R,
     ) -> Result<(prover::SecondOracles<F>, prover::State<'a, F, SM>)> {
         let round_time = start_timer!(|| "AHP::Prover::SecondRound");
+        defer! { end_timer!(round_time); }
 
         let zk_bound = Self::zk_bound();
 
@@ -67,8 +68,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         let oracles = prover::SecondOracles { h_0: LabeledPolynomial::new("h_0", h_0, None, None) };
         assert!(oracles.matches_info(&Self::second_round_polynomial_info()));
-
-        end_timer!(round_time);
 
         Ok((oracles, state))
     }
@@ -132,6 +131,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         }
 
         let h_sum_time = start_timer!(|| "AHP::Prover::SecondRound h_sum");
+        defer! { end_timer!(h_sum_time); }
         let h_sum: DensePolynomial<F> =
             cfg_reduce!(cfg_into_iter!(job_pool.execute_all()), || Ok(DensePolynomial::zero()), |a, b| {
                 a.and_then(|a| {
@@ -141,8 +141,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     })
                 })
             })?;
-        end_timer!(h_sum_time);
-
         Ok(h_sum)
     }
 

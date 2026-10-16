@@ -31,6 +31,7 @@ use crate::{
 };
 use anyhow::{Result, anyhow, ensure};
 use snarkvm_fields::{Field, PrimeField};
+use snarkvm_utilities::defer;
 
 use core::{borrow::Borrow, marker::PhantomData};
 use itertools::Itertools;
@@ -237,169 +238,180 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         );
 
         // We're now going to calculate the rowcheck_zerocheck
-        let rowcheck_time = start_timer!(|| "Rowcheck");
+        {
+            let rowcheck_time = start_timer!(|| "Rowcheck");
+            defer! { end_timer!(rowcheck_time); }
 
-        let v_R_at_alpha_time = start_timer!(|| "v_R_at_alpha");
-        let v_R_at_alpha = max_constraint_domain.evaluate_vanishing_polynomial(alpha);
-        end_timer!(v_R_at_alpha_time);
+            let v_R_at_alpha_time = start_timer!(|| "v_R_at_alpha");
+            let v_R_at_alpha = max_constraint_domain.evaluate_vanishing_polynomial(alpha);
+            end_timer!(v_R_at_alpha_time);
 
-        let rowcheck_zerocheck = {
-            let mut rowcheck_zerocheck = LinearCombination::empty("rowcheck_zerocheck");
-            for (i, (id, c)) in first_round_batch_combiners.iter().enumerate() {
-                let mut circuit_term = LinearCombination::empty(format!("rowcheck_zerocheck term {id}"));
-                let third_sums_i = &prover_third_message.sums[i];
-                let circuit_state = &state.circuit_specific_states[id];
+            let rowcheck_zerocheck = {
+                let mut rowcheck_zerocheck = LinearCombination::empty("rowcheck_zerocheck");
+                for (i, (id, c)) in first_round_batch_combiners.iter().enumerate() {
+                    let mut circuit_term = LinearCombination::empty(format!("rowcheck_zerocheck term {id}"));
+                    let third_sums_i = &prover_third_message.sums[i];
+                    let circuit_state = &state.circuit_specific_states[id];
 
-                for (j, instance_combiner) in c.instance_combiners.iter().enumerate() {
-                    let mut rowcheck = LinearCombination::empty(format!("rowcheck term {id}"));
-                    let sum_a_third = third_sums_i[j].sum_a;
-                    let sum_b_third = third_sums_i[j].sum_b;
-                    let sum_c_third = third_sums_i[j].sum_c;
+                    for (j, instance_combiner) in c.instance_combiners.iter().enumerate() {
+                        let mut rowcheck = LinearCombination::empty(format!("rowcheck term {id}"));
+                        let sum_a_third = third_sums_i[j].sum_a;
+                        let sum_b_third = third_sums_i[j].sum_b;
+                        let sum_c_third = third_sums_i[j].sum_c;
 
-                    rowcheck.add(sum_a_third * sum_b_third - sum_c_third, LCTerm::One);
+                        rowcheck.add(sum_a_third * sum_b_third - sum_c_third, LCTerm::One);
 
-                    circuit_term += (*instance_combiner, &rowcheck);
+                        circuit_term += (*instance_combiner, &rowcheck);
+                    }
+                    let constraint_domain = circuit_state.constraint_domain;
+                    let selector = selectors
+                        .get(&(max_constraint_domain.size, constraint_domain.size, alpha))
+                        .ok_or(anyhow!("Could not find selector at alpha"))?;
+                    circuit_term *= *selector;
+                    rowcheck_zerocheck += (c.circuit_combiner, &circuit_term);
                 }
-                let constraint_domain = circuit_state.constraint_domain;
-                let selector = selectors
-                    .get(&(max_constraint_domain.size, constraint_domain.size, alpha))
-                    .ok_or(anyhow!("Could not find selector at alpha"))?;
-                circuit_term *= *selector;
-                rowcheck_zerocheck += (c.circuit_combiner, &circuit_term);
-            }
-            rowcheck_zerocheck.add(-v_R_at_alpha, "h_0");
-            rowcheck_zerocheck
-        };
+                rowcheck_zerocheck.add(-v_R_at_alpha, "h_0");
+                rowcheck_zerocheck
+            };
 
-        debug_assert!(evals.get_lc_eval(&rowcheck_zerocheck, alpha)?.is_zero());
-        linear_combinations.insert("rowcheck_zerocheck".into(), rowcheck_zerocheck);
-        end_timer!(rowcheck_time);
-
-        // Lineval sumcheck:
-        let lineval_time = start_timer!(|| "Lineval");
-
-        let g_1 = LinearCombination::new("g_1", [(F::one(), "g_1")]);
-
-        let v_C_at_beta = max_variable_domain.evaluate_vanishing_polynomial(beta);
-        let v_K_at_gamma = max_non_zero_domain.evaluate_vanishing_polynomial(gamma);
-
-        let v_X_at_beta_time = start_timer!(|| "v_X_at_beta");
-        let v_X_at_beta = state
-            .circuit_specific_states
-            .iter()
-            .map(|(circuit_id, circuit_state)| {
-                let v_X_i_at_beta = circuit_state.input_domain.evaluate_vanishing_polynomial(beta);
-                (circuit_id, v_X_i_at_beta)
-            })
-            .collect::<BTreeMap<_, _>>();
-        end_timer!(v_X_at_beta_time);
-
-        let x_at_betas = state
-            .circuit_specific_states
-            .iter()
-            .enumerate()
-            .map(|(i, (circuit_id, circuit_state))| {
-                let lag_at_beta = circuit_state.input_domain.evaluate_all_lagrange_coefficients(beta);
-                let x_at_beta = formatted_public_inputs[i]
-                    .iter()
-                    .map(|x| x.iter().zip_eq(&lag_at_beta).map(|(x, l)| *x * l).sum::<F>())
-                    .collect_vec();
-                (circuit_id, x_at_beta)
-            })
-            .collect::<BTreeMap<_, _>>();
-
-        let g_1_at_beta = evals.get_lc_eval(&g_1, beta)?;
-
-        // We're now going to calculate the lineval_sumcheck
-        let lineval_sumcheck = {
-            let mut lineval_sumcheck = LinearCombination::empty("lineval_sumcheck");
-            if SM::ZK {
-                lineval_sumcheck.add(F::one(), "mask_poly");
-            }
-            for (i, (id, c)) in third_round_batch_combiners.iter().enumerate() {
-                let mut circuit_term = LinearCombination::empty(format!("lineval_sumcheck term {id}"));
-                let fourth_sums_i = &sums_fourth_msg[i];
-                let circuit_state = &state.circuit_specific_states[id];
-
-                for (j, instance_combiner) in c.instance_combiners.iter().enumerate() {
-                    let w_j = witness_label(*id, "w", j);
-                    let mut lineval = LinearCombination::empty(format!("lineval term {j}"));
-                    let sum_a_fourth = fourth_sums_i.sum_a * circuit_state.non_zero_a_domain.size_as_field_element;
-                    let sum_b_fourth = fourth_sums_i.sum_b * circuit_state.non_zero_b_domain.size_as_field_element;
-                    let sum_c_fourth = fourth_sums_i.sum_c * circuit_state.non_zero_c_domain.size_as_field_element;
-
-                    lineval.add(sum_a_fourth * eta_a * x_at_betas[id][j], LCTerm::One);
-                    lineval.add(sum_a_fourth * eta_a * v_X_at_beta[id], w_j.clone());
-
-                    lineval.add(sum_b_fourth * eta_b * x_at_betas[id][j], LCTerm::One);
-                    lineval.add(sum_b_fourth * eta_b * v_X_at_beta[id], w_j.clone());
-
-                    lineval.add(sum_c_fourth * eta_c * x_at_betas[id][j], LCTerm::One);
-                    lineval.add(sum_c_fourth * eta_c * v_X_at_beta[id], w_j);
-
-                    circuit_term += (*instance_combiner, &lineval);
-                }
-                let variable_domain = circuit_state.variable_domain;
-                let selector = selectors
-                    .get(&(max_variable_domain.size, variable_domain.size, beta))
-                    .ok_or(anyhow!("Could not find selector at beta"))?;
-                circuit_term *= *selector;
-
-                lineval_sumcheck += (c.circuit_combiner, &circuit_term);
-            }
-            lineval_sumcheck
-                .add(-v_C_at_beta, "h_1")
-                .add(-beta * g_1_at_beta, LCTerm::One)
-                .add(-batch_lineval_sum, LCTerm::One);
-            lineval_sumcheck
-        };
-        debug_assert!(evals.get_lc_eval(&lineval_sumcheck, beta)?.is_zero());
-
-        linear_combinations.insert("g_1".into(), g_1);
-        linear_combinations.insert("lineval_sumcheck".into(), lineval_sumcheck);
-        end_timer!(lineval_time);
-
-        //  Matrix sumcheck:
-        let mut matrix_sumcheck = LinearCombination::empty("matrix_sumcheck");
-
-        for (i, (&id, state_i)) in state.circuit_specific_states.iter().enumerate() {
-            let v_R_i_at_alpha = state_i.constraint_domain.evaluate_vanishing_polynomial(alpha);
-            let v_C_i_at_beta = state_i.variable_domain.evaluate_vanishing_polynomial(beta);
-            let v_rc = v_R_i_at_alpha * v_C_i_at_beta;
-            let rc = state_i.constraint_domain.size_as_field_element * state_i.variable_domain.size_as_field_element;
-
-            let matrices = ["a", "b", "c"];
-            let deltas = [delta_a[i], delta_b[i], delta_c[i]];
-            let non_zero_domains = [&state_i.non_zero_a_domain, &state_i.non_zero_b_domain, &state_i.non_zero_c_domain];
-            let sums = sums_fourth_msg[i].iter();
-
-            ensure!(matrices.len() == sums.len());
-            ensure!(matrices.len() == deltas.len());
-            ensure!(matrices.len() == non_zero_domains.len());
-            for (((m, sum), delta), non_zero_domain) in
-                matrices.into_iter().zip_eq(sums).zip_eq(deltas).zip_eq(non_zero_domains)
-            {
-                let selector = selectors
-                    .get(&(max_non_zero_domain.size, non_zero_domain.size, gamma))
-                    .ok_or(anyhow!("Could not find selector at gamma"))?;
-                let label = "g_".to_string() + m;
-                let g_m_label = witness_label(id, &label, 0);
-                let g_m = LinearCombination::new(g_m_label.clone(), [(F::one(), g_m_label)]);
-                let g_m_at_gamma = evals.get_lc_eval(&g_m, gamma)?;
-
-                let (a_poly, b_poly) = Self::construct_matrix_linear_combinations(evals, id, m, v_rc, challenges, rc)?;
-                let g_m_term = Self::construct_g_m_term(gamma, g_m_at_gamma, sum, *selector, a_poly, b_poly);
-
-                matrix_sumcheck += (delta, &g_m_term);
-
-                linear_combinations.insert(g_m.label.clone(), g_m);
-            }
+            debug_assert!(evals.get_lc_eval(&rowcheck_zerocheck, alpha)?.is_zero());
+            linear_combinations.insert("rowcheck_zerocheck".into(), rowcheck_zerocheck);
         }
 
-        matrix_sumcheck -= &LinearCombination::new("h_2", [(v_K_at_gamma, "h_2")]);
-        debug_assert!(evals.get_lc_eval(&matrix_sumcheck, gamma)?.is_zero());
+        // Lineval sumcheck:
+        {
+            let lineval_time = start_timer!(|| "Lineval");
+            defer! { end_timer!(lineval_time); }
 
-        linear_combinations.insert("matrix_sumcheck".into(), matrix_sumcheck);
+            let g_1 = LinearCombination::new("g_1", [(F::one(), "g_1")]);
+
+            let v_C_at_beta = max_variable_domain.evaluate_vanishing_polynomial(beta);
+
+            let v_X_at_beta_time = start_timer!(|| "v_X_at_beta");
+            let v_X_at_beta = state
+                .circuit_specific_states
+                .iter()
+                .map(|(circuit_id, circuit_state)| {
+                    let v_X_i_at_beta = circuit_state.input_domain.evaluate_vanishing_polynomial(beta);
+                    (circuit_id, v_X_i_at_beta)
+                })
+                .collect::<BTreeMap<_, _>>();
+            end_timer!(v_X_at_beta_time);
+
+            let x_at_betas = state
+                .circuit_specific_states
+                .iter()
+                .enumerate()
+                .map(|(i, (circuit_id, circuit_state))| {
+                    let lag_at_beta = circuit_state.input_domain.evaluate_all_lagrange_coefficients(beta);
+                    let x_at_beta = formatted_public_inputs[i]
+                        .iter()
+                        .map(|x| x.iter().zip_eq(&lag_at_beta).map(|(x, l)| *x * l).sum::<F>())
+                        .collect_vec();
+                    (circuit_id, x_at_beta)
+                })
+                .collect::<BTreeMap<_, _>>();
+
+            let g_1_at_beta = evals.get_lc_eval(&g_1, beta)?;
+
+            // We're now going to calculate the lineval_sumcheck
+            let lineval_sumcheck = {
+                let mut lineval_sumcheck = LinearCombination::empty("lineval_sumcheck");
+                if SM::ZK {
+                    lineval_sumcheck.add(F::one(), "mask_poly");
+                }
+                for (i, (id, c)) in third_round_batch_combiners.iter().enumerate() {
+                    let mut circuit_term = LinearCombination::empty(format!("lineval_sumcheck term {id}"));
+                    let fourth_sums_i = &sums_fourth_msg[i];
+                    let circuit_state = &state.circuit_specific_states[id];
+
+                    for (j, instance_combiner) in c.instance_combiners.iter().enumerate() {
+                        let w_j = witness_label(*id, "w", j);
+                        let mut lineval = LinearCombination::empty(format!("lineval term {j}"));
+                        let sum_a_fourth = fourth_sums_i.sum_a * circuit_state.non_zero_a_domain.size_as_field_element;
+                        let sum_b_fourth = fourth_sums_i.sum_b * circuit_state.non_zero_b_domain.size_as_field_element;
+                        let sum_c_fourth = fourth_sums_i.sum_c * circuit_state.non_zero_c_domain.size_as_field_element;
+
+                        lineval.add(sum_a_fourth * eta_a * x_at_betas[id][j], LCTerm::One);
+                        lineval.add(sum_a_fourth * eta_a * v_X_at_beta[id], w_j.clone());
+
+                        lineval.add(sum_b_fourth * eta_b * x_at_betas[id][j], LCTerm::One);
+                        lineval.add(sum_b_fourth * eta_b * v_X_at_beta[id], w_j.clone());
+
+                        lineval.add(sum_c_fourth * eta_c * x_at_betas[id][j], LCTerm::One);
+                        lineval.add(sum_c_fourth * eta_c * v_X_at_beta[id], w_j);
+
+                        circuit_term += (*instance_combiner, &lineval);
+                    }
+                    let variable_domain = circuit_state.variable_domain;
+                    let selector = selectors
+                        .get(&(max_variable_domain.size, variable_domain.size, beta))
+                        .ok_or(anyhow!("Could not find selector at beta"))?;
+                    circuit_term *= *selector;
+
+                    lineval_sumcheck += (c.circuit_combiner, &circuit_term);
+                }
+                lineval_sumcheck
+                    .add(-v_C_at_beta, "h_1")
+                    .add(-beta * g_1_at_beta, LCTerm::One)
+                    .add(-batch_lineval_sum, LCTerm::One);
+                lineval_sumcheck
+            };
+            debug_assert!(evals.get_lc_eval(&lineval_sumcheck, beta)?.is_zero());
+
+            linear_combinations.insert("g_1".into(), g_1);
+            linear_combinations.insert("lineval_sumcheck".into(), lineval_sumcheck);
+        }
+
+        //  Matrix sumcheck:
+        {
+            let matrix_sumcheck_time = start_timer!(|| "Matrix sumcheck");
+            defer! { end_timer!(matrix_sumcheck_time); }
+            let v_K_at_gamma = max_non_zero_domain.evaluate_vanishing_polynomial(gamma);
+            let mut matrix_sumcheck = LinearCombination::empty("matrix_sumcheck");
+
+            for (i, (&id, state_i)) in state.circuit_specific_states.iter().enumerate() {
+                let v_R_i_at_alpha = state_i.constraint_domain.evaluate_vanishing_polynomial(alpha);
+                let v_C_i_at_beta = state_i.variable_domain.evaluate_vanishing_polynomial(beta);
+                let v_rc = v_R_i_at_alpha * v_C_i_at_beta;
+                let rc =
+                    state_i.constraint_domain.size_as_field_element * state_i.variable_domain.size_as_field_element;
+
+                let matrices = ["a", "b", "c"];
+                let deltas = [delta_a[i], delta_b[i], delta_c[i]];
+                let non_zero_domains =
+                    [&state_i.non_zero_a_domain, &state_i.non_zero_b_domain, &state_i.non_zero_c_domain];
+                let sums = sums_fourth_msg[i].iter();
+
+                ensure!(matrices.len() == sums.len());
+                ensure!(matrices.len() == deltas.len());
+                ensure!(matrices.len() == non_zero_domains.len());
+                for (((m, sum), delta), non_zero_domain) in
+                    matrices.into_iter().zip_eq(sums).zip_eq(deltas).zip_eq(non_zero_domains)
+                {
+                    let selector = selectors
+                        .get(&(max_non_zero_domain.size, non_zero_domain.size, gamma))
+                        .ok_or(anyhow!("Could not find selector at gamma"))?;
+                    let label = "g_".to_string() + m;
+                    let g_m_label = witness_label(id, &label, 0);
+                    let g_m = LinearCombination::new(g_m_label.clone(), [(F::one(), g_m_label)]);
+                    let g_m_at_gamma = evals.get_lc_eval(&g_m, gamma)?;
+
+                    let (a_poly, b_poly) =
+                        Self::construct_matrix_linear_combinations(evals, id, m, v_rc, challenges, rc)?;
+                    let g_m_term = Self::construct_g_m_term(gamma, g_m_at_gamma, sum, *selector, a_poly, b_poly);
+
+                    matrix_sumcheck += (delta, &g_m_term);
+
+                    linear_combinations.insert(g_m.label.clone(), g_m);
+                }
+            }
+
+            matrix_sumcheck -= &LinearCombination::new("h_2", [(v_K_at_gamma, "h_2")]);
+            debug_assert!(evals.get_lc_eval(&matrix_sumcheck, gamma)?.is_zero());
+
+            linear_combinations.insert("matrix_sumcheck".into(), matrix_sumcheck);
+        }
 
         Ok(linear_combinations)
     }

@@ -1,5 +1,7 @@
 [graph]
 all-features = true
+# Dev-dependencies are not shipped, so their advisories, licenses and sources are not checked.
+exclude-dev = true
 
 [advisories]
 version = 2

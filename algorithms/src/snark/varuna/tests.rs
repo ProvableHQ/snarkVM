@@ -983,6 +983,28 @@ mod varuna_hiding {
             assert!(result.is_ok(), "Deserialization should succeed for {num_commitments} commitments",);
         }
     }
+
+    #[test]
+    fn a_proving_key_reads_back_with_exact_rows() {
+        use crate::snark::varuna::{CircuitProvingKey, ahp::indexer::Circuit};
+
+        fn exact_rows(c: &Circuit<Fr, VarunaHidingMode>) -> bool {
+            [&c.a, &c.b, &c.c].into_iter().flatten().all(|r| r.capacity() == r.len())
+        }
+
+        let rng = &mut TestRng::default();
+        let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).expect("a degree");
+        let universal_srs = VarunaInst::universal_setup(max_degree).expect("an SRS");
+        // Every row has one entry.
+        let (circuit, _) = TestCircuit::gen_rand(2, 100, 25, rng);
+        let (pk, _) = VarunaInst::circuit_setup(&universal_srs, &circuit).expect("a key");
+        let bytes = pk.to_bytes_le().expect("the key writes");
+        let read = CircuitProvingKey::<Bls12_377, VarunaHidingMode>::read_le(&bytes[..]).expect("the key reads");
+
+        assert!(exact_rows(&pk.circuit), "synthesis no longer builds exact rows");
+        assert!(exact_rows(&read.circuit), "the key read back holds spare row capacity");
+        assert!(read.to_bytes_le().expect("the key writes") == bytes, "the key read back writes other bytes");
+    }
 }
 
 mod varuna_test_vectors {

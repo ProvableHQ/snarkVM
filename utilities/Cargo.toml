@@ -49,7 +49,7 @@ workspace = true
 version = "1"
 
 [dependencies.num-bigint]
-version = "0.4"
+version = "0.5"
 
 [dependencies.rand]
 workspace = true

@@ -86,7 +86,7 @@ default-features = true
 workspace = true
 
 [dependencies.hashbrown]
-version = "0.15"
+version = "0.17"
 
 [dependencies.hex]
 workspace = true

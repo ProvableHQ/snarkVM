@@ -28,7 +28,7 @@ use walkdir::WalkDir;
 const EXPECTED_LICENSE_TEXT: &[u8] = include_bytes!("../.resources/license_header");
 
 // The following directories will be excluded from the license scan.
-const DIRS_TO_SKIP: [&str; 5] = [".cargo", ".circleci", ".git", ".github", "target"];
+const DIRS_TO_SKIP: [&str; 4] = [".cargo", ".git", ".github", "target"];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ImportOfInterest {

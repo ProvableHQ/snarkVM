@@ -24,6 +24,7 @@ use hashbrown::HashMap;
 use itertools::Itertools;
 use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{One, Zero};
+use snarkvm_utilities::defer;
 
 use anyhow::{Result, bail, ensure};
 use rand::{Rng, SeedableRng};
@@ -90,6 +91,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         enforced_degree_bounds: Option<&[usize]>,
     ) -> Result<(CommitterKey<E>, UniversalVerifier<E>)> {
         let trim_time = start_timer!(|| "Trimming public parameters");
+        defer! { end_timer!(trim_time); }
         let max_degree = pp.max_degree();
 
         let enforced_degree_bounds = enforced_degree_bounds.map(|bounds| {
@@ -136,6 +138,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                     "Constructing `shifted_powers_of_beta_g` of size {}",
                     max_degree - lowest_shift_degree + 1
                 ));
+                defer! { end_timer!(shifted_ck_time); }
 
                 let (store, range) = pp.shared_powers_of_beta_g(lowest_shift_degree, pp.max_degree() + 1)?;
                 let shifted_powers_of_beta_g = Bases::shared(store, range);
@@ -152,8 +155,6 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                         .collect();
                     shifted_powers_of_beta_times_gamma_g.insert(*degree_bound, powers_for_degree_bound);
                 }
-
-                end_timer!(shifted_ck_time);
 
                 (Some(shifted_powers_of_beta_g), Some(shifted_powers_of_beta_times_gamma_g))
             }
@@ -176,12 +177,12 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         let mut lagrange_bases_at_beta_g = BTreeMap::new();
         for size in supported_lagrange_sizes {
             let lagrange_time = start_timer!(|| format!("Constructing `lagrange_bases` of size {size}"));
+            defer! { end_timer!(lagrange_time); }
             // Validated above: the size is a power of two no larger than the SRS.
             let domain = crate::fft::EvaluationDomain::new(size).unwrap();
             let lagrange_basis_at_beta_g = pp.lagrange_basis(domain)?;
             assert!(lagrange_basis_at_beta_g.len().is_power_of_two());
             lagrange_bases_at_beta_g.insert(domain.size(), lagrange_basis_at_beta_g);
-            end_timer!(lagrange_time);
         }
 
         let ck = CommitterKey {
@@ -195,7 +196,6 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 
         let vk = pp.to_universal_verifier()?;
 
-        end_timer!(trim_time);
         Ok((ck, vk))
     }
 
@@ -220,6 +220,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         mut rng: Option<&mut dyn Rng>,
     ) -> Result<(Vec<LabeledCommitment<Commitment<E>>>, Vec<Randomness<E>>), PCError> {
         let commit_time = start_timer!(|| "Committing to polynomials");
+        defer! { end_timer!(commit_time); }
 
         let mut pool = snarkvm_utilities::ExecutionPool::<Result<_, _>>::new();
         for p in polynomials {
@@ -290,7 +291,6 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             randomness.push(rand);
         }
 
-        end_timer!(commit_time);
         Ok((labeled_comms, randomness))
     }
 
@@ -319,9 +319,6 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         Ok(Self::combine_polynomials(to_combine))
     }
 
-    /// On input a list of labeled polynomials and a query set, `open` outputs a
-    /// proof of evaluation of the polynomials at the points in the query
-    /// set.
     /// `batch_open` over combinations whose polynomials have not been formed.
     ///
     /// Both levels of the opening are linear in the coefficients. A combination
@@ -355,6 +352,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             combinations.len(),
             query_set.len(),
         ));
+        defer! { end_timer!(open_time); }
 
         let by_label: BTreeMap<&str, &LazyCombination<'_, E>> =
             combinations.iter().map(|c| (c.label.as_str(), c)).collect();
@@ -421,18 +419,22 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             }
             end_timer!(combine_time);
 
-            let proof_time = start_timer!(|| "Creating proof");
-            let proof = kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand)?;
-            end_timer!(proof_time);
+            let proof = {
+                let proof_time = start_timer!(|| "Creating proof");
+                defer! { end_timer!(proof_time); }
+                kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand)?
+            };
             proofs.push(proof);
 
             let _ = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
         }
-        end_timer!(open_time);
 
         Ok(BatchProof(proofs))
     }
 
+    /// On input a list of labeled polynomials and a query set, `open` outputs a
+    /// proof of evaluation of the polynomials at the points in the query
+    /// set.
     pub fn batch_open<'a>(
         universal_prover: &UniversalProver<E>,
         ck: &CommitterUnionKey<E>,
@@ -454,6 +456,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             poly_rand.len(),
             query_set.len(),
         ));
+        defer! { end_timer!(open_time); }
 
         let mut query_to_labels_map = BTreeMap::new();
 
@@ -477,17 +480,17 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             let (polynomial, rand) =
                 Self::combine_for_open(universal_prover, ck, query_polys.into_iter(), query_rands.into_iter(), fs_rng)?;
 
-            let proof_time = start_timer!(|| "Creating proof");
-            let proof = kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand)?;
-            end_timer!(proof_time);
+            let proof = {
+                let proof_time = start_timer!(|| "Creating proof");
+                defer! { end_timer!(proof_time); }
+                kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand)?
+            };
             proofs.push(proof);
 
             let _ = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
         }
-        let batch_proof = BatchProof(proofs);
-        end_timer!(open_time);
 
-        Ok(batch_proof)
+        Ok(BatchProof(proofs))
     }
 
     pub fn batch_check<'a>(
@@ -507,6 +510,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             commitments.len(),
             query_set.len(),
         ));
+        defer! { end_timer!(batch_check_time); }
         let mut query_to_labels_map = BTreeMap::new();
 
         for (label, (point_name, point)) in query_set.iter() {
@@ -560,9 +564,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             randomizer = private_sponge.squeeze_short_nonnative_field_element::<E::Fr>();
         }
 
-        let result = Self::check_elems(vk, combined_comms, combined_witness, combined_adjusted_witness);
-        end_timer!(batch_check_time);
-        result
+        Self::check_elems(vk, combined_comms, combined_witness, combined_adjusted_witness)
     }
 
     pub fn open_combinations<'a>(
@@ -586,46 +588,49 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         // The arithmetic below is over scalars: `lc` is symbolic, its terms naming
         // polynomials rather than holding them. Forming the polynomial here is
         // exactly what `open_lazy_combinations` avoids.
-        let resolve_time = start_timer!(|| "Resolving combination terms");
-        let mut combinations = Vec::new();
-        for lc in linear_combinations {
-            let lc_label = lc.label().to_string();
-            // `lc.len()` counts terms *before* the `is_one()` filter below, so this
-            // over-reserves by the number of constant terms. Left as is because
-            // that pre-filter reading is what the degree-bound guard relies on.
-            let mut terms = Vec::with_capacity(lc.len());
-            let mut randomness = Randomness::empty();
-            let mut degree_bound = None;
+        let combinations = {
+            let resolve_time = start_timer!(|| "Resolving combination terms");
+            defer! { end_timer!(resolve_time); }
+            let mut combinations = Vec::new();
+            for lc in linear_combinations {
+                let lc_label = lc.label().to_string();
+                // `lc.len()` counts terms *before* the `is_one()` filter below, so this
+                // over-reserves by the number of constant terms. Left as is because
+                // that pre-filter reading is what the degree-bound guard relies on.
+                let mut terms = Vec::with_capacity(lc.len());
+                let mut randomness = Randomness::empty();
+                let mut degree_bound = None;
 
-            let num_polys = lc.len();
-            // We filter out l.is_one() entries because those constants are not committed to
-            // and used directly by the verifier.
-            for (coeff, label) in lc.iter().filter(|(_, l)| !l.is_one()) {
-                let label: &String = label.try_into().expect("cannot be one!");
-                let (cur_poly, cur_rand) =
-                    label_map.get(label as &str).ok_or(PCError::MissingPolynomial { label: label.to_string() })?;
-                if let Some(cur_degree_bound) = cur_poly.degree_bound() {
-                    if num_polys != 1 {
-                        bail!(PCError::EquationHasDegreeBounds(lc_label));
+                let num_polys = lc.len();
+                // We filter out l.is_one() entries because those constants are not committed to
+                // and used directly by the verifier.
+                for (coeff, label) in lc.iter().filter(|(_, l)| !l.is_one()) {
+                    let label: &String = label.try_into().expect("cannot be one!");
+                    let (cur_poly, cur_rand) =
+                        label_map.get(label as &str).ok_or(PCError::MissingPolynomial { label: label.to_string() })?;
+                    if let Some(cur_degree_bound) = cur_poly.degree_bound() {
+                        if num_polys != 1 {
+                            bail!(PCError::EquationHasDegreeBounds(lc_label));
+                        }
+                        assert!(coeff.is_one(), "Coefficient must be one for degree-bounded equations");
+                        if let Some(old_degree_bound) = degree_bound {
+                            assert_eq!(old_degree_bound, cur_degree_bound)
+                        } else {
+                            degree_bound = cur_poly.degree_bound();
+                        }
                     }
-                    assert!(coeff.is_one(), "Coefficient must be one for degree-bounded equations");
-                    if let Some(old_degree_bound) = degree_bound {
-                        assert_eq!(old_degree_bound, cur_degree_bound)
-                    } else {
-                        degree_bound = cur_poly.degree_bound();
-                    }
+                    terms.push((*coeff, cur_poly));
+                    randomness += (*coeff, *cur_rand);
                 }
-                terms.push((*coeff, cur_poly));
-                randomness += (*coeff, *cur_rand);
-            }
 
-            // The hiding bound is not carried. It was only ever handed to the
-            // `LabeledPolynomial` built here, and nothing downstream of the
-            // opening reads it: the hiding bound is enforced when the
-            // polynomial is committed, not when it is opened.
-            combinations.push(LazyCombination { label: lc_label, terms, degree_bound, randomness });
-        }
-        end_timer!(resolve_time);
+                // The hiding bound is not carried. It was only ever handed to the
+                // `LabeledPolynomial` built here, and nothing downstream of the
+                // opening reads it: the hiding bound is enforced when the
+                // polynomial is committed, not when it is opened.
+                combinations.push(LazyCombination { label: lc_label, terms, degree_bound, randomness });
+            }
+            combinations
+        };
 
         let proof = Self::open_lazy_combinations(universal_prover, ck, &combinations, query_set, fs_rng)?;
 
@@ -653,52 +658,56 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         let mut lc_info = Vec::new();
         let mut evaluations = evaluations.clone();
 
-        let lc_processing_time = start_timer!(|| "Combining commitments");
-        for lc in linear_combinations {
-            let lc_label = lc.label().to_string();
-            let num_polys = lc.len();
+        {
+            let lc_processing_time = start_timer!(|| "Combining commitments");
+            defer! { end_timer!(lc_processing_time); }
+            for lc in linear_combinations {
+                let lc_label = lc.label().to_string();
+                let num_polys = lc.len();
 
-            let mut degree_bound = None;
-            let mut coeffs_and_comms = Vec::new();
+                let mut degree_bound = None;
+                let mut coeffs_and_comms = Vec::new();
 
-            for (coeff, label) in lc.iter() {
-                if label.is_one() {
-                    for ((label, _), ref mut eval) in evaluations.iter_mut() {
-                        if label == &lc_label {
-                            **eval -= coeff;
+                for (coeff, label) in lc.iter() {
+                    if label.is_one() {
+                        for ((label, _), ref mut eval) in evaluations.iter_mut() {
+                            if label == &lc_label {
+                                **eval -= coeff;
+                            }
                         }
-                    }
-                } else {
-                    let label: &String = label.try_into().unwrap();
-                    let &cur_comm = label_comm_map
-                        .get(label as &str)
-                        .ok_or(PCError::MissingPolynomial { label: label.to_string() })?;
+                    } else {
+                        let label: &String = label.try_into().unwrap();
+                        let &cur_comm = label_comm_map
+                            .get(label as &str)
+                            .ok_or(PCError::MissingPolynomial { label: label.to_string() })?;
 
-                    if cur_comm.degree_bound().is_some() {
-                        if num_polys != 1 || !coeff.is_one() {
-                            bail!(PCError::EquationHasDegreeBounds(lc_label));
+                        if cur_comm.degree_bound().is_some() {
+                            if num_polys != 1 || !coeff.is_one() {
+                                bail!(PCError::EquationHasDegreeBounds(lc_label));
+                            }
+                            degree_bound = cur_comm.degree_bound();
                         }
-                        degree_bound = cur_comm.degree_bound();
+                        coeffs_and_comms.push((*coeff, cur_comm.commitment()));
                     }
-                    coeffs_and_comms.push((*coeff, cur_comm.commitment()));
                 }
+                let lc_time = start_timer!(|| format!("Combining {num_polys} commitments for {lc_label}"));
+                lc_commitments.push(Self::combine_commitments(coeffs_and_comms));
+                end_timer!(lc_time);
+                lc_info.push((lc_label, degree_bound));
             }
-            let lc_time = start_timer!(|| format!("Combining {num_polys} commitments for {lc_label}"));
-            lc_commitments.push(Self::combine_commitments(coeffs_and_comms));
-            end_timer!(lc_time);
-            lc_info.push((lc_label, degree_bound));
         }
-        end_timer!(lc_processing_time);
 
-        let combined_comms_norm_time = start_timer!(|| "Normalizing commitments");
-        let comms = Self::normalize_commitments(lc_commitments);
-        ensure!(lc_info.len() == comms.len());
-        let lc_commitments = lc_info
-            .into_iter()
-            .zip_eq(comms)
-            .map(|((label, d), c)| LabeledCommitment::new(label, c, d))
-            .collect::<Vec<_>>();
-        end_timer!(combined_comms_norm_time);
+        let lc_commitments = {
+            let combined_comms_norm_time = start_timer!(|| "Normalizing commitments");
+            defer! { end_timer!(combined_comms_norm_time); }
+            let comms = Self::normalize_commitments(lc_commitments);
+            ensure!(lc_info.len() == comms.len());
+            lc_info
+                .into_iter()
+                .zip_eq(comms)
+                .map(|((label, d), c)| LabeledCommitment::new(label, c, d))
+                .collect::<Vec<_>>()
+        };
 
         Self::batch_check(vk, &lc_commitments, query_set, &evaluations, proof, fs_rng)
     }
@@ -752,6 +761,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         fs_rng: &mut S,
     ) -> Result<()> {
         let acc_time = start_timer!(|| "Accumulating elements");
+        defer! { end_timer!(acc_time); }
         // Keeps track of running combination of values
         let mut combined_values = E::Fr::zero();
 
@@ -792,7 +802,6 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         };
         let coeffs = coeffs.into_iter().map(|c| c.into()).collect::<Vec<_>>();
         *combined_adjusted_witness += VariableBase::msm(&bases, &coeffs);
-        end_timer!(acc_time);
         Ok(())
     }
 
@@ -803,6 +812,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         combined_adjusted_witness: E::G1Projective,
     ) -> Result<bool> {
         let check_time = start_timer!(|| "Checking elems");
+        defer! { end_timer!(check_time); }
         let mut g1_projective_elems = Vec::with_capacity(combined_comms.len() + 2);
         let mut g2_prepared_elems = Vec::with_capacity(combined_comms.len() + 2);
 
@@ -834,9 +844,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 
         ensure!(g1_prepared_elems_iter.len() == g2_prepared_elems.len());
         let g1_g2_prepared = g1_prepared_elems_iter.iter().zip_eq(g2_prepared_elems.iter());
-        let is_one: bool = E::product_of_pairings(g1_g2_prepared).is_one();
-        end_timer!(check_time);
-        Ok(is_one)
+        Ok(E::product_of_pairings(g1_g2_prepared).is_one())
     }
 }
 
@@ -996,6 +1004,81 @@ mod tests {
         assert_ne!(&*ck.powers_of_beta_g, pp.powers_of_beta_g(0, 1001).unwrap().as_slice());
         let (fresh, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
         assert_eq!(&*fresh.powers_of_beta_g, pp.powers_of_beta_g(0, 1001).unwrap().as_slice());
+    }
+
+    /// Reading with an SRS shares the ends of the powers it holds, and the key
+    /// writes the same bytes it was read from.
+    #[test]
+    fn reading_with_the_srs_shares_what_it_holds() {
+        let pp = PC_Bls12_377::load_srs((1 << 12) - 1).unwrap();
+        let (ck, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
+        let bytes = ck.to_bytes_le().unwrap();
+
+        // Another instance of the SRS holds the same powers.
+        for srs in [&pp, &PC_Bls12_377::load_srs((1 << 12) - 1).unwrap()] {
+            let read = CommitterKey::<Bls12_377>::read_le_with_srs(&bytes[..], srs).unwrap();
+            assert!(matches!(read.powers_of_beta_g, Bases::Shared { .. }));
+            assert!(matches!(read.shifted_powers_of_beta_g, Some(Bases::Shared { .. })));
+            assert_eq!(read.to_bytes_le().unwrap(), bytes);
+        }
+    }
+
+    /// A key whose powers the SRS does not hold does not read, and nothing is
+    /// downloaded.
+    #[test]
+    fn reading_with_the_srs_rejects_what_it_lacks() {
+        let fresh = PC_Bls12_377::load_srs((1 << 12) - 1).unwrap();
+        let (ck, _) = PC_Bls12_377::trim(&fresh, 1000, [], 1, Some(&[500])).unwrap();
+        let mut bytes = ck.to_bytes_le().unwrap();
+        // A fresh SRS holds the first 2^15 powers, one fewer than the key now
+        // claims. The read fails before it reaches a point.
+        let powers_len: u32 = (1 << 15) + 1;
+        bytes[..4].copy_from_slice(&powers_len.to_le_bytes());
+
+        let (before, _) = fresh.shared_powers_of_beta_g(0, 1).unwrap();
+        let err = CommitterKey::<Bls12_377>::read_le_with_srs(&bytes[..], &fresh).unwrap_err();
+        assert!(err.to_string().contains(&powers_len.to_string()), "{err}");
+        let (after, _) = fresh.shared_powers_of_beta_g(0, 1).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&before, &after), "reading downloaded powers");
+    }
+
+    /// The hash checks a key read with an SRS, including the points taken from
+    /// the SRS. Points that were skipped are never used.
+    #[test]
+    fn reading_with_the_srs_checks_the_hash() {
+        let pp = PC_Bls12_377::load_srs((1 << 12) - 1).unwrap();
+        let (ck, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
+        let bytes = ck.to_bytes_le().unwrap();
+
+        let mut wrong_hash = bytes.clone();
+        *wrong_hash.last_mut().unwrap() ^= 1;
+        assert!(CommitterKey::<Bls12_377>::read_le_with_srs(&wrong_hash[..], &pp).is_err());
+        assert!(CommitterKey::<Bls12_377>::read_le_with_srs(&bytes[..bytes.len() - 1], &pp).is_err());
+
+        // A byte inside the skipped prefix: `read_le` rejects it, and the key
+        // read with the SRS is still the right one.
+        let mut corrupt_point = bytes.clone();
+        corrupt_point[4 + 10] ^= 1;
+        assert!(CommitterKey::<Bls12_377>::read_le(&corrupt_point[..]).is_err());
+        let read = CommitterKey::<Bls12_377>::read_le_with_srs(&corrupt_point[..], &pp).unwrap();
+        assert_eq!(read.to_bytes_le().unwrap(), bytes);
+    }
+
+    /// A shifted length beyond the SRS is rejected before anything is
+    /// allocated for it.
+    #[test]
+    fn reading_rejects_too_many_shifted_powers() {
+        let pp = PC_Bls12_377::load_srs((1 << 12) - 1).unwrap();
+        let (ck, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
+        let mut bytes = ck.to_bytes_le().unwrap();
+
+        // The powers, an empty list of Lagrange bases, the hiding powers, and the
+        // flag for the shifted powers come before the shifted length.
+        let point = 97;
+        let offset = 4 + 1001 * point + 4 + 4 + 3 * point + 1;
+        bytes[offset..offset + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(CommitterKey::<Bls12_377>::read_le(&bytes[..]).is_err());
+        assert!(CommitterKey::<Bls12_377>::read_le_with_srs(&bytes[..], &pp).is_err());
     }
 
     #[test]

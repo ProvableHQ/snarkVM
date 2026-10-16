@@ -17,8 +17,8 @@ jobs:
       contents: write
     env:
       # Override .cargo/config.toml's target-cpu=native. Cached proc-macros and
-      # build scripts compiled for one runner CPU SIGILL on another. Keep lld.
-      RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
+      # build scripts compiled for one runner CPU SIGILL on another.
+      RUSTFLAGS: ""
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -26,12 +26,12 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # RocksDB benches need libclang (via bindgen); match CircleCI rocks deps.
+      # RocksDB benches need libclang (via bindgen).
       - name: Install required Debian packages
         run: |
           DEBIAN_FRONTEND=noninteractive sudo apt-get update
           DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends \
-            clang libclang-dev llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+            clang libclang-dev llvm-dev llvm pkg-config xz-utils make libssl-dev
 
       - uses: actions/cache@v6
         with:
@@ -40,7 +40,7 @@ jobs:
             ~/.cargo/git
             target
           # Bump the key suffix when RUSTFLAGS change to invalidate poisoned caches.
-          key: ${{ runner.os }}-cargo-bench-v2-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-bench-v3-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Benchmark algorithms
         run: |

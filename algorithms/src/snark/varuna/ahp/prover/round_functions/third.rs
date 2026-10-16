@@ -35,7 +35,7 @@ use crate::{
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::ExecutionPool;
+use snarkvm_utilities::{ExecutionPool, defer};
 
 use anyhow::{Result, ensure};
 use itertools::Itertools;
@@ -75,6 +75,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         varuna_version: VarunaVersion,
     ) -> Result<(Option<prover::ThirdMessage<F>>, prover::ThirdOracles<F>, prover::State<'a, F, SM>), AHPError> {
         let round_time = start_timer!(|| "AHP::Prover::ThirdRound");
+        defer! { end_timer!(round_time); }
 
         let zk_bound = Self::zk_bound();
 
@@ -132,8 +133,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             h_1: LabeledPolynomial::new("h_1", h_1, None, None),
         };
         assert!(oracles.matches_info(&Self::third_round_polynomial_info(state.max_variable_domain.size())));
-
-        end_timer!(round_time);
 
         Ok((msg, oracles, state))
     }
@@ -320,6 +319,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         state: &mut prover::State<F, SM>,
     ) -> Result<BTreeMap<CircuitId, BTreeMap<String, Matrix<F>>>> {
         let transpose_time = start_timer!(|| "Transpose of matrices");
+        defer! { end_timer!(transpose_time); }
         let mut job_pool = ExecutionPool::with_capacity(state.circuit_specific_states.len() * 3);
         state.circuit_specific_states.iter().for_each(|(circuit, circuit_specific_state)| {
             let variable_domain = &circuit_specific_state.variable_domain;
@@ -340,7 +340,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             matrix_transposes_i.insert("c".into(), matrix_c?);
             matrix_transposes.insert(id_a, matrix_transposes_i);
         }
-        end_timer!(transpose_time);
         Ok(matrix_transposes)
     }
 
