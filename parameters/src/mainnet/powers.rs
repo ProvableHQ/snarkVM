@@ -18,7 +18,7 @@ use crate::errors::ParameterError;
 use snarkvm_curves::traits::{PairingCurve, PairingEngine};
 use snarkvm_utilities::{CanonicalDeserialize, dev_println};
 
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, anyhow, bail, ensure};
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
@@ -138,6 +138,26 @@ impl PowersFile {
     /// The size of the file in bytes.
     pub fn size(&self) -> usize {
         self.metadata().1
+    }
+
+    /// Downloads the file into the local cache unless a file of its size is
+    /// already there. A cached file is not read, so its checksum is checked
+    /// only when it is loaded.
+    pub fn fetch(&self) -> Result<()> {
+        #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
+        {
+            if std::fs::metadata(self.path()).is_ok_and(|file| file.len() == self.size() as u64) {
+                return Ok(());
+            }
+        }
+        (self.load)()?;
+        Ok(())
+    }
+
+    /// Where loading the file caches it.
+    #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
+    fn path(&self) -> std::path::PathBuf {
+        aleo_std::aleo_dir().join("resources").join(self.name())
     }
 
     /// Reads the length-prefixed powers in the file, rejecting any other number of them.
@@ -555,6 +575,14 @@ mod tests {
         assert_eq!(PowersFile::new(false, NUM_POWERS_16).unwrap().name(), "powers-of-beta-16.usrs.84631bc");
         assert!(PowersFile::new(false, NUM_POWERS_15).is_err());
         assert_eq!(PowersFile::new(true, NUM_POWERS_16).is_ok(), cfg!(feature = "no-embedded-srs"));
+    }
+
+    #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
+    #[test]
+    fn fetch_caches_the_file_where_it_looks() {
+        let file = PowersFile::new(false, NUM_POWERS_16).unwrap();
+        file.fetch().unwrap();
+        assert_eq!(std::fs::metadata(file.path()).unwrap().len(), file.size() as u64);
     }
 
     #[test]
