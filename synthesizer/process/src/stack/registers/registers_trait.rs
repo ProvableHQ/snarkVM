@@ -146,6 +146,16 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersTrait<N> for Registers<
             Register::Locator(..) => stack_value.clone(),
             // If the register is a register access, then load the specific stack value.
             Register::Access(_, path) => {
+                // In mocked-authorization mode, track whether this access reads a record `_nonce`,
+                // since the sampled values then depend on the real transition view keys.
+                if let CallStack::AuthorizeMocked(_, _, _, _, _, reads_record_nonce) = self.call_stack_ref()
+                    && path
+                        .iter()
+                        .any(|access| matches!(access, Access::Member(identifier) if identifier.is_record_nonce()))
+                {
+                    *reads_record_nonce.write() = true;
+                }
+
                 match stack_value {
                     // Retrieve the plaintext member from the path.
                     Value::Plaintext(plaintext) => Value::Plaintext(plaintext.find(path)?),

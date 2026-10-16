@@ -210,6 +210,7 @@ mod tests {
 
         // Must not start with underscore.
         assert!(Identifier::<CurrentNetwork>::from_str("_foo").is_err());
+        assert!(Identifier::<CurrentNetwork>::from_str("_nonce").is_err());
 
         // Must be ASCII.
         assert!(Identifier::<CurrentNetwork>::from_str("\u{03b1}").is_err()); // Greek alpha

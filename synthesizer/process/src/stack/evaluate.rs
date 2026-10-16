@@ -213,13 +213,13 @@ impl<N: Network> Stack<N> {
         // which is necessary to populate the record-tracking machinery. Note the same value is
         // used below when processing the outputs.
         let current_request_index = match &call_stack {
-            CallStack::AuthorizeMocked(_, _, authorization, _, _) => authorization.len() - 1,
+            CallStack::AuthorizeMocked(_, _, authorization, ..) => authorization.len() - 1,
             _ => 0,
         };
 
         // In AuthorizeMocked mode, detect whether any input static, external or dynamic records
         // have been minted by other requests in the transaction and track them.
-        if let CallStack::AuthorizeMocked(_, _, _, _, input_records) = &call_stack {
+        if let CallStack::AuthorizeMocked(_, _, _, _, input_records, ..) = &call_stack {
             let mut input_records = input_records.write();
 
             for (input_index, input) in inputs.iter().enumerate() {
@@ -344,7 +344,7 @@ impl<N: Network> Stack<N> {
         lap!(timer, "Load the outputs");
 
         // In AuthorizeMocked mode, track the minting of static records.
-        if let CallStack::AuthorizeMocked(_, _, _, minted_static_records, _) = &mut registers.call_stack_ref() {
+        if let CallStack::AuthorizeMocked(_, _, _, minted_static_records, ..) = &mut registers.call_stack_ref() {
             let mut minted_static_records = minted_static_records.write();
 
             for ((output, output_type), operand) in outputs.iter().zip(&function.output_types()).zip(output_operands) {
@@ -401,7 +401,7 @@ impl<N: Network> Stack<N> {
             authorization.insert_transition(transition)?;
             lap!(timer, "Save the transition");
         }
-        if let CallStack::AuthorizeMocked(_, _, authorization, _, _) = registers.call_stack_ref() {
+        if let CallStack::AuthorizeMocked(_, _, authorization, ..) = registers.call_stack_ref() {
             // Construct the transition without checking correctness of input IDs.
             let transition =
                 Transition::from_unchecked(&request, &response, &function.output_types(), &output_registers)?;

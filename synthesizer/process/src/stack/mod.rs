@@ -127,12 +127,14 @@ pub enum CallStack<N: Network> {
     /// Authorize an `Execute` transaction.
     Authorize(Vec<Request<N>>, Option<PrivateKey<N>>, Authorization<N>),
     /// Mock an evaluation.
+    // The last field tracks whether a record `_nonce` is read at any point during the mocked evaluation.
     AuthorizeMocked(
         Vec<Request<N>>,
         Address<N>,
         Authorization<N>,
         Arc<RwLock<MintedRecordTracker<N>>>,
         Arc<RwLock<InputRecordLikeTracker<N>>>,
+        Arc<RwLock<bool>>,
     ),
     /// Authorize a collection of requests coming from a single root call.
     // (full vector of requests in pre-order, index of the request currently being explored, authorization being constructed)
@@ -188,15 +190,21 @@ impl<N: Network> CallStack<N> {
             CallStack::Authorize(requests, private_key, authorization) => {
                 CallStack::Authorize(requests.clone(), *private_key, authorization.replicate())
             }
-            CallStack::AuthorizeMocked(requests, address, authorization, minted_static_records, input_records) => {
-                CallStack::AuthorizeMocked(
-                    requests.clone(),
-                    *address,
-                    authorization.replicate(),
-                    Arc::new(RwLock::new(minted_static_records.read().clone())),
-                    Arc::new(RwLock::new(input_records.read().clone())),
-                )
-            }
+            CallStack::AuthorizeMocked(
+                requests,
+                address,
+                authorization,
+                minted_static_records,
+                input_records,
+                reads_record_nonce,
+            ) => CallStack::AuthorizeMocked(
+                requests.clone(),
+                *address,
+                authorization.replicate(),
+                Arc::new(RwLock::new(minted_static_records.read().clone())),
+                Arc::new(RwLock::new(input_records.read().clone())),
+                Arc::new(RwLock::new(*reads_record_nonce.read())),
+            ),
             CallStack::AuthorizeRequests(requests, current_index, authorization) => CallStack::AuthorizeRequests(
                 requests.clone(),
                 Arc::new(RwLock::new(*current_index.read())),

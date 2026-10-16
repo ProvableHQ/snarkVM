@@ -148,6 +148,12 @@ impl<N: Network> Stack<N> {
     /// many of its values (such as the input IDs in the `Request`s) may not be
     /// correct. This method does not check circuit satisfiability or `Request`
     /// validity.
+    ///
+    /// This method errors if the call reads a record `_nonce` and its call tree
+    /// contains a dynamic call: the target and inputs of a dynamic call are
+    /// data-dependent, so a record-nonce read may steer them away from the real
+    /// execution, whose cost is then no longer reflected by the sampled
+    /// `Authorization`.
     #[inline]
     pub fn sample_authorization<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
@@ -157,8 +163,22 @@ impl<N: Network> Stack<N> {
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<A::Network>>>,
         rng: &mut R,
     ) -> Result<Authorization<N>, StackAuthError> {
-        self.sample_authorization_with_record_tracking::<A, R>(address, program_id, function_name, inputs, rng)
-            .map(|(authorization, _, _, _)| authorization)
+        let (authorization, _, _, _, reads_record_nonce) =
+            self.sample_authorization_inner::<A, R>(address, program_id, function_name, inputs, rng)?;
+
+        // Reading a record `_nonce` leaves the sampled values dependent on the real transition
+        // view keys. The shape of the authorization, which is all cost estimation needs, is
+        // unaffected for static calls, whose targets are fixed in the program. The target and
+        // inputs of a dynamic call are data-dependent, however, and may resolve differently in
+        // the real execution.
+        if reads_record_nonce && authorization.to_vec_deque().iter().any(|request| request.is_dynamic()) {
+            return Err(anyhow!(
+                "Cannot sample a mocked authorization for a call which reads a record nonce and contains a dynamic call"
+            )
+            .into());
+        }
+
+        Ok(authorization)
     }
 
     /// Produces a mocked `Authorization` with the same properties as
@@ -167,6 +187,10 @@ impl<N: Network> Stack<N> {
     /// sampling the `tvk` of a request requires static, external and dynamic
     /// record inputs to subsequent mocked requests to be updated with nonces
     /// derived from the fresh `tvk`.
+    ///
+    /// This method errors if the call reads a record `_nonce`: the nonce (and
+    /// any values derived from it) cannot be mocked correctly, while this
+    /// method must produce correct inputs and outputs for every transition.
     #[inline]
     pub fn sample_authorization_with_record_tracking<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
@@ -177,6 +201,38 @@ impl<N: Network> Stack<N> {
         rng: &mut R,
     ) -> Result<(Authorization<N>, RecordFlowTracker, RecordNameTracker<N>, ProgramChecksumTracker<N>), StackAuthError>
     {
+        let (authorization, record_tracking, record_names, program_checksums, reads_record_nonce) =
+            self.sample_authorization_inner::<A, R>(address, program_id, function_name, inputs, rng)?;
+
+        // Reading a record `_nonce` leaves the sampled values dependent on the real transition
+        // view keys, which cannot be mocked. This method must produce correct inputs and outputs
+        // for every transition, so reject the record-nonce read outright.
+        if reads_record_nonce {
+            return Err(anyhow!(
+                "Cannot sample a mocked authorization with correct inputs and outputs for a call which reads a record nonce"
+            )
+            .into());
+        }
+
+        Ok((authorization, record_tracking, record_names, program_checksums))
+    }
+
+    /// Produces the mocked `Authorization` and record-tracking information used
+    /// by `sample_authorization` and `sample_authorization_with_record_tracking`,
+    /// alongside a boolean indicating whether a record `_nonce` was read at any
+    /// point during the evaluation.
+    #[inline]
+    fn sample_authorization_inner<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+        &self,
+        address: Address<A::Network>,
+        program_id: ProgramID<A::Network>,
+        function_name: Identifier<A::Network>,
+        inputs: impl ExactSizeIterator<Item = impl TryInto<Value<A::Network>>>,
+        rng: &mut R,
+    ) -> Result<
+        (Authorization<N>, RecordFlowTracker, RecordNameTracker<N>, ProgramChecksumTracker<N>, bool),
+        StackAuthError,
+    > {
         let timer = timer!("Stack::sample_authorization");
 
         if program_id != *self.program.id() {
@@ -204,6 +260,8 @@ impl<N: Network> Stack<N> {
         // dynamic and external records received by any request in the transaction
         let minted_static_records = Arc::new(RwLock::new(HashMap::new()));
         let input_records = Arc::new(RwLock::new(HashMap::new()));
+        // Initialize the tracker for whether a record nonce is read during the evaluation.
+        let reads_record_nonce = Arc::new(RwLock::new(false));
         // Construct the call stack.
         let call_stack = CallStack::AuthorizeMocked(
             vec![mocked_request],
@@ -211,6 +269,7 @@ impl<N: Network> Stack<N> {
             authorization.clone(),
             minted_static_records.clone(),
             input_records.clone(),
+            reads_record_nonce.clone(),
         );
         // Construct the authorization from the function.
         let _response = self.evaluate_function::<A, R>(call_stack, caller, root_tvk, rng)?;
@@ -231,10 +290,13 @@ impl<N: Network> Stack<N> {
         let record_names = authorization.collect_record_names(self)?;
         let program_checksums = authorization.collect_program_checksums(self)?;
 
+        // Retrieve whether a record nonce was read during the evaluation.
+        let reads_record_nonce = *reads_record_nonce.read();
+
         finish!(timer, "Gather record-tracking and other auxiliary information");
 
-        // Return the authorization and record tracking.
-        Ok((authorization, record_tracking, record_names, program_checksums))
+        // Return the authorization, record tracking, and record-nonce information.
+        Ok((authorization, record_tracking, record_names, program_checksums, reads_record_nonce))
     }
 
     /// Authorizes a call to a public function for the given request.

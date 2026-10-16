@@ -3006,6 +3006,146 @@ fn test_program_exceeding_transaction_spend_limit() {
     assert!(process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).is_ok());
 }
 
+/// A record-nonce read is tolerated by `sample_authorization`, which only needs the shape of the
+/// authorization for cost estimation, but not by `sample_authorization_with_record_tracking`,
+/// which must produce correct inputs and outputs for every transition.
+#[test]
+fn test_sample_authorization_reads_record_nonce() {
+    let program = Program::<CurrentNetwork>::from_str(
+        r"
+program nonce_reader.aleo;
+
+record token:
+    owner as address.private;
+    amount as u64.private;
+
+function read:
+    input r0 as token.record;
+    cast r0._nonce into r1 as field;
+    output r1 as field.private;",
+    )
+    .unwrap();
+
+    // Construct the process and retrieve the stack.
+    let process = crate::test_helpers::sample_process(&program);
+    let stack = process.get_stack(program.id()).unwrap();
+
+    // Initialize the RNG, the caller, and the record input.
+    let rng = &mut TestRng::default();
+    let address = Address::<CurrentNetwork>::rand(rng);
+    let input =
+        Value::from_str(&format!("{{ owner: {address}.private, amount: 5u64.private, _nonce: 0group.public }}"))
+            .unwrap();
+
+    // Cost estimation tolerates the record-nonce read.
+    let result = stack.sample_authorization::<CurrentAleo, _>(
+        address,
+        *program.id(),
+        Identifier::from_str("read").unwrap(),
+        [input.clone()].iter(),
+        rng,
+    );
+    assert!(result.is_ok(), "sample_authorization should tolerate a record-nonce read: {result:?}");
+
+    // Input/output-robust sampling does not.
+    let result = stack.sample_authorization_with_record_tracking::<CurrentAleo, _>(
+        address,
+        *program.id(),
+        Identifier::from_str("read").unwrap(),
+        [input].iter(),
+        rng,
+    );
+    assert!(result.is_err(), "sample_authorization_with_record_tracking should reject a record-nonce read");
+}
+
+/// A record-nonce read combined with a dynamic call is rejected by `sample_authorization`, since
+/// the data-dependent target and inputs of the dynamic call may resolve differently in a real
+/// execution. A dynamic call without a record-nonce read is still sampled successfully.
+#[test]
+fn test_sample_authorization_reads_record_nonce_with_dynamic_call() {
+    // The callee for the dynamic calls.
+    let callee = Program::<CurrentNetwork>::from_str(
+        r"
+program callee.aleo;
+function op:
+    input r0 as u64.public;
+    output r0 as u64.public;",
+    )
+    .unwrap();
+
+    // The caller reads a record nonce and makes a dynamic call.
+    let nonce_caller = Program::<CurrentNetwork>::from_str(
+        r"
+program nonce_caller.aleo;
+
+record token:
+    owner as address.private;
+    amount as u64.private;
+
+function read_and_call:
+    input r0 as token.record;
+    cast r0._nonce into r1 as field;
+    call.dynamic 'callee' 'aleo' 'op' with 1u64 (as u64.public) into r2 (as u64.public);
+    output r1 as field.private;",
+    )
+    .unwrap();
+
+    // The caller makes a dynamic call without reading a record nonce.
+    let plain_caller = Program::<CurrentNetwork>::from_str(
+        r"
+program plain_caller.aleo;
+function call_only:
+    input r0 as u64.public;
+    call.dynamic 'callee' 'aleo' 'op' with r0 (as u64.public) into r1 (as u64.public);
+    output r1 as u64.public;",
+    )
+    .unwrap();
+
+    // Construct the process and retrieve the stacks.
+    let process = crate::test_helpers::sample_process(&callee);
+    process.lock().add_program(&nonce_caller).unwrap();
+    process.lock().add_program(&plain_caller).unwrap();
+    let nonce_caller_stack = process.get_stack(nonce_caller.id()).unwrap();
+    let plain_caller_stack = process.get_stack(plain_caller.id()).unwrap();
+
+    // Initialize the RNG, the caller, and the record input.
+    let rng = &mut TestRng::default();
+    let address = Address::<CurrentNetwork>::rand(rng);
+    let input =
+        Value::from_str(&format!("{{ owner: {address}.private, amount: 5u64.private, _nonce: 0group.public }}"))
+            .unwrap();
+
+    // A dynamic call without a record-nonce read is sampled successfully.
+    let result = plain_caller_stack.sample_authorization::<CurrentAleo, _>(
+        address,
+        *plain_caller.id(),
+        Identifier::from_str("call_only").unwrap(),
+        [Value::from_str("1u64").unwrap()].iter(),
+        rng,
+    );
+    assert!(result.is_ok(), "sample_authorization should tolerate a dynamic call: {result:?}");
+
+    // The record-nonce read combined with the dynamic call is rejected.
+    let result = nonce_caller_stack.sample_authorization::<CurrentAleo, _>(
+        address,
+        *nonce_caller.id(),
+        Identifier::from_str("read_and_call").unwrap(),
+        [input.clone()].iter(),
+        rng,
+    );
+    assert!(result.is_err(), "sample_authorization should reject a record-nonce read combined with a dynamic call");
+
+    // The record-nonce read is also rejected without regard for the dynamic call.
+    let result = nonce_caller_stack.sample_authorization_with_record_tracking::<CurrentAleo, _>(
+        address,
+        *nonce_caller.id(),
+        Identifier::from_str("read_and_call").unwrap(),
+        [input].iter(),
+        rng,
+    );
+    assert!(result.is_err(), "sample_authorization_with_record_tracking should reject a record-nonce read");
+}
+
 /// `execute` refuses an authorization with a request that no call takes.
 #[test]
 fn test_execute_rejects_unused_request() {

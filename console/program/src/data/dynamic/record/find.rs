@@ -18,11 +18,17 @@ use super::*;
 impl<N: Network> DynamicRecord<N> {
     /// Returns the entry from the given path.
     pub fn find<A: Into<Access<N>> + Copy + Debug>(&self, path: &[A]) -> Result<Value<N>> {
-        // If the path is of length one, check if the path is requesting the `owner`.
+        // If the path is of length one, check if the path is requesting the `owner` or the nonce.
         if path.len() == 1 && path[0].into() == Access::Member(Identifier::from_str("owner")?) {
             Ok(Value::Plaintext(Plaintext::from(Literal::Address(self.owner))))
+        } else if path.len() == 1
+            && matches!(path[0].into(), Access::Member(identifier) if identifier.is_record_nonce())
+        {
+            Ok(Value::Plaintext(Plaintext::from(Literal::Group(self.nonce))))
         } else {
-            bail!("Only the 'owner' of a dynamic record can be accessed directly, use 'get.record.dynamic' instead.")
+            bail!(
+                "Only the 'owner' or '_nonce' of a dynamic record can be accessed directly, use 'get.record.dynamic' for other entries."
+            )
         }
     }
 }

@@ -38,6 +38,25 @@ use snarkvm_console_types::{Field, prelude::*};
 #[derive(Copy, Clone)]
 pub struct Identifier<N: Network>(Field<N>, u8); // Number of bytes in the identifier.
 
+impl<N: Network> Identifier<N> {
+    /// The member that reads a record's nonce, as in `r0._nonce`.
+    const RECORD_NONCE: &'static str = "_nonce";
+
+    /// Returns the `_nonce` member of a record access.
+    /// `_nonce` fails `Identifier::from_str`, so programs cannot declare it as a name.
+    pub fn record_nonce() -> Result<Self> {
+        let field = Field::<N>::from_bits_le(&Self::RECORD_NONCE.as_bytes().to_bits_le())?;
+        Ok(Self(field, u8::try_from(Self::RECORD_NONCE.len())?))
+    }
+
+    /// Returns `true` when this identifier is the `_nonce` member of a record access.
+    pub fn is_record_nonce(&self) -> bool {
+        // `_nonce` is six ASCII bytes, so the field conversion cannot fail.
+        self.1 as usize == Self::RECORD_NONCE.len()
+            && self.0 == Self::record_nonce().expect("`_nonce` fits in an identifier field").0
+    }
+}
+
 impl<N: Network> From<&Identifier<N>> for Identifier<N> {
     /// Returns a copy of the identifier.
     fn from(identifier: &Identifier<N>) -> Self {
@@ -140,5 +159,17 @@ pub(crate) mod tests {
         assert!(Identifier::<CurrentNetwork>::try_from("123").is_err());
         assert!(Identifier::<CurrentNetwork>::try_from("abc\x08def").is_err());
         assert!(Identifier::<CurrentNetwork>::try_from("abc\u{202a}def").is_err());
+    }
+
+    #[test]
+    fn test_is_record_nonce() -> Result<()> {
+        let nonce = Identifier::<CurrentNetwork>::record_nonce()?;
+        assert!(nonce.is_record_nonce());
+        assert_eq!(nonce.to_string(), "_nonce");
+
+        // `amount` has the same length as `_nonce`.
+        assert!(!Identifier::<CurrentNetwork>::from_str("amount")?.is_record_nonce());
+        assert!(!Identifier::<CurrentNetwork>::from_str("owner")?.is_record_nonce());
+        Ok(())
     }
 }
