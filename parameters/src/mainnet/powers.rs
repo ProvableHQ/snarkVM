@@ -295,7 +295,29 @@ impl<E: PairingEngine> PowersOfG<E> {
             return Ok(());
         }
         ensure!(range.end <= MAX_NUM_POWERS, "Upper bound must be less than the maximum number of powers");
-        self.powers_of_beta_g.write().download_powers_for(&range)
+        self.download_powers_files(self.missing_files_for(range)?)
+    }
+
+    /// Loads `files` and appends them in order, skipping a file already held.
+    /// Each file is loaded and parsed with no lock held.
+    pub fn download_powers_files(&self, files: Vec<PowersFile>) -> Result<()> {
+        if let Some(last) = files.iter().rfind(|file| !file.shifted) {
+            let mut powers = self.powers_of_beta_g.write();
+            if !powers.holds(last) {
+                powers.prefix_mut(last.num_powers);
+            }
+        }
+        // A file that fails leaves the ones before it appended, so a retry
+        // resumes from them rather than fetching them again.
+        for file in files {
+            if self.powers_of_beta_g.read().holds(&file) {
+                continue;
+            }
+            dev_println!("Loading {}", file.name());
+            let powers = file.read_powers::<E>(&*default_load_powers_file_sync(&file)?)?;
+            self.powers_of_beta_g.write().extend(file, powers)?;
+        }
+        Ok(())
     }
 
     /// The files this SRS still needs to hold `range`, in the order `add_powers_file` accepts them.
@@ -519,14 +541,25 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
         files(false, held, target).chain(files(true, held_shifted, target_shifted)).collect()
     }
 
+    /// The number of powers held on `file`'s side.
+    fn held_on_side_of(&self, file: &PowersFile) -> usize {
+        if file.shifted { self.shifted_powers_of_beta_g.len() } else { self.powers_of_beta_g.len() }
+    }
+
+    /// Whether the powers in `file` are held.
+    fn holds(&self, file: &PowersFile) -> bool {
+        let held = self.held_on_side_of(file);
+        // An empty shifted side means the prefix holds every power.
+        held >= file.num_powers || (file.shifted && held == 0)
+    }
+
     /// Whether `file` is the next one to append: `false` if it is already held,
     /// and an error if the file before it is not.
     fn accepts(&self, file: &PowersFile) -> Result<bool> {
-        let held = if file.shifted { self.shifted_powers_of_beta_g.len() } else { self.powers_of_beta_g.len() };
-        // An empty shifted side means the prefix holds every power.
-        if held >= file.num_powers || (file.shifted && held == 0) {
+        if self.holds(file) {
             return Ok(false);
         }
+        let held = self.held_on_side_of(file);
         if held != file.num_powers / 2 {
             bail!("Add {} before {}", PowersFile::new(file.shifted, held * 2)?.name(), file.name());
         }
