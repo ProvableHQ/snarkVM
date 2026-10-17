@@ -298,6 +298,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&directory);
     }
 
+    #[cfg(feature = "filesystem")]
     #[ignore]
     #[test]
     fn test_load_bytes_mini() {
