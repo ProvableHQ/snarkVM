@@ -130,10 +130,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The ignored tests run without `filesystem`, and read the powers
+          # files that the runs with it cache in ~/.aleo/resources.
           - name: crates
-            runs: >-
-              nextest run -p snarkvm -p snarkvm-algorithms -p snarkvm-circuit-collections
-              -p snarkvm-circuit-types-integers -p snarkvm-console-collections
+            runs: |
+              nextest run -p snarkvm -p snarkvm-algorithms -p snarkvm-circuit-collections -p snarkvm-circuit-types-integers -p snarkvm-console-collections
+              nextest run -p snarkvm-parameters --features filesystem -E test(/powers::tests/)
+              nextest run -p snarkvm-parameters --run-ignored all
+              nextest run -p snarkvm-algorithms --run-ignored ignored-only
           - name: ledger
             runs: |
               nextest run -p snarkvm-ledger
@@ -267,9 +271,9 @@ jobs:
               nextest run -p snarkvm-ledger-store --run-ignored ignored-only -j 2
               nextest run -p snarkvm-ledger-block
           - name: parameters
-            runs: nextest run -p snarkvm-parameters -j 2
+            runs: nextest run -p snarkvm-parameters --features filesystem -j 2
           - name: parameters-uncached
-            runs: nextest run -p snarkvm-parameters --run-ignored ignored-only -j 2
+            runs: nextest run -p snarkvm-parameters --features filesystem --run-ignored ignored-only -j 2
           - name: synthesizer-release
             runs: nextest run -p snarkvm-synthesizer --release --lib --bins --features test -j 8
           - name: synthesizer-prerelease

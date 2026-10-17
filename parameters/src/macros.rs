@@ -32,7 +32,7 @@ macro_rules! checksum_error {
 macro_rules! remove_file {
     ($filepath:expr) => {
         // Safely remove the corrupt file, if it exists.
-        #[cfg(not(feature = "wasm"))]
+        #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
         if std::path::PathBuf::from(&$filepath).exists() {
             let _removed = std::fs::remove_file(&$filepath);
             #[cfg(not(feature = "no_std_out"))]
@@ -46,7 +46,7 @@ macro_rules! remove_file {
 
 macro_rules! impl_store_and_remote_fetch {
     () => {
-        #[cfg(not(feature = "wasm"))]
+        #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
         fn store_bytes(buffer: &[u8], file_path: &std::path::Path) -> Result<(), $crate::errors::ParameterError> {
             use snarkvm_utilities::Write;
 
@@ -124,7 +124,7 @@ macro_rules! impl_store_and_remote_fetch {
             }
         }
 
-        #[cfg(all(not(feature = "wasm"), not(target_env = "sgx")))]
+        #[cfg(all(feature = "filesystem", not(feature = "wasm"), not(target_env = "sgx")))]
         fn remote_fetch(buffer: &mut Vec<u8>, url: &str) -> Result<(), $crate::errors::ParameterError> {
             use std::io::Read;
 
@@ -409,6 +409,7 @@ macro_rules! impl_load_bytes_logic_remote {
 
                         return Ok(buffer)
                     } else {
+                        let _ = (&$remote_urls, &$filename, &$expected_size);
                         return Err($crate::errors::ParameterError::FilesystemDisabled);
                     }
                 }
@@ -507,7 +508,7 @@ macro_rules! impl_remote {
             }
         }
         paste::item! {
-            #[cfg(test)]
+            #[cfg(all(test, feature = "filesystem"))]
             #[test]
             fn [< test_ $fname _usrs >]() {
                 assert!($name::load_bytes().is_ok());
@@ -562,7 +563,7 @@ macro_rules! impl_remote {
         }
 
         paste::item! {
-            #[cfg(test)]
+            #[cfg(all(test, feature = "filesystem"))]
             #[test]
             fn [< test_ $credits_version _ $fname _ $ftype >]() {
                 if let Err(err) = $name::load_bytes() {
