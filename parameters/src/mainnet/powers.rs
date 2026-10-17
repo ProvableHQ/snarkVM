@@ -194,9 +194,11 @@ impl<R: Read> Read for Sha256Reader<R> {
     }
 }
 
-/// Loads `file` as `load()` does: from `~/.aleo/resources` if it is there,
-/// else from the remote parameter URLs, storing it in `~/.aleo/resources`.
-/// The bytes have the file's size and checksum.
+/// Loads `file` as `load()` does, through the `Degree*` and `ShiftedDegree*`
+/// `load_bytes`. With `filesystem`, it reads `~/.aleo/resources`, else fetches
+/// the file from the remote parameter URLs and stores it there. With `wasm`, it
+/// fetches the file into memory. With neither, it returns an error. The bytes
+/// have the file's size and checksum.
 pub fn default_load_powers_file_sync(file: &PowersFile) -> Result<Vec<u8>> {
     Ok(match (file.shifted, file.num_powers) {
         (false, NUM_POWERS_16) => Degree16::load_bytes()?,
