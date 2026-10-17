@@ -19,7 +19,7 @@ use crate::{
 };
 use snarkvm_curves::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{ConstraintFieldError, ToConstraintField, Zero};
-use snarkvm_parameters::mainnet::PowersOfG;
+use snarkvm_parameters::mainnet::{PowersFile, PowersOfG};
 use snarkvm_utilities::{
     FromBytes,
     ToBytes,
@@ -60,16 +60,47 @@ pub struct UniversalParams<E: PairingEngine> {
 
 impl<E: PairingEngine> UniversalParams<E> {
     pub fn load() -> Result<Self> {
-        let powers = Arc::new(PowersOfG::<E>::load()?);
+        Ok(Self::from_powers(PowersOfG::load()?))
+    }
+
+    /// Loads the SRS without the means to load a powers file: asked for powers
+    /// it lacks, it returns `MissingPowers`, and only `add_powers_file` grows
+    /// it.
+    pub fn load_explicit() -> Result<Self> {
+        Ok(Self::from_powers(PowersOfG::load_explicit()?))
+    }
+
+    fn from_powers(powers: PowersOfG<E>) -> Self {
+        let powers = Arc::new(powers);
         let h = E::G2Affine::prime_subgroup_generator();
         let prepared_h = h.prepare();
         let prepared_beta_h = powers.beta_h().prepare();
 
-        Ok(Self { powers, h, prepared_h, prepared_beta_h })
+        Self { powers, h, prepared_h, prepared_beta_h }
     }
 
     pub fn download_powers_for(&self, range: Range<usize>) -> Result<()> {
         self.powers.download_powers_for(range)
+    }
+
+    /// Loads `files` and appends them in order, skipping a file already held.
+    /// An SRS from `load_explicit` loads nothing, and returns `MissingPowers`
+    /// naming the files it does not hold.
+    pub fn download_powers_files(&self, files: Vec<PowersFile>) -> Result<()> {
+        self.powers.download_powers_files(files)
+    }
+
+    /// The files this SRS still needs to hold `range`, in the order
+    /// `add_powers_file` accepts them. An embedded file is never listed.
+    pub fn missing_files_for(&self, range: Range<usize>) -> Result<Vec<PowersFile>> {
+        self.powers.missing_files_for(range)
+    }
+
+    /// Reads `file` from `reader`, checks its size and checksum, and appends
+    /// its powers. A file already held is not read. `reader` need not be
+    /// buffered.
+    pub fn add_powers_file(&self, file: PowersFile, reader: impl Read) -> Result<()> {
+        self.powers.add_powers_file(file, reader)
     }
 
     pub fn lagrange_basis(&self, domain: EvaluationDomain<E::Fr>) -> Result<Vec<E::G1Affine>> {

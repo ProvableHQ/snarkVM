@@ -565,6 +565,7 @@ mod varuna_hiding {
         crypto_hash::PoseidonSponge,
         snark::varuna::{
             CircuitVerifyingKey,
+            UniversalSRS,
             VarunaHidingMode,
             VarunaSNARK,
             VarunaVersion,
@@ -574,6 +575,7 @@ mod varuna_hiding {
         traits::{AlgebraicSponge, SNARK},
     };
     use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
+    use snarkvm_parameters::mainnet::{MissingPowers, default_load_powers_file_sync};
     use snarkvm_utilities::{
         FromBytes,
         ToBytes,
@@ -896,6 +898,38 @@ mod varuna_hiding {
             VarunaInst::verify(universal_verifier, &fs_parameters, &vk1, varuna_version, public_inputs1, &proof1)
                 .unwrap()
         );
+    }
+
+    /// An SRS from `load_explicit` names every file `circuit_setup` needs in
+    /// one error, and sets the circuit up once they are added.
+    #[test]
+    fn an_explicit_srs_names_the_files_circuit_setup_needs() {
+        let rng = &mut TestRng::default();
+        let (circuit, _) = TestCircuit::gen_rand(2, (1 << 16) - 10, (1 << 16) - 10, rng);
+        let indexed = AHPForR1CS::<Fr, VarunaHidingMode>::index(&circuit).unwrap();
+        let max_degree = indexed.max_degree().unwrap();
+        assert!(max_degree >= 1 << 16);
+        let bounds = AHPForR1CS::<Fr, VarunaHidingMode>::get_degree_bounds(&indexed.index_info).unwrap();
+        // `bounds` is an array of four.
+        let highest_bound = bounds.into_iter().max().unwrap();
+
+        let universal_srs = UniversalSRS::<Bls12_377>::load_explicit().unwrap();
+        let top = universal_srs.max_degree();
+        let mut files = universal_srs.missing_files_for(0..max_degree + 1).unwrap();
+        files.extend(universal_srs.missing_files_for(top - highest_bound..top + 1).unwrap());
+        assert!(!files.is_empty());
+
+        let error = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap_err();
+        assert_eq!(error.downcast_ref::<MissingPowers>().map(|missing| &missing.files), Some(&files));
+
+        for file in files {
+            universal_srs.add_powers_file(file, &*default_load_powers_file_sync(&file).unwrap()).unwrap();
+        }
+        let (pk, vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+        let downloaded = VarunaInst::universal_setup(max_degree).unwrap();
+        let (expected_pk, expected_vk) = VarunaInst::circuit_setup(&downloaded, &circuit).unwrap();
+        assert_eq!(pk, expected_pk);
+        assert_eq!(vk, expected_vk);
     }
 
     #[test]

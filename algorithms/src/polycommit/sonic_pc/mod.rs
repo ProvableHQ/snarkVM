@@ -120,14 +120,20 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             );
         }
 
-        // Every prefix download before anything is shared: a later one would
-        // replace a snapshot this key already shared, which the key would then
-        // keep alive after the SRS moved on. The suffix is downloaded, and shared,
-        // below, and touches only the suffix.
-        pp.download_powers_for(0..supported_degree + 1)?;
-        for &size in &supported_lagrange_sizes {
-            pp.download_powers_for(0..size)?;
-        }
+        // Every download before anything is shared: a later one would replace a
+        // snapshot this key already shared, which the key would then keep alive
+        // after the SRS moved on. The files are gathered first, so an SRS from
+        // `load_explicit` names all of them in one `MissingPowers`.
+        let prefix_end = supported_lagrange_sizes.iter().fold(supported_degree + 1, |end, &size| end.max(size));
+        // Listed first: it rejects a `supported_degree` beyond the SRS, so the highest
+        // bound below is at most `max_degree`.
+        let mut files = pp.missing_files_for(0..prefix_end)?;
+        let shifted = match enforced_degree_bounds.as_deref() {
+            Some([.., highest_enforced_degree_bound]) => max_degree - highest_enforced_degree_bound..max_degree + 1,
+            _ => 0..0,
+        };
+        files.extend(pp.missing_files_for(shifted)?);
+        pp.download_powers_files(files)?;
 
         let (shifted_powers_of_beta_g, shifted_powers_of_beta_times_gamma_g) = match enforced_degree_bounds.as_deref() {
             // The bounds are sorted, so the last is the highest.
@@ -852,9 +858,10 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 mod tests {
     #![allow(non_camel_case_types)]
 
-    use super::{Bases, CommitterKey, CommitterUnionKey, SonicKZG10};
+    use super::{Bases, CommitterKey, CommitterUnionKey, SonicKZG10, UniversalParams};
     use crate::{crypto_hash::PoseidonSponge, polycommit::test_templates::*};
     use snarkvm_curves::bls12_377::{Bls12_377, Fq};
+    use snarkvm_parameters::mainnet::{MissingPowers, default_load_powers_file_sync};
     use snarkvm_utilities::{FromBytes, ToBytes, rand::TestRng};
 
     use itertools::Itertools;
@@ -926,6 +933,52 @@ mod tests {
         );
     }
 
+    /// Adding a file replaces the snapshot as a download does: a key trimmed
+    /// before it reads the same points after it.
+    #[test]
+    fn a_key_keeps_its_snapshot_across_an_added_file() {
+        let pp = PC_Bls12_377::load_srs((1 << 15) - 1).unwrap();
+        let (before, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
+        let points = before.powers_of_beta_g.to_vec();
+
+        let [file] = pp.missing_files_for(0..(1 << 16)).unwrap()[..] else { panic!("expected one file") };
+        pp.add_powers_file(file, &*snarkvm_parameters::mainnet::Degree16::load_bytes().unwrap()).unwrap();
+        assert!(pp.missing_files_for(0..(1 << 16)).unwrap().is_empty());
+
+        assert_eq!(&*before.powers_of_beta_g, points.as_slice(), "the older snapshot changed");
+        let (after, _) = pp.shared_powers_of_beta_g(0, 1).unwrap();
+        match &before.powers_of_beta_g {
+            Bases::Shared { store, .. } => {
+                assert!(!std::sync::Arc::ptr_eq(store, &after), "the file did not replace the snapshot")
+            }
+            Bases::Owned(_) => panic!("trim should share"),
+        }
+    }
+
+    /// An SRS from `load_explicit` names every file `trim` needs in one error,
+    /// and trims once they are added.
+    #[test]
+    fn an_explicit_srs_trims_once_its_missing_files_are_added() {
+        let (degree, bound) = (1 << 16, 1 << 16);
+        let pp = UniversalParams::<Bls12_377>::load_explicit().unwrap();
+        let top = pp.max_degree();
+        let mut files = pp.missing_files_for(0..degree + 1).unwrap();
+        let shifted = pp.missing_files_for(top - bound..top + 1).unwrap();
+        assert!(files.len() == 2 && !shifted.is_empty());
+        files.extend(shifted);
+
+        let error = PC_Bls12_377::trim(&pp, degree, [], 1, Some(&[bound])).unwrap_err();
+        assert_eq!(error.downcast::<MissingPowers>().unwrap().files, files);
+
+        for file in files {
+            pp.add_powers_file(file, &*default_load_powers_file_sync(&file).unwrap()).unwrap();
+        }
+        let (ck, _) = PC_Bls12_377::trim(&pp, degree, [], 1, Some(&[bound])).unwrap();
+        let downloaded = PC_Bls12_377::load_srs(degree).unwrap();
+        let (expected, _) = PC_Bls12_377::trim(&downloaded, degree, [], 1, Some(&[bound])).unwrap();
+        assert_eq!(ck.to_bytes_le().unwrap(), expected.to_bytes_le().unwrap());
+    }
+
     /// A `trim` whose Lagrange sizes grow the SRS shares the snapshot that
     /// growth made, not the one it replaced.
     #[test]
@@ -966,6 +1019,9 @@ mod tests {
         // A Lagrange size that is not a power of two, and one beyond the SRS.
         assert!(PC_Bls12_377::trim(&pp, grown - 1, [3], 1, None).is_err());
         assert!(PC_Bls12_377::trim(&pp, grown - 1, [1 << 29], 1, None).is_err());
+        // A supported degree, and a degree bound, beyond the SRS.
+        let beyond = pp.max_degree() + 1;
+        assert!(PC_Bls12_377::trim(&pp, beyond, [], 1, Some(&[beyond])).is_err());
         let (after, _) = pp.shared_powers_of_beta_g(0, 1).unwrap();
         assert!(std::sync::Arc::ptr_eq(&before, &after), "a rejected trim grew the SRS");
     }
