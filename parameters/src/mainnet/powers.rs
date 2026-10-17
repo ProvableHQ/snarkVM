@@ -67,53 +67,52 @@ lazy_static::lazy_static! {
 /// One SRS degree file. The prefix file of `num_powers` holds the powers
 /// `num_powers / 2..num_powers`, and the shifted one the powers
 /// `MAX_NUM_POWERS - num_powers..MAX_NUM_POWERS - num_powers / 2`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PowersFile {
     shifted: bool,
     num_powers: usize,
     metadata: &'static str,
-    load: fn() -> Result<Vec<u8>, ParameterError>,
 }
 
 impl PowersFile {
     fn new(shifted: bool, num_powers: usize) -> Result<Self> {
-        let (metadata, load): (_, fn() -> _) = match (shifted, num_powers) {
-            (false, NUM_POWERS_16) => (Degree16::METADATA, Degree16::load_bytes),
-            (false, NUM_POWERS_17) => (Degree17::METADATA, Degree17::load_bytes),
-            (false, NUM_POWERS_18) => (Degree18::METADATA, Degree18::load_bytes),
-            (false, NUM_POWERS_19) => (Degree19::METADATA, Degree19::load_bytes),
-            (false, NUM_POWERS_20) => (Degree20::METADATA, Degree20::load_bytes),
-            (false, NUM_POWERS_21) => (Degree21::METADATA, Degree21::load_bytes),
-            (false, NUM_POWERS_22) => (Degree22::METADATA, Degree22::load_bytes),
-            (false, NUM_POWERS_23) => (Degree23::METADATA, Degree23::load_bytes),
-            (false, NUM_POWERS_24) => (Degree24::METADATA, Degree24::load_bytes),
-            (false, NUM_POWERS_25) => (Degree25::METADATA, Degree25::load_bytes),
+        let metadata = match (shifted, num_powers) {
+            (false, NUM_POWERS_16) => Degree16::METADATA,
+            (false, NUM_POWERS_17) => Degree17::METADATA,
+            (false, NUM_POWERS_18) => Degree18::METADATA,
+            (false, NUM_POWERS_19) => Degree19::METADATA,
+            (false, NUM_POWERS_20) => Degree20::METADATA,
+            (false, NUM_POWERS_21) => Degree21::METADATA,
+            (false, NUM_POWERS_22) => Degree22::METADATA,
+            (false, NUM_POWERS_23) => Degree23::METADATA,
+            (false, NUM_POWERS_24) => Degree24::METADATA,
+            (false, NUM_POWERS_25) => Degree25::METADATA,
             // TODO (nkls): restore on CI.
             #[cfg(feature = "large_params")]
-            (false, NUM_POWERS_26) => (Degree26::METADATA, Degree26::load_bytes),
+            (false, NUM_POWERS_26) => Degree26::METADATA,
             #[cfg(feature = "large_params")]
-            (false, NUM_POWERS_27) => (Degree27::METADATA, Degree27::load_bytes),
+            (false, NUM_POWERS_27) => Degree27::METADATA,
             #[cfg(feature = "large_params")]
-            (false, NUM_POWERS_28) => (Degree28::METADATA, Degree28::load_bytes),
+            (false, NUM_POWERS_28) => Degree28::METADATA,
             #[cfg(feature = "no-embedded-srs")]
-            (true, NUM_POWERS_16) => (ShiftedDegree16::METADATA, ShiftedDegree16::load_bytes),
-            (true, NUM_POWERS_17) => (ShiftedDegree17::METADATA, ShiftedDegree17::load_bytes),
-            (true, NUM_POWERS_18) => (ShiftedDegree18::METADATA, ShiftedDegree18::load_bytes),
-            (true, NUM_POWERS_19) => (ShiftedDegree19::METADATA, ShiftedDegree19::load_bytes),
-            (true, NUM_POWERS_20) => (ShiftedDegree20::METADATA, ShiftedDegree20::load_bytes),
-            (true, NUM_POWERS_21) => (ShiftedDegree21::METADATA, ShiftedDegree21::load_bytes),
-            (true, NUM_POWERS_22) => (ShiftedDegree22::METADATA, ShiftedDegree22::load_bytes),
-            (true, NUM_POWERS_23) => (ShiftedDegree23::METADATA, ShiftedDegree23::load_bytes),
-            (true, NUM_POWERS_24) => (ShiftedDegree24::METADATA, ShiftedDegree24::load_bytes),
-            (true, NUM_POWERS_25) => (ShiftedDegree25::METADATA, ShiftedDegree25::load_bytes),
+            (true, NUM_POWERS_16) => ShiftedDegree16::METADATA,
+            (true, NUM_POWERS_17) => ShiftedDegree17::METADATA,
+            (true, NUM_POWERS_18) => ShiftedDegree18::METADATA,
+            (true, NUM_POWERS_19) => ShiftedDegree19::METADATA,
+            (true, NUM_POWERS_20) => ShiftedDegree20::METADATA,
+            (true, NUM_POWERS_21) => ShiftedDegree21::METADATA,
+            (true, NUM_POWERS_22) => ShiftedDegree22::METADATA,
+            (true, NUM_POWERS_23) => ShiftedDegree23::METADATA,
+            (true, NUM_POWERS_24) => ShiftedDegree24::METADATA,
+            (true, NUM_POWERS_25) => ShiftedDegree25::METADATA,
             // TODO (nkls): restore on CI.
             #[cfg(feature = "large_params")]
-            (true, NUM_POWERS_26) => (ShiftedDegree26::METADATA, ShiftedDegree26::load_bytes),
+            (true, NUM_POWERS_26) => ShiftedDegree26::METADATA,
             #[cfg(feature = "large_params")]
-            (true, NUM_POWERS_27) => (ShiftedDegree27::METADATA, ShiftedDegree27::load_bytes),
+            (true, NUM_POWERS_27) => ShiftedDegree27::METADATA,
             _ => bail!("Cannot download an invalid degree of '{num_powers}'"),
         };
-        Ok(Self { shifted, num_powers, metadata, load })
+        Ok(Self { shifted, num_powers, metadata })
     }
 
     /// The checksum and size of the file.
@@ -140,24 +139,16 @@ impl PowersFile {
         self.metadata().1
     }
 
-    /// Downloads the file into the local cache unless a file of its size is
-    /// already there. A cached file is not read, so its checksum is checked
-    /// only when it is loaded.
-    pub fn fetch(&self) -> Result<()> {
-        #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
-        {
-            if std::fs::metadata(self.path()).is_ok_and(|file| file.len() == self.size() as u64) {
-                return Ok(());
-            }
-        }
-        (self.load)()?;
-        Ok(())
+    /// Whether the file holds shifted powers, which grow downward from
+    /// `MAX_NUM_POWERS`, rather than prefix powers, which grow upward from 0.
+    pub fn shifted(&self) -> bool {
+        self.shifted
     }
 
-    /// Where loading the file caches it.
-    #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
-    fn path(&self) -> std::path::PathBuf {
-        aleo_std::aleo_dir().join("resources").join(self.name())
+    /// The number of powers on the file's side once it is added. The file
+    /// holds the upper half of them, counted from its side's end.
+    pub fn num_powers(&self) -> usize {
+        self.num_powers
     }
 
     /// Reads the length-prefixed powers in the file, rejecting any other number of them.
@@ -201,6 +192,48 @@ impl<R: Read> Read for Sha256Reader<R> {
         self.len += len;
         Ok(len)
     }
+}
+
+/// Loads `file` as `load()` does: from `~/.aleo/resources` if it is there,
+/// else from the remote parameter URLs, storing it in `~/.aleo/resources`.
+/// The bytes have the file's size and checksum.
+pub fn default_load_powers_file_sync(file: &PowersFile) -> Result<Vec<u8>> {
+    Ok(match (file.shifted, file.num_powers) {
+        (false, NUM_POWERS_16) => Degree16::load_bytes()?,
+        (false, NUM_POWERS_17) => Degree17::load_bytes()?,
+        (false, NUM_POWERS_18) => Degree18::load_bytes()?,
+        (false, NUM_POWERS_19) => Degree19::load_bytes()?,
+        (false, NUM_POWERS_20) => Degree20::load_bytes()?,
+        (false, NUM_POWERS_21) => Degree21::load_bytes()?,
+        (false, NUM_POWERS_22) => Degree22::load_bytes()?,
+        (false, NUM_POWERS_23) => Degree23::load_bytes()?,
+        (false, NUM_POWERS_24) => Degree24::load_bytes()?,
+        (false, NUM_POWERS_25) => Degree25::load_bytes()?,
+        // TODO (nkls): restore on CI.
+        #[cfg(feature = "large_params")]
+        (false, NUM_POWERS_26) => Degree26::load_bytes()?,
+        #[cfg(feature = "large_params")]
+        (false, NUM_POWERS_27) => Degree27::load_bytes()?,
+        #[cfg(feature = "large_params")]
+        (false, NUM_POWERS_28) => Degree28::load_bytes()?,
+        #[cfg(feature = "no-embedded-srs")]
+        (true, NUM_POWERS_16) => ShiftedDegree16::load_bytes()?,
+        (true, NUM_POWERS_17) => ShiftedDegree17::load_bytes()?,
+        (true, NUM_POWERS_18) => ShiftedDegree18::load_bytes()?,
+        (true, NUM_POWERS_19) => ShiftedDegree19::load_bytes()?,
+        (true, NUM_POWERS_20) => ShiftedDegree20::load_bytes()?,
+        (true, NUM_POWERS_21) => ShiftedDegree21::load_bytes()?,
+        (true, NUM_POWERS_22) => ShiftedDegree22::load_bytes()?,
+        (true, NUM_POWERS_23) => ShiftedDegree23::load_bytes()?,
+        (true, NUM_POWERS_24) => ShiftedDegree24::load_bytes()?,
+        (true, NUM_POWERS_25) => ShiftedDegree25::load_bytes()?,
+        // TODO (nkls): restore on CI.
+        #[cfg(feature = "large_params")]
+        (true, NUM_POWERS_26) => ShiftedDegree26::load_bytes()?,
+        #[cfg(feature = "large_params")]
+        (true, NUM_POWERS_27) => ShiftedDegree27::load_bytes()?,
+        _ => bail!("{} has no built-in loader", file.name()),
+    })
 }
 
 /// One end of the powers of beta G: immutable once made, and replaced by a
@@ -451,7 +484,7 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
         // resumes from them rather than fetching them again.
         for file in files {
             dev_println!("Loading {}", file.name());
-            let powers = file.read_powers::<E>(&*(file.load)()?)?;
+            let powers = file.read_powers::<E>(&*default_load_powers_file_sync(&file)?)?;
             self.extend(file, powers)?;
         }
         Ok(())
@@ -550,7 +583,7 @@ mod tests {
 
     fn add_files_for(powers: &Powers, range: Range<usize>) {
         for file in powers.missing_files_for(range.clone()).unwrap() {
-            powers.add_powers_file(file, &*(file.load)().unwrap()).unwrap();
+            powers.add_powers_file(file, &*default_load_powers_file_sync(&file).unwrap()).unwrap();
         }
     }
 
@@ -577,12 +610,14 @@ mod tests {
         assert_eq!(PowersFile::new(true, NUM_POWERS_16).is_ok(), cfg!(feature = "no-embedded-srs"));
     }
 
-    #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
     #[test]
-    fn fetch_caches_the_file_where_it_looks() {
+    fn the_default_loader_returns_the_bytes_load_bytes_does() {
         let file = PowersFile::new(false, NUM_POWERS_16).unwrap();
-        file.fetch().unwrap();
-        assert_eq!(std::fs::metadata(file.path()).unwrap().len(), file.size() as u64);
+        assert!(!file.shifted() && file.num_powers() == NUM_POWERS_16);
+        assert_eq!(default_load_powers_file_sync(&file).unwrap(), Degree16::load_bytes().unwrap());
+        let file = PowersFile::new(true, NUM_POWERS_17).unwrap();
+        assert!(file.shifted() && file.num_powers() == NUM_POWERS_17);
+        assert_eq!(default_load_powers_file_sync(&file).unwrap(), ShiftedDegree17::load_bytes().unwrap());
     }
 
     #[test]
@@ -625,13 +660,13 @@ mod tests {
         let powers = Powers::load().unwrap();
         let (before, before_shifted) = (prefix(&powers), shifted(&powers));
         let file = PowersFile::new(false, NUM_POWERS_16).unwrap();
-        let bytes = (file.load)().unwrap();
+        let bytes = default_load_powers_file_sync(&file).unwrap();
         let mut flipped = bytes.clone();
         *flipped.last_mut().unwrap() ^= 1;
         let mut header = bytes.clone();
         header[0] ^= 1;
         let longer = [&bytes[..], &[0]].concat();
-        let other = (PowersFile::new(true, NUM_POWERS_17).unwrap().load)().unwrap();
+        let other = default_load_powers_file_sync(&PowersFile::new(true, NUM_POWERS_17).unwrap()).unwrap();
         for candidate in [&flipped[..], &header, &bytes[..bytes.len() - 1], &longer, &other, &[]] {
             assert!(powers.add_powers_file(file, candidate).is_err());
         }
