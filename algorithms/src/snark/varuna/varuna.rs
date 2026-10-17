@@ -47,7 +47,7 @@ use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{One, PrimeField, ToConstraintField, Zero};
 use snarkvm_utilities::{ToBytes, defer, dev_eprintln, dev_println, to_bytes_le};
 
-use anyhow::{Result, anyhow, bail, ensure};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use core::marker::PhantomData;
 use itertools::Itertools;
 use rand::{CryptoRng, Rng};
@@ -82,10 +82,7 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
         for circuit in circuits {
             let mut indexed_circuit = AHPForR1CS::<_, SM>::index(*circuit)?;
             // TODO: Add check that c is in the correct mode.
-            // Ensure the universal SRS supports the circuit size.
-            universal_srs.download_powers_for(0..indexed_circuit.max_degree()?).map_err(|e| {
-                anyhow!("Failed to download powers for degree {}: {e}", indexed_circuit.max_degree().unwrap())
-            })?;
+            let max_degree = indexed_circuit.max_degree()?;
             let coefficient_support = AHPForR1CS::<E::Fr, SM>::get_degree_bounds(&indexed_circuit.index_info)?;
 
             // Varuna only needs degree 2 random polynomials.
@@ -93,11 +90,12 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
             let supported_lagrange_sizes = [].into_iter(); // TODO: consider removing lagrange_bases_at_beta_g from CommitterKey
             let (committer_key, _) = SonicKZG10::<E, FS>::trim(
                 universal_srs,
-                indexed_circuit.max_degree()?,
+                max_degree,
                 supported_lagrange_sizes,
                 supported_hiding_bound,
                 Some(coefficient_support.as_slice()),
-            )?;
+            )
+            .with_context(|| format!("Failed to trim the universal SRS for degree {max_degree}"))?;
 
             let ck = CommitterUnionKey::union(std::iter::once(&committer_key));
 
