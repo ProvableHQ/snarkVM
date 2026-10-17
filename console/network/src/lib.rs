@@ -26,6 +26,33 @@ pub use snarkvm_console_network_environment::*;
 mod helpers;
 pub use helpers::*;
 
+/// Checks `file` against the shipped proving key file for `credits.aleo/{$function_name}` in the
+/// `snarkvm_parameters` module `$network`, as `Network::verify_credits_proving_key_file` does.
+macro_rules! verify_credits_proving_key_file {
+    ($network:ident, $function_name:expr, $file:expr) => {{
+        use snarkvm_parameters::$network::*;
+        match $function_name {
+            "bond_public" => BondPublicProver::verify_bytes($file)?,
+            "bond_validator" => BondValidatorProver::verify_bytes($file)?,
+            "unbond_public" => UnbondPublicProver::verify_bytes($file)?,
+            "claim_unbond_public" => ClaimUnbondPublicProver::verify_bytes($file)?,
+            "set_validator_state" => SetValidatorStateProver::verify_bytes($file)?,
+            "transfer_private" => TransferPrivateProver::verify_bytes($file)?,
+            "transfer_public" => TransferPublicProver::verify_bytes($file)?,
+            "transfer_public_as_signer" => TransferPublicAsSignerProver::verify_bytes($file)?,
+            "transfer_private_to_public" => TransferPrivateToPublicProver::verify_bytes($file)?,
+            "transfer_public_to_private" => TransferPublicToPrivateProver::verify_bytes($file)?,
+            "join" => JoinProver::verify_bytes($file)?,
+            "split" => SplitProver::verify_bytes($file)?,
+            "fee_private" => FeePrivateProver::verify_bytes($file)?,
+            "fee_public" => FeePublicProver::verify_bytes($file)?,
+            "upgrade" => UpgradeProver::verify_bytes($file)?,
+            function_name => bail!("'credits.aleo/{function_name}' has no proving key file"),
+        }
+        Ok(())
+    }};
+}
+
 mod canary_v0;
 pub use canary_v0::*;
 
@@ -426,6 +453,12 @@ pub trait Network:
 
     /// Returns the verifying key for the given function name in `credits.aleo`.
     fn get_credits_verifying_key(function_name: String) -> Result<&'static Arc<VarunaVerifyingKey<Self>>>;
+
+    /// Checks that `file` is the shipped proving key file for `credits.aleo/{function_name}`, by its size and
+    /// checksum. The file is a version byte, then the key.
+    fn verify_credits_proving_key_file(function_name: &str, _file: &[u8]) -> Result<()> {
+        bail!("{} has no proving key file for 'credits.aleo/{function_name}'", Self::NAME)
+    }
 
     #[cfg(not(feature = "wasm"))]
     /// Returns the `proving key` for the inclusion_v0 circuit.
