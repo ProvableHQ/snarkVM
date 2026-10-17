@@ -71,7 +71,6 @@ use snarkvm_console_collections::merkle_tree::{MerklePath, MerkleTree};
 use snarkvm_console_types::{Field, Group, Scalar};
 use snarkvm_curves::PairingEngine;
 
-#[cfg(not(feature = "wasm"))]
 use snarkvm_algorithms::polycommit::kzg10::UniversalParams;
 
 use indexmap::IndexMap;
@@ -451,7 +450,6 @@ pub trait Network:
     /// Returns the `verifying key` for the inclusion circuit.
     fn inclusion_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>>;
 
-    #[cfg(not(feature = "wasm"))]
     /// Sets the inclusion proving key to the key in `file`, read against `srs` so that it shares its powers. `file`
     /// must be the shipped inclusion proving key file, which this checks by its size and checksum. Call it before
     /// anything proves inclusion. Fails if the key is already set, if `file` is not the shipped file, or if `srs`
@@ -660,7 +658,6 @@ pub trait Network:
 }
 
 /// Reads the proving key in the file `file`, sharing its committer key's powers with `srs`.
-#[cfg(not(feature = "wasm"))]
 fn read_proving_key_with_srs<N: Environment>(
     file: &[u8],
     srs: &UniversalParams<N::PairingCurve>,

@@ -139,7 +139,6 @@ impl Environment for MainnetV0 {
 }
 
 /// The inclusion proving key, read from the shipped bytes or loaded against an SRS.
-#[cfg(not(feature = "wasm"))]
 static INCLUSION_PROVING_KEY: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
 
 impl Network for MainnetV0 {
@@ -309,7 +308,6 @@ impl Network for MainnetV0 {
         })
     }
 
-    #[cfg(not(feature = "wasm"))]
     /// Sets the inclusion proving key to the key in `file`, read against `srs` so that it shares its powers.
     fn load_inclusion_proving_key(file: &[u8], srs: &UniversalParams<Self::PairingCurve>) -> Result<()> {
         ensure!(INCLUSION_PROVING_KEY.get().is_none(), "The inclusion proving key is already loaded");
@@ -321,8 +319,7 @@ impl Network for MainnetV0 {
     #[cfg(feature = "wasm")]
     /// Returns the `proving key` for the inclusion circuit.
     fn inclusion_proving_key(inclusion_key_bytes: Option<Vec<u8>>) -> &'static Arc<VarunaProvingKey<Self>> {
-        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
-        INSTANCE.get_or_init(|| {
+        INCLUSION_PROVING_KEY.get_or_init(|| {
             inclusion_key_bytes
                 .map(|bytes| {
                     snarkvm_parameters::mainnet::InclusionProver::verify_bytes(&bytes)
