@@ -241,6 +241,11 @@ impl Network for TestnetV0 {
             .ok_or_else(|| anyhow!("Verifying key for credits.aleo/{function_name}' not found"))
     }
 
+    /// Checks that `file` is the shipped proving key file for `credits.aleo/{function_name}`.
+    fn verify_credits_proving_key_file(function_name: &str, file: &[u8]) -> Result<()> {
+        verify_credits_proving_key_file!(testnet, function_name, file)
+    }
+
     #[cfg(not(feature = "wasm"))]
     /// Returns the `proving key` for the inclusion_v0 circuit.
     fn inclusion_v0_proving_key() -> &'static Arc<VarunaProvingKey<Self>> {

@@ -246,6 +246,11 @@ impl Network for MainnetV0 {
             .ok_or_else(|| anyhow!("Verifying key for credits.aleo/{function_name}' not found"))
     }
 
+    /// Checks that `file` is the shipped proving key file for `credits.aleo/{function_name}`.
+    fn verify_credits_proving_key_file(function_name: &str, file: &[u8]) -> Result<()> {
+        verify_credits_proving_key_file!(mainnet, function_name, file)
+    }
+
     #[cfg(not(feature = "wasm"))]
     /// Returns the `proving key` for the inclusion_v0 circuit.
     fn inclusion_v0_proving_key() -> &'static Arc<VarunaProvingKey<Self>> {
@@ -726,5 +731,44 @@ mod tests {
         let scalar = Scalar::rand(&mut TestRng::default());
         let group = CurrentNetwork::g_scalar_multiply(&scalar);
         assert_eq!(group, CurrentNetwork::g_powers()[0] * scalar);
+    }
+
+    #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
+    #[test]
+    fn test_verify_credits_proving_key_file() {
+        let file = snarkvm_parameters::mainnet::TransferPublicProver::load_bytes().expect("the file loads");
+        CurrentNetwork::verify_credits_proving_key_file("transfer_public", &file).expect("the shipped file verifies");
+
+        let mut flipped = file.clone();
+        flipped[file.len() / 2] ^= 1;
+        assert!(CurrentNetwork::verify_credits_proving_key_file("transfer_public", &flipped).is_err());
+        assert!(CurrentNetwork::verify_credits_proving_key_file("transfer_private", &file).is_err());
+        assert!(CurrentNetwork::verify_credits_proving_key_file("inclusion", &file).is_err());
+    }
+
+    #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
+    #[test]
+    fn test_verify_credits_proving_key_file_then_read_with_srs() {
+        use snarkvm_algorithms::polycommit::{kzg10::UniversalParams, sonic_pc::Bases};
+
+        let file = snarkvm_parameters::mainnet::TransferPublicProver::load_bytes().expect("the file loads");
+        CurrentNetwork::verify_credits_proving_key_file("transfer_public", &file).expect("the shipped file verifies");
+        // Skipping the first byte, which is the encoded version.
+        let (powers, shifted) = {
+            let key = VarunaProvingKey::<CurrentNetwork>::from_bytes_le(&file[1..]).expect("the key reads");
+            let committer_key = &key.committer_key;
+            (committer_key.powers_of_beta_g.len(), committer_key.shifted_powers_of_beta_g.as_ref().map(|b| b.len()))
+        };
+        let srs = UniversalParams::load().expect("the SRS loads");
+        srs.download_powers_for(0..powers).expect("the powers download");
+        if let Some(shifted) = shifted {
+            let end = srs.max_degree() + 1;
+            srs.download_powers_for(end - shifted..end).expect("the shifted powers download");
+        }
+
+        let key = VarunaProvingKey::<CurrentNetwork>::read_le_with_srs(&file[1..], &srs).expect("the key reads");
+        assert!(matches!(key.committer_key.powers_of_beta_g, Bases::Shared { .. }));
+        // `assert!`, since a failing `assert_eq!` would print both keys.
+        assert!(key.to_bytes_le().expect("the key writes") == file[1..], "the key read is not the shipped one");
     }
 }
