@@ -236,6 +236,18 @@ pub fn default_load_powers_file_sync(file: &PowersFile) -> Result<Vec<u8>> {
     })
 }
 
+/// The error an SRS from `load_explicit` returns for powers it does not hold,
+/// naming the files that hold them.
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
+#[error("The SRS lacks the powers files {}", .files.iter().map(PowersFile::name).collect::<Vec<_>>().join(", "))]
+pub struct MissingPowers {
+    /// The files, in the order `add_powers_file` accepts them.
+    pub files: Vec<PowersFile>,
+}
+
+/// A loader of a powers file's bytes.
+type LoadPowersFile = fn(&PowersFile) -> Result<Vec<u8>>;
+
 /// One end of the powers of beta G: immutable once made, and replaced by a
 /// longer one when more powers are fetched.
 pub type PowersSnapshot<E> = Arc<Vec<<E as PairingEngine>::G1Affine>>;
@@ -259,11 +271,26 @@ pub struct PowersOfG<E: PairingEngine> {
     prepared_negative_powers_of_beta_h: Arc<BTreeMap<usize, <E::G2Affine as PairingCurve>::Prepared>>,
     /// beta * h
     beta_h: E::G2Affine,
+    /// The loader that grows the SRS when it is asked for powers it lacks, or
+    /// `None` if only `add_powers_file` grows it.
+    fetch: Option<LoadPowersFile>,
 }
 
 impl<E: PairingEngine> PowersOfG<E> {
-    /// Initializes the hard-coded instance of the powers.
+    /// Initializes the hard-coded instance of the powers. Powers it lacks are
+    /// loaded with `default_load_powers_file_sync` when they are asked for.
     pub fn load() -> Result<Self> {
+        Self::load_with(Some(default_load_powers_file_sync))
+    }
+
+    /// Initializes the hard-coded instance of the powers. It never loads a
+    /// file: asked for powers it lacks, it returns `MissingPowers`, and only
+    /// `add_powers_file` grows it.
+    pub fn load_explicit() -> Result<Self> {
+        Self::load_with(None)
+    }
+
+    fn load_with(fetch: Option<LoadPowersFile>) -> Result<Self> {
         let powers_of_beta_g = RwLock::new(PowersOfBetaG::load()?);
 
         // Reconstruct powers of beta_times_gamma_g.
@@ -286,6 +313,7 @@ impl<E: PairingEngine> PowersOfG<E> {
             negative_powers_of_beta_h,
             prepared_negative_powers_of_beta_h,
             beta_h,
+            fetch,
         })
     }
 
@@ -299,8 +327,16 @@ impl<E: PairingEngine> PowersOfG<E> {
     }
 
     /// Loads `files` and appends them in order, skipping a file already held.
-    /// Each file is loaded and parsed with no lock held.
-    pub fn download_powers_files(&self, files: Vec<PowersFile>) -> Result<()> {
+    /// Each file is loaded and parsed with no lock held. An SRS from
+    /// `load_explicit` loads nothing, and returns `MissingPowers` naming the
+    /// files it does not hold.
+    pub fn download_powers_files(&self, mut files: Vec<PowersFile>) -> Result<()> {
+        let Some(fetch) = self.fetch else {
+            let held = self.powers_of_beta_g.read();
+            files.retain(|file| !held.holds(file));
+            ensure!(files.is_empty(), MissingPowers { files });
+            return Ok(());
+        };
         if let Some(last) = files.iter().rfind(|file| !file.shifted) {
             let mut powers = self.powers_of_beta_g.write();
             if !powers.holds(last) {
@@ -314,7 +350,7 @@ impl<E: PairingEngine> PowersOfG<E> {
                 continue;
             }
             dev_println!("Loading {}", file.name());
-            let powers = file.read_powers::<E>(&*default_load_powers_file_sync(&file)?)?;
+            let powers = file.read_powers::<E>(&*fetch(&file)?)?;
             self.powers_of_beta_g.write().extend(file, powers)?;
         }
         Ok(())
@@ -651,6 +687,67 @@ mod tests {
         let file = PowersFile::new(true, NUM_POWERS_17).unwrap();
         assert!(file.shifted() && file.num_powers() == NUM_POWERS_17);
         assert_eq!(default_load_powers_file_sync(&file).unwrap(), ShiftedDegree17::load_bytes().unwrap());
+    }
+
+    fn missing_powers(error: anyhow::Error) -> Vec<PowersFile> {
+        error.downcast::<MissingPowers>().unwrap().files
+    }
+
+    #[test]
+    fn an_explicit_srs_names_the_files_it_lacks() {
+        let powers = Powers::load_explicit().unwrap();
+        assert!(powers.fetch.is_none());
+        let prefix_files = powers.missing_files_for(0..NUM_POWERS_17).unwrap();
+        let shifted_files = powers.missing_files_for(SHIFTED_17).unwrap();
+        assert_eq!(prefix_files.len(), 2);
+        assert!(!shifted_files.is_empty());
+        // A cached file is not read either.
+        for file in prefix_files.iter().chain(&shifted_files) {
+            default_load_powers_file_sync(file).unwrap();
+        }
+        let (before, before_shifted) = (prefix(&powers), shifted(&powers));
+        assert_eq!(missing_powers(powers.download_powers_for(0..NUM_POWERS_17).unwrap_err()), prefix_files);
+        assert_eq!(missing_powers(powers.powers_of_beta_g(0..NUM_POWERS_17).unwrap_err()), prefix_files);
+        assert_eq!(missing_powers(powers.shared_powers_of_beta_g(0..NUM_POWERS_17).unwrap_err()), prefix_files);
+        assert_eq!(missing_powers(powers.power_of_beta_g(NUM_POWERS_16).unwrap_err()), prefix_files);
+        assert_eq!(missing_powers(powers.powers_of_beta_g(SHIFTED_17).unwrap_err()), shifted_files);
+        let error = powers.download_powers_files([prefix_files.clone(), shifted_files.clone()].concat()).unwrap_err();
+        assert_eq!(missing_powers(error), [prefix_files.clone(), shifted_files.clone()].concat());
+        assert!(Arc::ptr_eq(&before, &prefix(&powers)) && Arc::ptr_eq(&before_shifted, &shifted(&powers)));
+
+        add_files_for(&powers, 0..NUM_POWERS_17);
+        add_files_for(&powers, SHIFTED_17);
+        powers.download_powers_files([prefix_files, shifted_files].concat()).unwrap();
+        let downloaded = Powers::load().unwrap();
+        assert_eq!(powers.powers_of_beta_g(0..NUM_POWERS_17).unwrap(), downloaded.powers_of_beta_g(0..NUM_POWERS_17).unwrap());
+        assert_eq!(powers.powers_of_beta_g(SHIFTED_17).unwrap(), downloaded.powers_of_beta_g(SHIFTED_17).unwrap());
+    }
+
+    #[test]
+    fn missing_powers_names_its_files() {
+        let files = vec![PowersFile::new(false, NUM_POWERS_16).unwrap(), PowersFile::new(true, NUM_POWERS_17).unwrap()];
+        let error = anyhow::Error::from(MissingPowers { files: files.clone() }).context("trimming");
+        assert_eq!(error.downcast_ref::<MissingPowers>().map(|error| &error.files), Some(&files));
+        let message = error.root_cause().to_string();
+        assert!(message.contains(&files[0].name()) && message.contains(&files[1].name()), "{message}");
+    }
+
+    static UNLOCKED: std::sync::OnceLock<Powers> = std::sync::OnceLock::new();
+
+    fn load_unlocked(file: &PowersFile) -> Result<Vec<u8>> {
+        // `UNLOCKED` is set before it is grown.
+        let powers = UNLOCKED.get().expect("set before growing");
+        assert!(powers.powers_of_beta_g.try_write().is_some(), "{} was loaded under a lock", file.name());
+        default_load_powers_file_sync(file)
+    }
+
+    #[test]
+    fn a_download_loads_with_no_lock_held() {
+        let powers = UNLOCKED.get_or_init(|| Powers::load_with(Some(load_unlocked)).unwrap());
+        powers.download_powers_for(0..NUM_POWERS_17).unwrap();
+        powers.download_powers_for(SHIFTED_17).unwrap();
+        assert!(powers.missing_files_for(0..NUM_POWERS_17).unwrap().is_empty());
+        assert!(powers.missing_files_for(SHIFTED_17).unwrap().is_empty());
     }
 
     #[test]
