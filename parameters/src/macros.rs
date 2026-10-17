@@ -538,8 +538,7 @@ macro_rules! impl_remote {
                 impl_load_bytes_logic_remote!($remote_url, $local_dir, &filename, metadata, expected_checksum, expected_size);
             }
 
-            #[cfg(feature = "wasm")]
-            /// Verify external bytes.
+            /// Checks `buffer` against this file's size and checksum in `METADATA`.
             pub fn verify_bytes(buffer: &[u8]) -> Result<(), $crate::errors::ParameterError> {
                 let metadata: serde_json::Value = serde_json::from_str(Self::METADATA).expect("Metadata was not well-formatted");
                 let expected_checksum: String =

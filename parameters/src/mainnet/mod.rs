@@ -298,6 +298,21 @@ mod tests {
         let _ = std::fs::remove_dir_all(&directory);
     }
 
+    #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
+    #[test]
+    fn test_verify_bytes() {
+        use crate::errors::ParameterError;
+
+        let bytes = FeePublicProver::load_bytes().expect("Failed to load fee_public prover");
+        FeePublicProver::verify_bytes(&bytes).expect("The loaded bytes do not verify");
+
+        let mut flipped = bytes.clone();
+        flipped[bytes.len() / 2] ^= 1;
+        assert!(matches!(FeePublicProver::verify_bytes(&flipped), Err(ParameterError::ChecksumMismatch(..))));
+        assert!(matches!(FeePublicProver::verify_bytes(&bytes[..bytes.len() - 1]), Err(ParameterError::SizeMismatch(..))));
+        assert!(FeePrivateProver::verify_bytes(&bytes).is_err());
+    }
+
     #[ignore]
     #[test]
     fn test_load_bytes_mini() {
