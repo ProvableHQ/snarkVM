@@ -137,6 +137,9 @@ impl Environment for CanaryV0 {
     const MONTGOMERY_B: Self::Field = Console::MONTGOMERY_B;
 }
 
+/// The inclusion proving key, read from the shipped bytes or loaded against an SRS.
+static INCLUSION_PROVING_KEY: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
+
 impl Network for CanaryV0 {
     /// The block hash type.
     type BlockHash = AleoID<Field<Self>, { hrp2!("ab") }>;
@@ -291,8 +294,7 @@ impl Network for CanaryV0 {
     #[cfg(not(feature = "wasm"))]
     /// Returns the `proving key` for the inclusion circuit.
     fn inclusion_proving_key() -> &'static Arc<VarunaProvingKey<Self>> {
-        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
-        INSTANCE.get_or_init(|| {
+        INCLUSION_PROVING_KEY.get_or_init(|| {
             // Skipping the first byte, which is the encoded version.
             Arc::new(
                 CircuitProvingKey::from_bytes_le(&snarkvm_parameters::canary::INCLUSION_PROVING_KEY[1..])
@@ -301,11 +303,18 @@ impl Network for CanaryV0 {
         })
     }
 
+    /// Sets the inclusion proving key to the key in `file`, read against `srs` so that it shares its powers.
+    fn load_inclusion_proving_key(file: &[u8], srs: &UniversalParams<Self::PairingCurve>) -> Result<()> {
+        ensure!(INCLUSION_PROVING_KEY.get().is_none(), "The inclusion proving key is already loaded");
+        snarkvm_parameters::canary::InclusionProver::verify_bytes(file)?;
+        let key = read_proving_key_with_srs::<Self>(file, srs)?;
+        INCLUSION_PROVING_KEY.set(Arc::new(key)).map_err(|_| anyhow!("The inclusion proving key is already loaded"))
+    }
+
     #[cfg(feature = "wasm")]
     /// Returns the `proving key` for the inclusion circuit.
     fn inclusion_proving_key(inclusion_key_bytes: Option<Vec<u8>>) -> &'static Arc<VarunaProvingKey<Self>> {
-        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
-        INSTANCE.get_or_init(|| {
+        INCLUSION_PROVING_KEY.get_or_init(|| {
             inclusion_key_bytes
                 .map(|bytes| {
                     snarkvm_parameters::canary::InclusionProver::verify_bytes(&bytes)

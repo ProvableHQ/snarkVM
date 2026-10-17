@@ -71,6 +71,8 @@ use snarkvm_console_collections::merkle_tree::{MerklePath, MerkleTree};
 use snarkvm_console_types::{Field, Group, Scalar};
 use snarkvm_curves::PairingEngine;
 
+use snarkvm_algorithms::polycommit::kzg10::UniversalParams;
+
 use indexmap::IndexMap;
 use std::sync::{Arc, OnceLock};
 
@@ -448,6 +450,14 @@ pub trait Network:
     /// Returns the `verifying key` for the inclusion circuit.
     fn inclusion_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>>;
 
+    /// Sets the inclusion proving key to the key in `file`, read against `srs` so that it shares its powers. `file`
+    /// must be the shipped inclusion proving key file, which this checks by its size and checksum. Call it before
+    /// anything proves inclusion. Fails if the key is already set, if `file` is not the shipped file, or if `srs`
+    /// does not hold the powers the key needs. A failed load leaves the key unset.
+    fn load_inclusion_proving_key(_file: &[u8], _srs: &UniversalParams<Self::PairingCurve>) -> Result<()> {
+        bail!("{} cannot load its inclusion proving key against an SRS", Self::NAME)
+    }
+
     #[cfg(not(feature = "wasm"))]
     /// Returns the `proving key` for the translation circuit.
     fn translation_credits_proving_key() -> &'static Arc<VarunaProvingKey<Self>>;
@@ -645,6 +655,18 @@ pub trait Network:
 
     /// Returns the Poseidon path hasher for dynamic records (rate 2).
     fn dynamic_record_path_hasher() -> &'static Poseidon2<Self>;
+}
+
+/// Reads the proving key in the file `file`, sharing its committer key's powers with `srs`.
+fn read_proving_key_with_srs<N: Environment>(
+    file: &[u8],
+    srs: &UniversalParams<N::PairingCurve>,
+) -> Result<VarunaProvingKey<N>> {
+    // The first byte is the encoded version.
+    let Some((&1, mut bytes)) = file.split_first() else { bail!("The proving key file is not version 1") };
+    let key = VarunaProvingKey::<N>::read_le_with_srs(&mut bytes, srs)?;
+    ensure!(bytes.is_empty(), "{} bytes follow the proving key", bytes.len());
+    Ok(key)
 }
 
 /// Returns the consensus version heights, initializing them if necessary.
