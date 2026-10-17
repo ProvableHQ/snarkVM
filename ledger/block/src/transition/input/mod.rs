@@ -162,6 +162,8 @@ impl<N: Network> Input<N> {
         // Ensure the hash of the value (if the value exists) is correct.
         let result = || match self {
             Input::Constant(hash, Some(input)) => {
+                // Ensure the bit encoding of the input fits its size prefixes, so hashing it cannot halt.
+                input.check_bit_lengths()?;
                 match input.to_fields() {
                     Ok(fields) => {
                         // Construct the (console) input index as a field element.
@@ -182,6 +184,8 @@ impl<N: Network> Input<N> {
                 }
             }
             Input::Public(hash, Some(input)) => {
+                // Ensure the bit encoding of the input fits its size prefixes, so hashing it cannot halt.
+                input.check_bit_lengths()?;
                 match input.to_fields() {
                     Ok(fields) => {
                         // Construct the (console) input index as a field element.
@@ -352,7 +356,7 @@ pub(crate) mod test_helpers {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use console::network::MainnetV0;
+    use console::{network::MainnetV0, program::Literal, types::U64};
 
     type CurrentNetwork = MainnetV0;
 
@@ -397,5 +401,25 @@ mod tests {
 
         let external = Input::<CurrentNetwork>::ExternalRecord(id);
         assert_eq!(external.to_caller_input(), external);
+    }
+
+    #[test]
+    fn test_verify_rejects_oversized_value() {
+        let rng = &mut TestRng::default();
+
+        // A constant input holding an outer array whose sole element is an array of 1024
+        // u64s: the bit encoding exceeds the u16 size prefix that bit-encoding the value
+        // writes before each array element. Hashing the input would halt the process, so
+        // verification must reject the input instead.
+        let inner = Plaintext::Array(
+            core::iter::repeat_n(Plaintext::<CurrentNetwork>::from(Literal::U64(U64::rand(rng))), 1024).collect(),
+            Default::default(),
+        );
+        let plaintext = Plaintext::Array(vec![inner], Default::default());
+        let hash = Field::<CurrentNetwork>::from_u64(1);
+        let input = Input::<CurrentNetwork>::Constant(hash, Some(plaintext));
+
+        // The input must be rejected without halting.
+        assert!(!input.verify(Field::from_u64(2), &Field::from_u64(3), 0));
     }
 }

@@ -22,6 +22,13 @@ impl<N: Network> Request<N> {
     ///     challenge' := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, input IDs\])
     /// The program checksum must be provided if the program has a constructor and should not be provided otherwise.
     pub fn verify(&self, input_types: &[ValueType<N>], is_root: bool, program_checksum: Option<Field<N>>) -> bool {
+        // Ensure the bit encoding of each input fits its size prefixes, so recomputing the
+        // input IDs cannot halt.
+        if let Err(error) = self.inputs.iter().try_for_each(|input| input.check_bit_lengths()) {
+            eprintln!("Failed to check the request inputs: {error}");
+            return false;
+        }
+
         // Verify the transition public key, transition view key, and transition commitment are well-formed.
         {
             // Compute the transition commitment `tcm` as `Hash(tvk)`.
@@ -165,6 +172,7 @@ impl<N: Network> Request<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Literal;
     use snarkvm_console_account::PrivateKey;
     use snarkvm_console_network::MainnetV0;
 
@@ -292,5 +300,85 @@ mod tests {
             // Assert verification passes.
             assert!(request.verify(&input_types, is_root, program_checksum));
         }
+    }
+
+    /// Returns an input holding an outer array whose sole element is an array of the given
+    /// number of u64s. The bit encoding of the inner array exceeds the `u16` size prefix
+    /// when the number of elements is large enough.
+    fn nested_array_input(num_elements: usize, rng: &mut TestRng) -> Value<CurrentNetwork> {
+        let inner = Plaintext::Array(
+            core::iter::repeat_n(Plaintext::<CurrentNetwork>::from(Literal::U64(U64::rand(rng))), num_elements)
+                .collect(),
+            Default::default(),
+        );
+        Value::Plaintext(Plaintext::Array(vec![inner], Default::default()))
+    }
+
+    #[test]
+    fn test_sign_rejects_oversized_input() {
+        let rng = &mut TestRng::default();
+
+        // Sample a random private key.
+        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+
+        // Construct a program ID and function name.
+        let program_id = ProgramID::from_str("token.aleo").unwrap();
+        let function_name = Identifier::from_str("transfer").unwrap();
+
+        // Prepare an oversized constant input: signing it would halt the process while
+        // computing its input ID, so the request must be rejected instead.
+        let inputs = [nested_array_input(1024, rng)];
+        let input_types = vec![ValueType::from_str("token_amount.constant").unwrap()];
+
+        // Sign the request.
+        let error = Request::sign(
+            &private_key,
+            program_id,
+            function_name,
+            inputs.into_iter(),
+            &input_types,
+            None,
+            true,
+            None,
+            false,
+            rng,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("exceeds u16::MAX bits"));
+    }
+
+    #[test]
+    fn test_verify_rejects_oversized_input() {
+        let rng = &mut TestRng::default();
+
+        // Sample a random private key.
+        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+
+        // Construct a program ID and function name.
+        let program_id = ProgramID::from_str("token.aleo").unwrap();
+        let function_name = Identifier::from_str("transfer").unwrap();
+
+        // Sign a valid request with one constant input.
+        let inputs = [Value::from_str("{ token_amount: 9876543210u128 }").unwrap()];
+        let input_types = vec![ValueType::from_str("token_amount.constant").unwrap()];
+        let mut request = Request::sign(
+            &private_key,
+            program_id,
+            function_name,
+            inputs.into_iter(),
+            &input_types,
+            None,
+            true,
+            None,
+            false,
+            rng,
+        )
+        .unwrap();
+        assert!(request.verify(&input_types, true, None));
+
+        // Replace the input with an oversized value: recomputing its input ID would halt
+        // the process, so verification must reject the request instead.
+        request.inputs[0] = nested_array_input(1024, rng);
+        assert!(!request.verify(&input_types, true, None));
     }
 }
