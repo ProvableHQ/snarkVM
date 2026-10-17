@@ -125,11 +125,13 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         // after the SRS moved on. The files are gathered first, so an SRS from
         // `load_explicit` names all of them in one `MissingPowers`.
         let prefix_end = supported_lagrange_sizes.iter().fold(supported_degree + 1, |end, &size| end.max(size));
+        // Listed first: it rejects a `supported_degree` beyond the SRS, so the highest
+        // bound below is at most `max_degree`.
+        let mut files = pp.missing_files_for(0..prefix_end)?;
         let shifted = match enforced_degree_bounds.as_deref() {
             Some([.., highest_enforced_degree_bound]) => max_degree - highest_enforced_degree_bound..max_degree + 1,
             _ => 0..0,
         };
-        let mut files = pp.missing_files_for(0..prefix_end)?;
         files.extend(pp.missing_files_for(shifted)?);
         pp.download_powers_files(files)?;
 
@@ -1017,6 +1019,9 @@ mod tests {
         // A Lagrange size that is not a power of two, and one beyond the SRS.
         assert!(PC_Bls12_377::trim(&pp, grown - 1, [3], 1, None).is_err());
         assert!(PC_Bls12_377::trim(&pp, grown - 1, [1 << 29], 1, None).is_err());
+        // A supported degree, and a degree bound, beyond the SRS.
+        let beyond = pp.max_degree() + 1;
+        assert!(PC_Bls12_377::trim(&pp, beyond, [], 1, Some(&[beyond])).is_err());
         let (after, _) = pp.shared_powers_of_beta_g(0, 1).unwrap();
         assert!(std::sync::Arc::ptr_eq(&before, &after), "a rejected trim grew the SRS");
     }
