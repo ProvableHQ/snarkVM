@@ -112,11 +112,26 @@ using namespace std;
 
 static_assert(cudaErrorNotSupported == 801, "snarkvm-algorithms' CUDA_ERROR_NOT_SUPPORTED");
 
-// Defined in batchinv.cu. Kept there so its kernel stays out of this
+// Defined in batchinv.cu. Kept there so its kernels stay out of this
 // translation unit; only this host call crosses.
+void fourth_round_evals_device(const stream_t& stream, int sm_count,
+                               fr_t* d_a, fr_t* d_b, fr_t* d_f,
+                               const fr_t* d_row, const fr_t* d_col,
+                               const fr_t* d_rcv,
+                               fr_t* d_scan, fr_t* d_scan_rev, fr_t* d_t,
+                               fr_t alpha, fr_t beta, fr_t coeff,
+                               fr_t b_scale, fr_t a_scale, size_t len);
+// Defined in batchinv.cu, for the same reason.
 void widen_points_device(const stream_t& stream, int sm_count, uint64_t* d_dst,
                          const uint64_t* d_src, size_t npoints,
                          size_t src_words, size_t dst_words);
+
+// Defined in batchinv.cu, for the reason the others there are.
+void round4_sub_device(const stream_t& stream, int sm_count, fr_t* d_out,
+                       const fr_t* d_a, size_t a_len, const fr_t* d_b, size_t len);
+void round4_vanishing_device(const stream_t& stream, int sm_count,
+                             fr_t* d_q, unsigned* d_nonzero, const fr_t* d_p,
+                             size_t n, size_t q_len, size_t total, fr_t mult);
 
 // Returns `cudaErrorNotSupported` with a message naming the domain and the
 // limit it exceeds. Falls back to the bare code if the message cannot be
@@ -288,6 +303,333 @@ public:
         }
     }
     ~snarkvm_t() {}
+
+    // The fourth round's chain, from row/col/rcv to the selector's output,
+    // without the polynomials leaving the device. After FourthRoundPolys's
+    // interpolations it runs the shift into g, the b*f multiply, the
+    // subtraction and the vanishing divide with its scaling.
+    //
+    // a, b and g come back, because they are committed and opened, as do the
+    // selector's quotient and f's constant term. `g = f.coeffs[1..]` is a
+    // download starting at `d_f + 1`.
+    //
+    // The caller's obligations:
+    //
+    // - `selector_mult` is `combiner * src_domain.size_as_field_element *
+    //   target_domain.size_inv`, not the combiner. A wrong value is not
+    //   detected.
+    // - `q_len` is an upper bound on the quotient's length; the caller passes
+    //   `domain_size - 1`, which always holds. Too small a bound strands
+    //   quotient coefficients, which `d_vanishing_scaled` refuses.
+    // - `g_out` receives `domain_size - 1` untrimmed coefficients, and
+    //   `check_degrees_and_bounds` rejects `g` above its degree bound, so the
+    //   caller must build `g` through something that trims, such as
+    //   `from_coefficients_vec`.
+    RustError FourthRoundChain(fr_t* a_out, fr_t* b_out, fr_t* g_out,
+                               fr_t* lhs_out, fr_t* f0_out,
+                               const fr_t* row, const fr_t* col, const fr_t* rcv,
+                               size_t len, uint32_t lg_domain_size,
+                               uint32_t lg_mul_domain, size_t q_len,
+                               const fr_t* alpha, const fr_t* beta,
+                               const fr_t* coeff, const fr_t* b_scale,
+                               const fr_t* a_scale, const fr_t* selector_mult)
+    {
+        if (len == 0)
+            return RustError{cudaSuccess};
+
+        size_t domain_size = (size_t)1 << lg_domain_size;
+        size_t mul_domain = (size_t)1 << lg_mul_domain;
+        if (len > domain_size || mul_domain < 2 * domain_size)
+            return RustError{cudaErrorInvalidValue};
+        // Only the single-step branch of `divide_by_vanishing_poly`, which
+        // needs `q_len <= n`, is implemented. Any other shape is refused.
+        if (q_len > domain_size || q_len + domain_size > mul_domain)
+            return RustError{cudaErrorInvalidValue};
+
+        slot_t slot(resources);
+        RustError ret = RustError{cudaSuccess};
+        try {
+            auto& gpu = select_gpu(slot.dev());
+            stream_t& stream = gpu[slot.stream()];
+            try {
+                dev_ptr_t<fr_t> d_a{domain_size, stream}, d_b{domain_size, stream},
+                                d_f{domain_size, stream};
+
+                if (domain_size > len) {
+                    size_t tail = (domain_size - len) * sizeof(fr_t);
+                    CUDA_OK(cudaMemsetAsync(&d_a[len], 0, tail, stream));
+                    CUDA_OK(cudaMemsetAsync(&d_b[len], 0, tail, stream));
+                    CUDA_OK(cudaMemsetAsync(&d_f[len], 0, tail, stream));
+                }
+
+                // Scoped, so these buffers are freed before the multiply's
+                // `mul_domain` buffers are allocated.
+                {
+                    dev_ptr_t<fr_t> d_in{3 * len, stream};
+                    dev_ptr_t<fr_t> d_scan{len, stream}, d_scan_rev{len, stream};
+                    dev_ptr_t<fr_t> d_t{1, stream};
+
+                    stream.HtoD(&d_in[0], row, len);
+                    stream.HtoD(&d_in[len], col, len);
+                    stream.HtoD(&d_in[2 * len], rcv, len);
+
+                    fourth_round_evals_device(stream, gpu.sm_count(),
+                                              &d_a[0], &d_b[0], &d_f[0],
+                                              &d_in[0], &d_in[len], &d_in[2 * len],
+                                              &d_scan[0], &d_scan_rev[0], &d_t[0],
+                                              *alpha, *beta, *coeff, *b_scale,
+                                              *a_scale, len);
+                }
+
+                NTT::Base_dev_ptr(stream, &d_a[0], lg_domain_size,
+                                  NTT::InputOutputOrder::NN, NTT::Direction::inverse,
+                                  NTT::Type::standard);
+                NTT::Base_dev_ptr(stream, &d_b[0], lg_domain_size,
+                                  NTT::InputOutputOrder::NN, NTT::Direction::inverse,
+                                  NTT::Type::standard);
+                NTT::Base_dev_ptr(stream, &d_f[0], lg_domain_size,
+                                  NTT::InputOutputOrder::NN, NTT::Direction::inverse,
+                                  NTT::Type::standard);
+
+                // b and f, zero-padded into the multiply's larger domain. Both
+                // are consumed by MulDev, which is why they are copies rather
+                // than the buffers above -- a and b are still wanted intact.
+                dev_ptr_t<fr_t> d_m0{mul_domain, stream}, d_m1{mul_domain, stream},
+                                d_prod{mul_domain, stream};
+                size_t pad = (mul_domain - domain_size) * sizeof(fr_t);
+                CUDA_OK(cudaMemcpyAsync(&d_m0[0], &d_b[0], domain_size * sizeof(fr_t),
+                                        cudaMemcpyDeviceToDevice, stream));
+                CUDA_OK(cudaMemsetAsync(&d_m0[domain_size], 0, pad, stream));
+                CUDA_OK(cudaMemcpyAsync(&d_m1[0], &d_f[0], domain_size * sizeof(fr_t),
+                                        cudaMemcpyDeviceToDevice, stream));
+                CUDA_OK(cudaMemsetAsync(&d_m1[domain_size], 0, pad, stream));
+
+                Polynomial::MulDev(stream, &d_prod[0], &d_m0[0], &d_m1[0],
+                                   lg_mul_domain);
+
+                // h = a - b*f, in place over the product. a is the shorter, and
+                // its tail is zeros rather than absent.
+                round4_sub_device(stream, gpu.sm_count(), &d_prod[0],
+                                  &d_a[0], domain_size, &d_prod[0], mul_domain);
+
+                // The vanishing divide and the selector's scaling, with the
+                // remainder checked rather than built.
+                dev_ptr_t<fr_t> d_lhs{q_len, stream};
+                dev_ptr_t<unsigned> d_nonzero{1, stream};
+                CUDA_OK(cudaMemsetAsync(&d_nonzero[0], 0, sizeof(unsigned), stream));
+                round4_vanishing_device(stream, gpu.sm_count(), &d_lhs[0],
+                                        &d_nonzero[0], &d_prod[0],
+                                        domain_size, q_len, mul_domain,
+                                        *selector_mult);
+
+                unsigned nonzero = 0;
+                stream.DtoH(a_out, &d_a[0], domain_size);
+                stream.DtoH(b_out, &d_b[0], domain_size);
+                stream.DtoH(g_out, &d_f[1], domain_size - 1);
+                stream.DtoH(f0_out, &d_f[0], 1);
+                stream.DtoH(lhs_out, &d_lhs[0], q_len);
+                stream.DtoH(&nonzero, &d_nonzero[0], 1);
+                stream.sync();
+
+                // A non-zero remainder means a wrong proof. `cudaErrorAssert`,
+                // not the shape guards' `cudaErrorInvalidValue`, so the caller
+                // can tell the two apart.
+                if (nonzero)
+                    ret = RustError{cudaErrorAssert};
+            } catch (...) {
+                // After a fault the drain fails too, and its error must not
+                // replace the cause.
+                try {
+                    stream.sync();
+                } catch (...) {
+                }
+                throw;
+            }
+        } catch (const cuda_error& e) {
+#ifdef TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE
+            ret = RustError{e.code(), e.what()};
+#else
+            ret = RustError{e.code()};
+#endif
+#ifdef TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE
+        } catch (const std::exception& e) {
+            // Ahead of the catch-all, so a `std::bad_alloc` keeps its message.
+            ret = RustError{cudaErrorUnknown, e.what()};
+#endif
+        } catch (...) {
+            // Nothing may cross `extern "C"`: the wrappers in `snarkvm_api.cu`
+            // have no handler.
+            ret = RustError{cudaErrorUnknown};
+        }
+        return ret;
+    }
+
+    // Round 3's interpolate-then-multiply, as in
+    // `calculate_lineval_sumcheck_instance_witness`, without the interpolated
+    // polynomial leaving the device.
+    RustError LinevalInterpolateMul(fr_t* out, const fr_t* evals, size_t ncols,
+                                    const fr_t* assignment, size_t assignment_len,
+                                    uint32_t lg_domain_size, uint32_t lg_mul_domain)
+    {
+        size_t domain_size = (size_t)1 << lg_domain_size;
+        size_t mul_domain = (size_t)1 << lg_mul_domain;
+        // `Evaluations::from_vec_and_domain` requires the evaluations to fill
+        // the domain exactly, so this is equality and not a bound.
+        if (ncols != domain_size || assignment_len > domain_size)
+            return RustError{cudaErrorInvalidValue};
+        if (mul_domain < 2 * domain_size)
+            return RustError{cudaErrorInvalidValue};
+
+        slot_t slot(resources);
+        RustError ret = RustError{cudaSuccess};
+        try {
+            auto& gpu = select_gpu(slot.dev());
+            stream_t& stream = gpu[slot.stream()];
+            try {
+                dev_ptr_t<fr_t> d_m{mul_domain, stream}, d_a{mul_domain, stream},
+                                d_prod{mul_domain, stream};
+
+                stream.HtoD(&d_m[0], evals, ncols);
+
+                // Interpolate in place.
+                NTT::Base_dev_ptr(stream, &d_m[0], lg_domain_size,
+                                  NTT::InputOutputOrder::NN, NTT::Direction::inverse,
+                                  NTT::Type::standard);
+
+                CUDA_OK(cudaMemsetAsync(&d_m[domain_size], 0,
+                                        (mul_domain - domain_size) * sizeof(fr_t),
+                                        stream));
+
+                stream.HtoD(&d_a[0], assignment, assignment_len);
+                CUDA_OK(cudaMemsetAsync(&d_a[assignment_len], 0,
+                                        (mul_domain - assignment_len) * sizeof(fr_t),
+                                        stream));
+
+                Polynomial::MulDev(stream, &d_prod[0], &d_m[0], &d_a[0],
+                                   lg_mul_domain);
+
+                stream.DtoH(out, &d_prod[0], mul_domain);
+                stream.sync();
+            } catch (...) {
+                // After a fault the drain fails too, and its error must not
+                // replace the cause.
+                try {
+                    stream.sync();
+                } catch (...) {
+                }
+                throw;
+            }
+        } catch (const cuda_error& e) {
+#ifdef TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE
+            ret = RustError{e.code(), e.what()};
+#else
+            ret = RustError{e.code()};
+#endif
+        } catch (...) {
+            // Nothing may cross `extern "C"`: the wrappers in `snarkvm_api.cu`
+            // have no handler.
+            ret = RustError{cudaErrorUnknown};
+        }
+        return ret;
+    }
+
+    // The f/b/a evaluations and the three interpolations that consume them,
+    // with each array crossing the bus once.
+    RustError FourthRoundPolys(fr_t* a_out, fr_t* b_out, fr_t* f_out,
+                               const fr_t* row, const fr_t* col, const fr_t* rcv,
+                               size_t len, uint32_t lg_domain_size,
+                               const fr_t* alpha, const fr_t* beta,
+                               const fr_t* coeff, const fr_t* b_scale,
+                               const fr_t* a_scale)
+    {
+        if (len == 0)
+            return RustError{cudaSuccess};
+
+        size_t domain_size = (size_t)1 << lg_domain_size;
+        if (len > domain_size)
+            return RustError{cudaErrorInvalidValue};
+
+        // Takes a slot from the pool NTT and polymul use, so this path is
+        // bounded by FLIP_FLOP per device too. `select_gpu` can throw, so it
+        // sits inside the `try`; `slot_t` releases the slot on every path.
+        slot_t slot(resources);
+        RustError ret = RustError{cudaSuccess};
+        try {
+            auto& gpu = select_gpu(slot.dev());
+            stream_t& stream = gpu[slot.stream()];
+            try {
+            // Domain-sized, not len-sized: the interpolation runs over the
+            // whole domain, as `interpolate_with_pc` does after
+            // `evals.resize(domain.size(), zero)`. The tail is zeroed to match.
+            dev_ptr_t<fr_t> d_row{len, stream}, d_col{len, stream}, d_rcv{len, stream};
+            dev_ptr_t<fr_t> d_a{domain_size, stream}, d_b{domain_size, stream},
+                            d_f{domain_size, stream};
+            dev_ptr_t<fr_t> d_scan{len, stream}, d_scan_rev{len, stream};
+            dev_ptr_t<fr_t> d_t{1, stream};
+
+            stream.HtoD(&d_row[0], row, len);
+            stream.HtoD(&d_col[0], col, len);
+            stream.HtoD(&d_rcv[0], rcv, len);
+
+            if (domain_size > len) {
+                size_t tail = (domain_size - len) * sizeof(fr_t);
+                CUDA_OK(cudaMemsetAsync(&d_a[len], 0, tail, stream));
+                CUDA_OK(cudaMemsetAsync(&d_b[len], 0, tail, stream));
+                CUDA_OK(cudaMemsetAsync(&d_f[len], 0, tail, stream));
+            }
+
+            fourth_round_evals_device(stream, gpu.sm_count(),
+                                      &d_a[0], &d_b[0], &d_f[0],
+                                      &d_row[0], &d_col[0], &d_rcv[0],
+                                      &d_scan[0], &d_scan_rev[0], &d_t[0],
+                                      *alpha, *beta, *coeff, *b_scale, *a_scale,
+                                      len);
+
+            // Three interpolations, in place, on data that is already here.
+            NTT::Base_dev_ptr(stream, &d_a[0], lg_domain_size,
+                              NTT::InputOutputOrder::NN, NTT::Direction::inverse,
+                              NTT::Type::standard);
+            NTT::Base_dev_ptr(stream, &d_b[0], lg_domain_size,
+                              NTT::InputOutputOrder::NN, NTT::Direction::inverse,
+                              NTT::Type::standard);
+            NTT::Base_dev_ptr(stream, &d_f[0], lg_domain_size,
+                              NTT::InputOutputOrder::NN, NTT::Direction::inverse,
+                              NTT::Type::standard);
+
+            // The results come back into the caller's pageable buffers through
+            // the driver's bounce buffer.
+            fr_t* outs[3] = { a_out, b_out, f_out };
+            fr_t* srcs[3] = { &d_a[0], &d_b[0], &d_f[0] };
+            for (int i = 0; i < 3; i++)
+                stream.DtoH(outs[i], srcs[i], domain_size);
+            stream.sync();
+            } catch (...) {
+                // After a fault the drain fails too, and its error must not
+                // replace the cause.
+                try {
+                    stream.sync();
+                } catch (...) {
+                }
+                throw;
+            }
+        } catch (const cuda_error& e) {
+#ifdef TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE
+            ret = RustError{e.code(), e.what()};
+#else
+            ret = RustError{e.code()};
+#endif
+#ifdef TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE
+        } catch (const std::exception& e) {
+            // Ahead of the catch-all, so a `std::bad_alloc` keeps its message.
+            ret = RustError{cudaErrorUnknown, e.what()};
+#endif
+        } catch (...) {
+            // Nothing may cross `extern "C"`: the wrappers in `snarkvm_api.cu`
+            // have no handler.
+            ret = RustError{cudaErrorUnknown};
+        }
+        return ret;
+    }
 
     RustError NTT(fr_t* out, fr_t* in,
                   uint32_t lg_domain_size,
