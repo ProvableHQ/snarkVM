@@ -26,6 +26,43 @@
 #endif
 
 #include <ntt/ntt.cuh>
+#include <cstdio>
+#include <cstdlib>
+#include <cerrno>
+#include <stdexcept>
+
+// Blank is nothing, or nothing but whitespace. Separate from `getenv` so the
+// rule can be asserted at compile time: every knob caches its answer in a
+// `static`, so no test run could exercise it.
+constexpr bool env_is_blank(const char* s)
+{
+    if (s == nullptr) return true;
+    for (; *s != '\0'; ++s) {
+        if (*s != ' ' && *s != '\t' && *s != '\r' && *s != '\n') return false;
+    }
+    return true;
+}
+
+static_assert(env_is_blank(nullptr), "unset is blank");
+static_assert(env_is_blank(""), "`docker run -e X` is blank");
+static_assert(env_is_blank(" \t\r\n"), "whitespace-only is blank");
+static_assert(!env_is_blank("12"), "a value is not blank");
+static_assert(!env_is_blank(" 12"), "whitespace around a value leaves a value, "
+                                    "which env_int_in_range then refuses");
+
+// `getenv`, with a blank value reading as unset.
+//
+// An empty or whitespace-only value, as an unset `${VAR}` in a CI expression, a
+// bare `docker run -e X` or a stray `--env-file` line produces, means nobody set
+// the knob. Every knob reads through this. Whitespace around a value leaves it a
+// value, so `" 12"` still reaches `snarkvm_t::env_int_in_range` and is refused
+// there.
+inline const char* snarkvm_env(const char* name)
+{
+    const char* s = getenv(name);
+    return env_is_blank(s) ? nullptr : s;
+}
+
 #include "polynomial.cuh"
 
 #include <ec/jacobian_t.hpp>
@@ -170,7 +207,53 @@ public:
     // domain up to this, `PolyMul` up to a quarter of it.
     size_t pool_elements() const { return allocated_elements; }
 
-    snarkvm_t(int max_lg_domain) : pool(ngpus()) {
+    // A tuning knob that cannot be parsed is refused, not ignored, so a typo
+    // cannot run as the default. `snarkvm_env` maps a blank variable to unset
+    // before it reaches here; a value with whitespace around it still arrives,
+    // and is refused.
+    static int env_int_in_range(const char* name, const char* s,
+                                int lo, int hi)
+    {
+        // `strtol` skips leading whitespace but not trailing, which would
+        // accept " 12" and refuse "12 ". Requiring the first character to start
+        // an integer literal makes both sides the same answer.
+        char* end = nullptr;
+        errno = 0;
+        long v = strtol(s, &end, 10);
+        bool starts_clean = (s[0] == '-' || s[0] == '+' || (s[0] >= '0' && s[0] <= '9'));
+        bool parsed = starts_clean && (end != s) && (*end == '\0') && (errno == 0);
+        if (!parsed || v < lo || v > hi) {
+            fprintf(stderr,
+                    "%s=\"%s\" is not a value this build understands "
+                    "(expected an integer in %d..%d). Refusing rather than "
+                    "falling back to the default, which would make the run look "
+                    "like a measurement of the setting you asked for.\n",
+                    name, s, lo, hi);
+            abort();
+        }
+        return (int)v;
+    }
+
+    // Worker threads for MSM. MSM() spawns one task per GPU and blocks on it,
+    // so with one thread per GPU every MSM call queues behind every other. Two
+    // per GPU, fitted on an L4, overlap one call's upload with another's
+    // compute; each concurrent call builds its own bucket arrays, so this
+    // trades device memory for the overlap. SNARKVM_MSM_THREADS=<n> overrides
+    // it.
+    static size_t msm_pool_size() {
+        size_t n = ngpus() * 2;
+        if (const char* s = snarkvm_env("SNARKVM_MSM_THREADS")) {
+            n = (size_t)env_int_in_range("SNARKVM_MSM_THREADS", s, 1, 1024);
+        }
+        return n;
+    }
+
+    snarkvm_t(int max_lg_domain) : pool(msm_pool_size()) {
+        // Validates both tuning knobs before anything serves: `msm_pool_size()`
+        // ran in the initialiser list, and this forces the other, so a typo
+        // refuses to start rather than aborting at the first MSM.
+        (void)msm_wbits();
+
         // Allocate storage for 4 polynomials, required by polynomial multiplication
         // Will be allocated per gpu per stream
         allocated_elements = ((size_t)1 << max_lg_domain) * 4;
@@ -313,6 +396,26 @@ public:
         return RustError{cudaSuccess};
     }
 
+    // The MSM window for MSM(). 14 was fitted on an H100
+    // at the proof's sizes, 2^18 and 2^19; sppark's heuristic picks 10 at
+    // 2^17-2^18, where most MSM time sits. SNARKVM_MSM_WBITS=<10..18> selects
+    // a window, and SNARKVM_MSM_WBITS=auto restores sppark's heuristic, which
+    // 0 means to the caller.
+    //
+    // Read and validated once, and the constructor forces it, so a bad value
+    // refuses to start. It must not first run at the MSM call site, inside the
+    // worker's `catch (...)`, which `abort()` would bypass.
+    static int msm_wbits()
+    {
+        static const int wbits = [] {
+            const char* w = snarkvm_env("SNARKVM_MSM_WBITS");
+            if (w == nullptr) return 14;
+            if (strcmp(w, "auto") == 0) return 0;
+            return env_int_in_range("SNARKVM_MSM_WBITS", w, 10, 18);
+        }();
+        return wbits;
+    }
+
     // Puts `npoints` host points of `ffi_affine_size` bytes each into `d_dst`,
     // one device slot per point, on `stream`. The caller syncs `stream` before
     // anything on another stream reads the slots, and has checked that
@@ -405,9 +508,17 @@ public:
                     upload_points(&d_slots[0], pts, sz, ffi_affine_size, stream);
                     stream.sync();
 
-                    // `points` stays nullptr: the bases reach invoke as a
-                    // device pointer.
-                    msm_t<bucket_t, point_t, affine_t, scalar_t> msm(nullptr, sz,
+                    // invoke() takes the window from the count passed to the
+                    // constructor and sizes buckets from it, so a synthetic
+                    // count selects the window while invoke() processes the
+                    // real sz. `points` stays nullptr: the bases reach invoke
+                    // as a device pointer.
+                    int wbits = msm_wbits();
+                    // Smallest count for which floor(log2(1.5n)) - 8 == wbits.
+                    size_t hint = wbits
+                        ? (size_t)((1ULL << (wbits + 8)) * 2 / 3) + 32
+                        : sz;
+                    msm_t<bucket_t, point_t, affine_t, scalar_t> msm(nullptr, hint,
                                                                      ffi_affine_size, dev);
                     ret = msm.invoke(partial_sums[i], device_points(&d_slots[0]),
                                      sz, &scalars[start], mont);
