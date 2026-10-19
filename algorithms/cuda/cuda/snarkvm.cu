@@ -144,6 +144,8 @@ void round4_sub_device(const stream_t& stream, int sm_count, fr_t* d_out,
 void round4_vanishing_device(const stream_t& stream, int sm_count,
                              fr_t* d_q, unsigned* d_nonzero, const fr_t* d_p,
                              size_t n, size_t q_len, size_t total, fr_t mult);
+void trimmed_len_device(const stream_t& stream, int sm_count,
+                        unsigned long long* d_len, const fr_t* d_p, size_t n);
 
 // Returns `cudaErrorNotSupported` with a message naming the domain and the
 // limit it exceeds. Falls back to the bare code if the message cannot be
@@ -339,9 +341,12 @@ public:
     //   `from_coefficients_vec`.
     // - `d_evals`, when not null, is `row`, `col` and `rcv` already on device
     //   0, contiguous, and is read in place of the host arrays.
-    // - `keep`, when not null, receives `a`, `b` and `f` on device 0, from the
-    //   resident pool, for `ReleaseBases` to free. It receives three nulls if
-    //   the device kept nothing, as on every error.
+    // - `keep`, when not null, receives `a`, `b`, `f` and the quotient on
+    //   device 0, from the resident pool, for `ReleaseBases` to free, and
+    //   `kept_lens` the lengths `a`, `b`, `g` and the quotient trim to. Then
+    //   none of the four is downloaded, and their outputs may be null. `keep`
+    //   receives four nulls if the device kept nothing, as on every error, and
+    //   then all four are downloaded.
     RustError FourthRoundChain(fr_t* a_out, fr_t* b_out, fr_t* g_out,
                                fr_t* lhs_out, fr_t* f0_out,
                                const fr_t* row, const fr_t* col, const fr_t* rcv,
@@ -351,10 +356,10 @@ public:
                                const fr_t* alpha, const fr_t* beta,
                                const fr_t* coeff, const fr_t* b_scale,
                                const fr_t* a_scale, const fr_t* selector_mult,
-                               void** keep)
+                               void** keep, size_t* kept_lens)
     {
         if (keep)
-            keep[0] = keep[1] = keep[2] = nullptr;
+            keep[0] = keep[1] = keep[2] = keep[3] = nullptr;
         if (len == 0)
             return RustError{cudaSuccess};
         if (ngpus() != 1) {
@@ -377,8 +382,8 @@ public:
             auto& gpu = select_gpu(slot.dev());
             stream_t& stream = gpu[slot.stream()];
             try {
-                pooled_t kept[3] = {{stream}, {stream}, {stream}};
-                bool retained = keep && Retain(stream, kept, domain_size * sizeof(fr_t));
+                pooled_t kept[4] = {{stream}, {stream}, {stream}, {stream}};
+                bool retained = keep && Retain(stream, kept, 4, domain_size * sizeof(fr_t));
                 std::optional<dev_ptr_t<fr_t>> owned[3];
                 fr_t* d[3];
                 for (int i = 0; i < 3; i++) {
@@ -454,20 +459,32 @@ public:
 
                 // The vanishing divide and the selector's scaling, with the
                 // remainder checked rather than built.
-                dev_ptr_t<fr_t> d_lhs{q_len, stream};
+                dev_ptr_t<fr_t> d_owned_lhs{retained ? 0 : q_len, stream};
+                fr_t* d_lhs = retained ? (fr_t*)kept[3].p : &d_owned_lhs[0];
                 dev_ptr_t<unsigned> d_nonzero{1, stream};
                 CUDA_OK(cudaMemsetAsync(&d_nonzero[0], 0, sizeof(unsigned), stream));
-                round4_vanishing_device(stream, gpu.sm_count(), &d_lhs[0],
+                round4_vanishing_device(stream, gpu.sm_count(), d_lhs,
                                         &d_nonzero[0], &d_prod[0],
                                         domain_size, q_len, mul_domain,
                                         *selector_mult);
 
                 unsigned nonzero = 0;
-                stream.DtoH(a_out, &d_a[0], domain_size);
-                stream.DtoH(b_out, &d_b[0], domain_size);
-                stream.DtoH(g_out, &d_f[1], domain_size - 1);
+                dev_ptr_t<unsigned long long> d_lens{retained ? 4u : 0u, stream};
+                unsigned long long lens[4] = {};
+                if (retained) {
+                    CUDA_OK(cudaMemsetAsync(&d_lens[0], 0, sizeof(lens), stream));
+                    const fr_t* ps[4] = {d_a, d_b, &d_f[1], d_lhs};
+                    size_t ns[4] = {domain_size, domain_size, domain_size - 1, q_len};
+                    for (int i = 0; i < 4; i++)
+                        trimmed_len_device(stream, gpu.sm_count(), &d_lens[i], ps[i], ns[i]);
+                    stream.DtoH(lens, &d_lens[0], 4);
+                } else {
+                    stream.DtoH(a_out, &d_a[0], domain_size);
+                    stream.DtoH(b_out, &d_b[0], domain_size);
+                    stream.DtoH(g_out, &d_f[1], domain_size - 1);
+                    stream.DtoH(lhs_out, d_lhs, q_len);
+                }
                 stream.DtoH(f0_out, &d_f[0], 1);
-                stream.DtoH(lhs_out, &d_lhs[0], q_len);
                 stream.DtoH(&nonzero, &d_nonzero[0], 1);
                 stream.sync();
 
@@ -477,8 +494,10 @@ public:
                 if (nonzero)
                     ret = RustError{cudaErrorAssert};
                 else if (retained)
-                    for (int i = 0; i < 3; i++)
+                    for (int i = 0; i < 4; i++) {
                         keep[i] = kept[i].release();
+                        kept_lens[i] = (size_t)lens[i];
+                    }
             } catch (...) {
                 // After a fault the drain fails too, and its error must not
                 // replace the cause.
@@ -889,6 +908,12 @@ public:
                 d_bases = nullptr;
                 d_polys = nullptr;
             }
+            // A term with no host coefficients has only its device copy.
+            for (size_t j = 0; j < nterms; j++)
+                if (lens[j] != 0 && !polys[j] && !(d_polys && d_polys[j])) {
+                    out->inf();
+                    return RustError{cudaErrorInvalidValue};
+                }
             std::optional<dev_ptr_t<typename affine_t::mem_t>> d_owned;
             typename affine_t::mem_t* d_slots;
             if (d_bases) {
@@ -1062,10 +1087,10 @@ public:
         void* release() { void* r = p; p = nullptr; return r; }
     };
 
-    // Fills all of `out` with `bytes` each from the resident pool on `stream`,
-    // or none. A failed allocation leaves CUDA's last error set, which the next
-    // launch check would report, so it is cleared.
-    bool Retain(const stream_t& stream, pooled_t out[3], size_t bytes) noexcept
+    // Fills all `n` of `out` with `bytes` each from the resident pool on
+    // `stream`, or none. A failed allocation leaves CUDA's last error set, which
+    // the next launch check would report, so it is cleared.
+    bool Retain(const stream_t& stream, pooled_t out[], int n, size_t bytes) noexcept
     {
         try {
             bases_init();
@@ -1073,7 +1098,7 @@ public:
             cudaGetLastError();
             return false;
         }
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < n; i++) {
             if (cudaMallocFromPoolAsync(&out[i].p, bytes, bases_pool, stream) != cudaSuccess) {
                 cudaGetLastError();
                 for (int j = 0; j <= i; j++) {
@@ -1097,6 +1122,97 @@ public:
             stream_t& stream = *bases_stream;
             CUDA_OK(cudaMemcpyAsync(out, d, bytes, cudaMemcpyDeviceToHost, stream));
             stream.sync();
+            return RustError{cudaSuccess};
+        } catch (const cuda_error& e) {
+            return RustError{e.code()};
+        } catch (...) {
+            return RustError{cudaErrorUnknown};
+        }
+    }
+
+    // `p(z)` for the `len` coefficients at `d` on device 0: the remainder of
+    // the division by `X - z`, of a scratch copy.
+    RustError DeviceEvaluate(fr_t* out, const fr_t* d, size_t len, const fr_t* z)
+    {
+        if (len == 0) {
+            memset((void*)out, 0, sizeof(fr_t));
+            return RustError{cudaSuccess};
+        }
+        slot_t slot(resources);
+        if (slot.dev() != 0)
+            return RustError{cudaErrorInvalidValue};
+        try {
+            auto& gpu = select_gpu(0);
+            stream_t& stream = gpu[slot.stream()];
+            try {
+                dev_ptr_t<fr_t> d_tmp{len, stream};
+                CUDA_OK(cudaMemcpyAsync(&d_tmp[0], d, len * sizeof(fr_t),
+                                        cudaMemcpyDeviceToDevice, stream));
+                if (len >= 2)
+                    divide_by_x_minus_z_device(stream, &d_tmp[0], len, *z);
+                stream.DtoH(out, &d_tmp[0], 1);
+                stream.sync();
+            } catch (...) {
+                try {
+                    stream.sync();
+                } catch (...) {
+                }
+                throw;
+            }
+            return RustError{cudaSuccess};
+        } catch (const cuda_error& e) {
+            return RustError{e.code()};
+        } catch (...) {
+            return RustError{cudaErrorUnknown};
+        }
+    }
+
+    // `Σ coeffs[j] · d_polys[j]` over `out_len` coefficients, into memory from
+    // the resident pool on device 0 that `*keep` receives for `ReleaseBases` to
+    // free, and its trimmed length into `*trimmed`. `*keep` stays null if the
+    // pool cannot hold it, which is not an error.
+    RustError DeviceCombine(void** keep, size_t* trimmed, size_t nterms,
+                            const fr_t* const* d_polys, const size_t* lens,
+                            const fr_t* coeffs, size_t out_len)
+    {
+        *keep = nullptr;
+        *trimmed = 0;
+        for (size_t j = 0; j < nterms; j++)
+            if (lens[j] > out_len)
+                return RustError{cudaErrorInvalidValue};
+        if (out_len == 0 || !BasesSupported())
+            return RustError{cudaSuccess};
+        slot_t slot(resources);
+        if (slot.dev() != 0)
+            return RustError{cudaErrorInvalidValue};
+        try {
+            auto& gpu = select_gpu(0);
+            stream_t& stream = gpu[slot.stream()];
+            try {
+                pooled_t acc[1] = {{stream}};
+                if (!Retain(stream, acc, 1, out_len * sizeof(fr_t)))
+                    return RustError{cudaSuccess};
+                fr_t* d_acc = (fr_t*)acc[0].p;
+                CUDA_OK(cudaMemsetAsync(d_acc, 0, out_len * sizeof(fr_t), stream));
+                for (size_t j = 0; j < nterms; j++)
+                    if (lens[j] != 0)
+                        accumulate_axpy_device(stream, gpu.sm_count(), d_acc,
+                                               d_polys[j], coeffs[j], lens[j]);
+                dev_ptr_t<unsigned long long> d_len{1, stream};
+                CUDA_OK(cudaMemsetAsync(&d_len[0], 0, sizeof(unsigned long long), stream));
+                trimmed_len_device(stream, gpu.sm_count(), &d_len[0], d_acc, out_len);
+                unsigned long long len = 0;
+                stream.DtoH(&len, &d_len[0], 1);
+                stream.sync();
+                *trimmed = (size_t)len;
+                *keep = acc[0].release();
+            } catch (...) {
+                try {
+                    stream.sync();
+                } catch (...) {
+                }
+                throw;
+            }
             return RustError{cudaSuccess};
         } catch (const cuda_error& e) {
             return RustError{e.code()};
@@ -1175,6 +1291,11 @@ public:
             zero.zero();
             *out = point_t{zero, fp_t::one(), zero};
             return RustError{cudaSuccess};
+        }
+        // Scalars with no host copy have only their device copy.
+        if (!scalars && !d_scalars) {
+            out->inf();
+            return RustError{cudaErrorInvalidValue};
         }
 
         size_t bases_per_gpu = (npoints + ngpus() - 1) / ngpus();

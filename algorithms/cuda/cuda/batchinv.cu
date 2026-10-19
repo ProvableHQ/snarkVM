@@ -176,11 +176,23 @@ __global__ void d_scale(T* out, const T* in, T s, size_t len)
         out[i] = in[i] * s;
 }
 
+// `*len` becomes at least one past the highest non-zero coefficient of `p`, so
+// from zero it is the length `p` trims to.
+template<class T>
+__global__ void d_trimmed_len(unsigned long long* len, const T* p, size_t n)
+{
+    size_t stride = (size_t)gridDim.x * blockDim.x;
+    for (size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x; i < n; i += stride)
+        if (!p[i].is_zero())
+            atomicMax(len, (unsigned long long)i + 1);
+}
+
 // nvcc compiles this file twice and everything below is host-only, so the
 // device pass needs these explicit instantiations. Without them,
 // `cudaFuncGetAttributes` on a cooperative kernel fails with "invalid resource
 // handle".
 template __global__ void d_scale<fr_t>(fr_t*, const fr_t*, fr_t, size_t);
+template __global__ void d_trimmed_len<fr_t>(unsigned long long*, const fr_t*, size_t);
 template __global__ void d_axpy<fr_t>(fr_t*, const fr_t*, fr_t, size_t);
 template __global__ void d_sub_ext<fr_t>(fr_t*, const fr_t*, size_t, const fr_t*, size_t);
 template __global__ void d_vanishing_scaled<fr_t>(fr_t*, unsigned*, const fr_t*, size_t, size_t, size_t, fr_t);
@@ -280,6 +292,18 @@ void round4_vanishing_device(const stream_t& stream, int sm_count,
     int grid = (int)std::min((total + block - 1) / block, (size_t)sm_count * 8);
     d_vanishing_scaled<<<grid, block, 0, stream>>>(d_q, d_nonzero, d_p, n, q_len,
                                                    total, mult);
+    CUDA_OK(cudaGetLastError());
+}
+
+// Raises `*d_len` to the length `d_p` trims to. Zero `*d_len` first.
+void trimmed_len_device(const stream_t& stream, int sm_count,
+                        unsigned long long* d_len, const fr_t* d_p, size_t n)
+{
+    if (n == 0)
+        return;
+    int block = 256;
+    int grid = (int)std::min((n + block - 1) / block, (size_t)sm_count * 8);
+    d_trimmed_len<<<grid, block, 0, stream>>>(d_len, d_p, n);
     CUDA_OK(cudaGetLastError());
 }
 

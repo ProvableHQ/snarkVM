@@ -1460,10 +1460,10 @@ mod proof_vector {
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
         if snarkvm_algorithms_cuda::device_count() == 1 {
             let after = snarkvm_algorithms_cuda::device_poly::stats();
-            assert!(after.retained >= before.retained + 6, "each proof keeps its three matrices' outputs");
+            assert!(after.retained >= before.retained + 8, "each proof keeps its three matrices' outputs and h_2");
             assert!(
-                after.device_reads >= before.device_reads + 24,
-                "each proof reads them for its commitments and its opening"
+                after.device_reads >= before.device_reads + 34,
+                "each proof reads them for h_2, its commitments and its opening"
             );
             assert_eq!((after.retain_failures, after.host_fallbacks), (0, 0));
         }

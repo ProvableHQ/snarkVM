@@ -208,7 +208,7 @@ extern "C" {
                                          const fr_t* coeff, const fr_t* b_scale,
                                          const fr_t* a_scale,
                                          const fr_t* selector_mult,
-                                         void** keep)
+                                         void** keep, size_t* kept_lens)
     {
         return catch_all([&] {
             if (!snarkvm_g.ok()) {
@@ -219,7 +219,7 @@ extern "C" {
                                                lg_domain_size, lg_mul_domain,
                                                q_len, alpha, beta, coeff,
                                                b_scale, a_scale, selector_mult,
-                                               keep);
+                                               keep, kept_lens);
         });
     }
 
@@ -340,6 +340,29 @@ extern "C" {
                 return snarkvm_g.failure();
             }
             return snarkvm_g->DownloadResident(out, d, bytes);
+        });
+    }
+
+    RustError snarkvm_device_evaluate(fr_t* out, const fr_t* d, size_t len,
+                                      const fr_t* z) {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return snarkvm_g->DeviceEvaluate(out, d, len, z);
+        });
+    }
+
+    RustError snarkvm_device_combine(void** keep, size_t* trimmed, size_t nterms,
+                                     const fr_t* const* d_polys,
+                                     const size_t* lens, const fr_t* coeffs,
+                                     size_t out_len) {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return snarkvm_g->DeviceCombine(keep, trimmed, nterms, d_polys, lens,
+                                            coeffs, out_len);
         });
     }
 

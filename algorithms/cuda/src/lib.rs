@@ -82,6 +82,7 @@ unsafe extern "C" {
         a_scale: *const core::ffi::c_void,
         selector_mult: *const core::ffi::c_void,
         keep: *mut *mut c_void,
+        kept_lens: *mut usize,
     ) -> cuda::Error;
 
     fn snarkvm_fourth_round_polys(
@@ -170,6 +171,18 @@ unsafe extern "C" {
     ) -> cuda::Error;
 
     fn snarkvm_resident_download(out: *mut c_void, d: *const c_void, bytes: usize) -> cuda::Error;
+
+    fn snarkvm_device_evaluate(out: *mut c_void, d: *const c_void, len: usize, z: *const c_void) -> cuda::Error;
+
+    fn snarkvm_device_combine(
+        keep: *mut *mut c_void,
+        trimmed: *mut usize,
+        nterms: usize,
+        d_polys: *const *const c_void,
+        lens: *const usize,
+        coeffs: *const c_void,
+        out_len: usize,
+    ) -> cuda::Error;
 
     fn snarkvm_bases_release(d: *mut c_void);
 }
@@ -298,17 +311,16 @@ pub fn lineval_interpolate_mul<T: 'static>(
 ///
 /// - `selector_mult` is `combiner * src_domain.size_as_field_element *
 ///   target_domain.size_inv`, not the combiner. A wrong value is not detected.
-/// - `q_len`, which is `lhs_out.len()`, is an upper bound on the quotient's
-///   length for `h = a_poly - b*f`. Pass `domain - 1`, which always holds since
-///   `deg(b*f) <= 2 * domain - 2`. A bound that is too small is refused with
-///   `cudaErrorAssert`.
-/// - `g_out` receives `domain - 1` untrimmed coefficients. Build `g` through
-///   something that trims, or `check_degrees_and_bounds` rejects it against
-///   `g_m`'s degree bound.
+/// - `q_len` is an upper bound on the quotient's length for `h = a_poly - b*f`.
+///   Pass `domain - 1`, which always holds since `deg(b*f) <= 2 * domain - 2`.
+///   A bound that is too small is refused with `cudaErrorAssert`.
 ///
-/// On one GPU the device also keeps `a`, `b` and `g`, returned as
-/// `[a, b, g]`. `None` means it kept nothing, and the outputs are complete
-/// either way.
+/// With `retain` on one GPU the device keeps `a`, `b`, `g` and `lhs`, returned
+/// as `[a, b, g, lhs]` at their trimmed lengths, and the outputs are left
+/// empty. Otherwise it returns `None` and the outputs hold `domain`, `domain`,
+/// `domain - 1` and `q_len` untrimmed coefficients. Build `g` through
+/// something that trims, or `check_degrees_and_bounds` rejects it against
+/// `g_m`'s degree bound.
 ///
 /// # Errors
 ///
@@ -317,10 +329,11 @@ pub fn lineval_interpolate_mul<T: 'static>(
 /// `cudaErrorInvalidValue` means a shape was invalid.
 #[allow(clippy::too_many_arguments)]
 pub fn fourth_round_chain<T: 'static>(
-    a_out: &mut [T],
-    b_out: &mut [T],
-    g_out: &mut [T],
-    lhs_out: &mut [T],
+    a_out: &mut Vec<T>,
+    b_out: &mut Vec<T>,
+    g_out: &mut Vec<T>,
+    lhs_out: &mut Vec<T>,
+    q_len: usize,
     f0_out: &mut T,
     row: &[T],
     col: &[T],
@@ -333,7 +346,8 @@ pub fn fourth_round_chain<T: 'static>(
     b_scale: &T,
     a_scale: &T,
     selector_mult: &T,
-) -> Result<Option<[DevicePoly; 3]>, cuda::Error> {
+    retain: bool,
+) -> Result<Option<[DevicePoly; 4]>, cuda::Error> {
     assert_type::<T, Fr>();
     let len = row.len();
     assert_eq!(col.len(), len, "row and col are evaluations over the same domain");
@@ -341,26 +355,39 @@ pub fn fourth_round_chain<T: 'static>(
     let domain = 1usize << lg_domain_size;
     let mul_domain = 1usize << lg_mul_domain;
     assert!(len <= domain, "evaluations do not fit the domain they interpolate over");
-    assert_eq!(a_out.len(), domain, "a and b are domain-sized");
-    assert_eq!(b_out.len(), domain);
-    assert_eq!(g_out.len(), domain - 1, "g is f without its constant term");
-    assert!(mul_domain >= 2 * domain, "the product does not fit its domain");
-    assert!(lhs_out.len() <= domain, "the single-step branch needs q_len <= domain");
-    assert!(lhs_out.len() + domain <= mul_domain);
+    assert!(domain >= 1 && mul_domain >= 2 * domain, "the product does not fit its domain");
+    assert!(q_len <= domain, "the single-step branch needs q_len <= domain");
+    assert!(q_len + domain <= mul_domain);
+    let mut outs = [(a_out, domain), (b_out, domain), (g_out, domain - 1), (lhs_out, q_len)];
+    for (out, n) in &mut outs {
+        out.clear();
+        out.reserve_exact(*n);
+    }
+    // SAFETY, for each `set_len` below: each output has capacity for `n`
+    // elements, and they are initialised first.
     if len == 0 {
+        for (out, n) in outs {
+            // The zero `Fr` is all zero bytes.
+            unsafe {
+                out.as_mut_ptr().write_bytes(0, n);
+                out.set_len(n);
+            }
+        }
         return Ok(None);
     }
     // Below the early return: an empty input never reaches the transform.
     assert!(lg_domain_size > 0, "the interpolations fault on a one-element domain");
     let hit = resident_evals::lookup([row, col, rcv]);
-    let retain = device_poly::supported();
-    let mut keep = [std::ptr::null_mut(); 3];
+    let retain = retain && device_poly::retain();
+    let mut keep = [std::ptr::null_mut(); 4];
+    let mut kept_lens = [0usize; 4];
+    let [a, b, g, lhs] = outs.each_mut().map(|(out, _)| out.as_mut_ptr() as *mut c_void);
     let err = unsafe {
         snarkvm_fourth_round_chain(
-            a_out.as_mut_ptr() as *mut core::ffi::c_void,
-            b_out.as_mut_ptr() as *mut core::ffi::c_void,
-            g_out.as_mut_ptr() as *mut core::ffi::c_void,
-            lhs_out.as_mut_ptr() as *mut core::ffi::c_void,
+            a,
+            b,
+            g,
+            lhs,
             f0_out as *mut _ as *mut core::ffi::c_void,
             row.as_ptr() as *const core::ffi::c_void,
             col.as_ptr() as *const core::ffi::c_void,
@@ -369,7 +396,7 @@ pub fn fourth_round_chain<T: 'static>(
             len,
             lg_domain_size,
             lg_mul_domain,
-            lhs_out.len(),
+            q_len,
             alpha as *const _ as *const core::ffi::c_void,
             beta as *const _ as *const core::ffi::c_void,
             coeff as *const _ as *const core::ffi::c_void,
@@ -377,10 +404,22 @@ pub fn fourth_round_chain<T: 'static>(
             a_scale as *const _ as *const core::ffi::c_void,
             selector_mult as *const _ as *const core::ffi::c_void,
             if retain { keep.as_mut_ptr() } else { std::ptr::null_mut() },
+            kept_lens.as_mut_ptr(),
         )
     };
     // The C++ keeps nothing on an error.
-    if err.code != 0 { Err(err) } else { Ok(retain.then(|| device_poly::adopt(keep, domain)).flatten()) }
+    if err.code != 0 {
+        return Err(err);
+    }
+    let kept = if retain { device_poly::adopt(keep, kept_lens, domain) } else { None };
+    if kept.is_none() {
+        for (out, n) in outs {
+            // The C++ kept nothing, so it wrote all `n`.
+            unsafe { out.set_len(n) };
+            device_poly::count_download(n * FR_BYTES);
+        }
+    }
+    Ok(kept)
 }
 
 /// The fourth round's `a`, `b` and `f` polynomials on K for one
@@ -554,7 +593,8 @@ pub fn polymul<T: std::clone::Clone + 'static>(
 /// `accumulate_open_matches_the_host_sequence` checks it.
 ///
 /// A term whose [`DeviceCopy`] mirrors its coefficients is read from the
-/// device instead of uploaded.
+/// device instead of uploaded. A device-only term passes no host coefficients
+/// and is read from the device at its own length.
 ///
 /// # Panics
 ///
@@ -581,11 +621,12 @@ where
     let mut coeffs: Vec<F> = Vec::with_capacity(terms.len());
     let mut d_polys: Vec<*const c_void> = Vec::with_capacity(terms.len());
     for (coeff, poly, device) in terms {
-        assert!(poly.len() <= out_len, "term of {} exceeds the output of {}", poly.len(), out_len);
-        polys.push(poly.as_ptr() as *const core::ffi::c_void);
-        lens.push(poly.len());
+        let (host, len, d) = device.term(poly);
+        assert!(len <= out_len, "term of {len} exceeds the output of {out_len}");
+        polys.push(host);
+        lens.push(len);
         coeffs.push(*coeff);
-        d_polys.push(device.term(poly));
+        d_polys.push(d);
     }
 
     // Assumed initialised only after the call succeeds, as in `msm`.
@@ -633,19 +674,38 @@ pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
         std::any::type_name::<Scalar>()
     );
 
-    let npoints = scalars.len();
+    let d_scalars = if mont { device_poly::lent(scalars) } else { std::ptr::null() };
+    msm_inner(points, scalars.as_ptr() as *const c_void, scalars.len(), mont, d_scalars)
+}
+
+/// [`msm`] with `Fr` scalars that are only on the device.
+pub fn msm_device<Affine: 'static, Projective: 'static>(
+    points: &[Affine],
+    scalars: &DevicePoly,
+) -> Result<Projective, cuda::Error> {
+    assert_type::<Affine, G1Affine>();
+    assert_type::<Projective, G1Projective>();
+    msm_inner(points, std::ptr::null(), scalars.len(), true, scalars.read())
+}
+
+fn msm_inner<Affine: 'static, Projective: 'static>(
+    points: &[Affine],
+    scalars: *const c_void,
+    npoints: usize,
+    mont: bool,
+    d_scalars: *const c_void,
+) -> Result<Projective, cuda::Error> {
     if npoints > points.len() {
-        panic!("length mismatch {} points < {} scalars", points.len(), scalars.len())
+        panic!("length mismatch {} points < {} scalars", points.len(), npoints)
     }
     let hit = resident::lookup(&points[..npoints]);
-    let d_scalars = if mont { device_poly::lent(scalars) } else { std::ptr::null() };
     let mut ret = std::mem::MaybeUninit::<Projective>::uninit();
     let err = unsafe {
         snarkvm_msm(
             ret.as_mut_ptr() as *mut c_void,
             points as *const _ as *const c_void,
             npoints,
-            scalars as *const _ as *const c_void,
+            scalars,
             std::mem::size_of::<Affine>(),
             mont,
             hit.ptr(),
@@ -788,12 +848,11 @@ mod argument_guards {
     #[should_panic(expected = "one-element domain")]
     fn fourth_round_chain_refuses_a_one_element_domain() {
         let one = [Fr::default()];
-        let (mut a, mut b) = (vec![Fr::default(); 1], vec![Fr::default(); 1]);
-        let (mut g, mut lhs) = (Vec::new(), vec![Fr::default(); 1]);
+        let (mut a, mut b, mut g, mut lhs) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         let mut f0 = Fr::default();
         let z = Fr::default();
         let _ = super::fourth_round_chain(
-            &mut a, &mut b, &mut g, &mut lhs, &mut f0, &one, &one, &one, 0, 1, &z, &z, &z, &z, &z, &z,
+            &mut a, &mut b, &mut g, &mut lhs, 1, &mut f0, &one, &one, &one, 0, 1, &z, &z, &z, &z, &z, &z, true,
         );
     }
 

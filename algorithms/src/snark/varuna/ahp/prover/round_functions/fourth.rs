@@ -41,7 +41,7 @@ use rand::Rng;
 use std::collections::BTreeMap;
 
 type Sum<F> = F;
-type Lhs<F> = DensePolynomial<F>;
+type Lhs<F> = LabeledPolynomial<F>;
 type Apoly<F> = LabeledPolynomial<F>;
 type Bpoly<F> = LabeledPolynomial<F>;
 type Gpoly<F> = LabeledPolynomial<F>;
@@ -183,10 +183,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             // coefficients. The device rejects a quotient with terms above
             // `q_len`, and the host trims what comes back.
             let q_len = domain - 1;
-            let mut a_v = vec![F::zero(); domain];
-            let mut b_v = vec![F::zero(); domain];
-            let mut g_v = vec![F::zero(); domain - 1];
-            let mut lhs_v = vec![F::zero(); q_len];
+            let (mut a_v, mut b_v, mut g_v, mut lhs_v) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
             let mut f0 = F::zero();
             let matrix_sumcheck_constants =
                 v_R_i_alpha_v_C_i_beta * constraint_domain.size_inv * variable_domain.size_inv;
@@ -196,6 +193,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 &mut b_v,
                 &mut g_v,
                 &mut lhs_v,
+                q_len,
                 &mut f0,
                 &row_on_K.evaluations,
                 &col_on_K.evaluations,
@@ -208,30 +206,30 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 &R_size_C_size,
                 &v_R_i_alpha_v_C_i_beta,
                 &selector_mult,
+                true,
             );
             let kept = crate::cuda_must_succeed!(result, "fourth_round_chain");
 
+            let g_label = witness_label(id, &format!("g_{label}"), 0);
+            let g_bound = Some(non_zero_domain.size() - 2);
+            let [a_label, b_label, lhs_label] =
+                ["a_poly", "b_poly", "lhs"].map(|p| format!("circuit_{id}_{p}_{label}"));
             // `from_coefficients_vec` trims, which g needs to pass
-            // `check_degrees_and_bounds` against its degree bound.
-            let g = DensePolynomial::from_coefficients_vec(g_v);
-            let lhs = DensePolynomial::from_coefficients_vec(lhs_v);
-            let g_label = format!("g_{label}");
-            let g = LabeledPolynomial::new(witness_label(id, &g_label, 0), g, Some(non_zero_domain.size() - 2), None);
-            let a_poly = LabeledPolynomial::new(
-                format!("circuit_{id}_a_poly_{label}"),
-                DensePolynomial::from_coefficients_vec(a_v),
-                None,
-                None,
-            );
-            let b_poly = LabeledPolynomial::new(
-                format!("circuit_{id}_b_poly_{label}"),
-                DensePolynomial::from_coefficients_vec(b_v),
-                None,
-                None,
-            );
-            let (g, a_poly, b_poly) = match kept {
-                Some([d_a, d_b, d_g]) => (g.with_device(d_g), a_poly.with_device(d_a), b_poly.with_device(d_b)),
-                None => (g, a_poly, b_poly),
+            // `check_degrees_and_bounds` against its degree bound. The device
+            // reports the trimmed lengths.
+            let (lhs, g, a_poly, b_poly) = match kept {
+                Some([d_a, d_b, d_g, d_lhs]) => (
+                    LabeledPolynomial::device_only(lhs_label, d_lhs, None),
+                    LabeledPolynomial::device_only(g_label, d_g, g_bound),
+                    LabeledPolynomial::device_only(a_label, d_a, None),
+                    LabeledPolynomial::device_only(b_label, d_b, None),
+                ),
+                None => (
+                    LabeledPolynomial::new(lhs_label, DensePolynomial::from_coefficients_vec(lhs_v), None, None),
+                    LabeledPolynomial::new(g_label, DensePolynomial::from_coefficients_vec(g_v), g_bound, None),
+                    LabeledPolynomial::new(a_label, DensePolynomial::from_coefficients_vec(a_v), None, None),
+                    LabeledPolynomial::new(b_label, DensePolynomial::from_coefficients_vec(b_v), None, None),
+                ),
             };
             assert!(lhs.degree() <= non_zero_domain.size() - 2);
             assert!(g.degree() <= non_zero_domain.size() - 2);
@@ -311,6 +309,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let g = LabeledPolynomial::new(witness_label(id, &g_label, 0), g, Some(non_zero_domain.size() - 2), None);
         let a_poly = LabeledPolynomial::new(format!("circuit_{id}_a_poly_{label}"), a_poly, None, None);
         let b_poly = LabeledPolynomial::new(format!("circuit_{id}_b_poly_{label}"), b_poly, None, None);
+        let lhs = LabeledPolynomial::new(format!("circuit_{id}_lhs_{label}"), lhs, None, None);
 
         assert!(lhs.degree() <= non_zero_domain.size() - 2);
         assert!(g.degree() <= non_zero_domain.size() - 2);
@@ -581,6 +580,7 @@ mod gpu_fourth_round_chain_contract {
                 &mut got_b,
                 &mut got_g,
                 &mut got_lhs,
+                domain_size - 1,
                 &mut got_f0,
                 &row,
                 &col,
@@ -593,6 +593,7 @@ mod gpu_fourth_round_chain_contract {
                 &b_scale,
                 &a_scale,
                 &selector_mult,
+                false,
             )
             .is_err()
             {
@@ -663,6 +664,7 @@ mod gpu_fourth_round_chain_contract {
                 &mut b,
                 &mut g,
                 &mut lhs,
+                q_len,
                 &mut f0,
                 &row,
                 &col,
@@ -675,6 +677,7 @@ mod gpu_fourth_round_chain_contract {
                 &b_scale,
                 &a_scale,
                 &selector_mult,
+                false,
             )
             .err()
             .map(|e| e.code)
@@ -791,6 +794,7 @@ mod gpu_fourth_round_chain_contract {
                 &mut b,
                 &mut g,
                 &mut lhs,
+                n - 2,
                 &mut f0,
                 &row,
                 &col,
@@ -803,6 +807,7 @@ mod gpu_fourth_round_chain_contract {
                 &b_scale,
                 &a_scale,
                 &Fr::one(),
+                false,
             )
             .err()
             .map(|e| e.code);
@@ -871,6 +876,7 @@ mod gpu_resident_evals {
             &mut b,
             &mut g,
             &mut lhs,
+            n - 1,
             &mut f0,
             row,
             col,
@@ -883,6 +889,7 @@ mod gpu_resident_evals {
             &b_scale,
             &(b_scale * coeff),
             &selector_mult,
+            false,
         )
         .map_err(|e| e.code)
         .expect("the chain runs");
