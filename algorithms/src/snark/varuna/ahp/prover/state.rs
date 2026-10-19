@@ -216,6 +216,11 @@ impl<'a, F: PrimeField, SM: SNARKMode> State<'a, F, SM> {
         self.circuit_specific_states.get(circuit).map(|s| s.padded_public_variables.as_slice())
     }
 
+    /// Iterate over the lhs_polynomials, in the order of `lhs_polys_into_iter`.
+    pub fn lhs_polys(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
+        self.circuit_specific_states.values().flat_map(|s| s.lhs_polynomials.iter().flatten())
+    }
+
     /// Iterate over the lhs_polynomials
     pub fn lhs_polys_into_iter(self) -> impl Iterator<Item = DensePolynomial<F>> + 'a {
         self.circuit_specific_states

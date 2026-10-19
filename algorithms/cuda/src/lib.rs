@@ -81,7 +81,7 @@ unsafe extern "C" {
         b_scale: *const core::ffi::c_void,
         a_scale: *const core::ffi::c_void,
         selector_mult: *const core::ffi::c_void,
-        keep: *mut *mut c_void,
+        keep: *const *mut c_void,
         kept_lens: *mut usize,
     ) -> cuda::Error;
 
@@ -171,6 +171,8 @@ unsafe extern "C" {
     ) -> cuda::Error;
 
     fn snarkvm_resident_download(out: *mut c_void, d: *const c_void, bytes: usize) -> cuda::Error;
+
+    fn snarkvm_resident_reserve(out: *mut *mut c_void, n: usize, bytes: usize) -> cuda::Error;
 
     fn snarkvm_device_evaluate(out: *mut c_void, d: *const c_void, len: usize, z: *const c_void) -> cuda::Error;
 
@@ -315,24 +317,19 @@ pub fn lineval_interpolate_mul<T: 'static>(
 ///   Pass `domain - 1`, which always holds since `deg(b*f) <= 2 * domain - 2`.
 ///   A bound that is too small is refused with `cudaErrorAssert`.
 ///
-/// With `retain` on one GPU the device keeps `a`, `b`, `g` and `lhs`, returned
-/// as `[a, b, g, lhs]` at their trimmed lengths, and the outputs are left
-/// empty. Otherwise it returns `None` and the outputs hold `domain`, `domain`,
-/// `domain - 1` and `q_len` untrimmed coefficients. Build `g` through
-/// something that trims, or `check_degrees_and_bounds` rejects it against
-/// `g_m`'s degree bound.
+/// On one GPU, if the resident pool can hold them, the device keeps `a`, `b`,
+/// `g` and `lhs`, returned as `Ok([a, b, g, lhs])` at their trimmed lengths.
+/// Otherwise they come back as `Err` with `domain`, `domain`, `domain - 1` and
+/// `q_len` untrimmed coefficients. Build `g` through something that trims, or
+/// `check_degrees_and_bounds` rejects it against `g_m`'s degree bound.
 ///
 /// # Errors
 ///
 /// `cudaErrorAssert` means the vanishing polynomial did not divide `h` exactly:
 /// a non-zero remainder, or a quotient with terms above `q_len`.
 /// `cudaErrorInvalidValue` means a shape was invalid.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn fourth_round_chain<T: 'static>(
-    a_out: &mut Vec<T>,
-    b_out: &mut Vec<T>,
-    g_out: &mut Vec<T>,
-    lhs_out: &mut Vec<T>,
     q_len: usize,
     f0_out: &mut T,
     row: &[T],
@@ -346,8 +343,7 @@ pub fn fourth_round_chain<T: 'static>(
     b_scale: &T,
     a_scale: &T,
     selector_mult: &T,
-    retain: bool,
-) -> Result<Option<[DevicePoly; 4]>, cuda::Error> {
+) -> Result<Result<[DevicePoly; 4], [Vec<T>; 4]>, cuda::Error> {
     assert_type::<T, Fr>();
     let len = row.len();
     assert_eq!(col.len(), len, "row and col are evaluations over the same domain");
@@ -355,33 +351,28 @@ pub fn fourth_round_chain<T: 'static>(
     let domain = 1usize << lg_domain_size;
     let mul_domain = 1usize << lg_mul_domain;
     assert!(len <= domain, "evaluations do not fit the domain they interpolate over");
-    assert!(domain >= 1 && mul_domain >= 2 * domain, "the product does not fit its domain");
+    assert!(mul_domain >= 2 * domain, "the product does not fit its domain");
     assert!(q_len <= domain, "the single-step branch needs q_len <= domain");
     assert!(q_len + domain <= mul_domain);
-    let mut outs = [(a_out, domain), (b_out, domain), (g_out, domain - 1), (lhs_out, q_len)];
-    for (out, n) in &mut outs {
-        out.clear();
-        out.reserve_exact(*n);
-    }
-    // SAFETY, for each `set_len` below: each output has capacity for `n`
-    // elements, and they are initialised first.
+    let sizes = [domain, domain, domain - 1, q_len];
+    let host = || sizes.map(Vec::<T>::with_capacity);
     if len == 0 {
-        for (out, n) in outs {
-            // The zero `Fr` is all zero bytes.
-            unsafe {
-                out.as_mut_ptr().write_bytes(0, n);
-                out.set_len(n);
-            }
-        }
-        return Ok(None);
+        // SAFETY: each output has capacity for `n` elements, all set to the
+        // zero `Fr`, which is all zero bytes.
+        return Ok(Err(host().map(|mut out| unsafe {
+            out.as_mut_ptr().write_bytes(0, out.capacity());
+            out.set_len(out.capacity());
+            out
+        })));
     }
     // Below the early return: an empty input never reaches the transform.
     assert!(lg_domain_size > 0, "the interpolations fault on a one-element domain");
     let hit = resident_evals::lookup([row, col, rcv]);
-    let retain = retain && device_poly::retain();
-    let mut keep = [std::ptr::null_mut(); 4];
+    let kept = device_poly::reserve(domain);
+    let mut outs = if kept.is_some() { Default::default() } else { host() };
+    let keep = kept.as_ref().map(|k| k.each_ref().map(|b| b.ptr as *mut c_void));
     let mut kept_lens = [0usize; 4];
-    let [a, b, g, lhs] = outs.each_mut().map(|(out, _)| out.as_mut_ptr() as *mut c_void);
+    let [a, b, g, lhs] = outs.each_mut().map(|out| out.as_mut_ptr() as *mut c_void);
     let err = unsafe {
         snarkvm_fourth_round_chain(
             a,
@@ -403,23 +394,22 @@ pub fn fourth_round_chain<T: 'static>(
             b_scale as *const _ as *const core::ffi::c_void,
             a_scale as *const _ as *const core::ffi::c_void,
             selector_mult as *const _ as *const core::ffi::c_void,
-            if retain { keep.as_mut_ptr() } else { std::ptr::null_mut() },
+            keep.as_ref().map_or(std::ptr::null(), |k| k.as_ptr()),
             kept_lens.as_mut_ptr(),
         )
     };
-    // The C++ keeps nothing on an error.
     if err.code != 0 {
         return Err(err);
     }
-    let kept = if retain { device_poly::adopt(keep, kept_lens, domain) } else { None };
-    if kept.is_none() {
-        for (out, n) in outs {
-            // The C++ kept nothing, so it wrote all `n`.
-            unsafe { out.set_len(n) };
-            device_poly::count_download(n * FR_BYTES);
-        }
+    if let Some(kept) = kept {
+        return Ok(Ok(device_poly::adopt(kept, kept_lens)));
     }
-    Ok(kept)
+    for (out, n) in outs.iter_mut().zip(sizes) {
+        // SAFETY: with nothing kept, the C++ wrote all `n` of each output.
+        unsafe { out.set_len(n) };
+        device_poly::count_download(n * FR_BYTES);
+    }
+    Ok(Err(outs))
 }
 
 /// The fourth round's `a`, `b` and `f` polynomials on K for one
@@ -848,12 +838,9 @@ mod argument_guards {
     #[should_panic(expected = "one-element domain")]
     fn fourth_round_chain_refuses_a_one_element_domain() {
         let one = [Fr::default()];
-        let (mut a, mut b, mut g, mut lhs) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         let mut f0 = Fr::default();
         let z = Fr::default();
-        let _ = super::fourth_round_chain(
-            &mut a, &mut b, &mut g, &mut lhs, 1, &mut f0, &one, &one, &one, 0, 1, &z, &z, &z, &z, &z, &z, true,
-        );
+        let _ = super::fourth_round_chain(1, &mut f0, &one, &one, &one, 0, 1, &z, &z, &z, &z, &z, &z);
     }
 
     #[test]

@@ -76,23 +76,6 @@ fn prove(s: &Setup, version: VarunaVersion) -> (Vec<u8>, Stats) {
     (proof.to_bytes_le().unwrap(), moved)
 }
 
-/// Resets `fail_retains` when dropped, so a failed assertion cannot leave it
-/// armed.
-struct Refuse;
-
-impl Refuse {
-    fn next(skip: u64, n: u64) -> Self {
-        fail_retains(skip, n);
-        Self
-    }
-}
-
-impl Drop for Refuse {
-    fn drop(&mut self) {
-        fail_retains(0, 0);
-    }
-}
-
 /// Each proof keeps `a`, `b`, `g` and `lhs` for its three matrices and builds
 /// `h_2` on the device. Nothing of round four comes down: `g` is evaluated at
 /// gamma on the device, and so are `a`, `b` and `h_2` for the debug assertion.
@@ -139,7 +122,7 @@ fn every_fallback_proves_the_same_bytes() {
         // (skip, refuse, retained, failures): every chain refused; one chain
         // refused, so h_2 is built on the host; only h_2 refused.
         for (skip, n, retained, failures) in [(0, u64::MAX, 0, 3), (0, 1, 2, 1), (3, 1, 3, 1)] {
-            let _refuse = Refuse::next(skip, n);
+            let _refuse = fail_retains(skip, n);
             let (got, moved) = prove(&s, version);
             assert!(got == want, "{version:?} ({skip}, {n}): the proof differs");
             assert_eq!((moved.retained, moved.retain_failures), (retained, failures), "{version:?} ({skip}, {n})");

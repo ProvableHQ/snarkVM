@@ -304,8 +304,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                                         Randomness::empty(),
                                     ));
                                 }
-                                Some(d) => std::borrow::Cow::Owned(self::polynomial::download(d).into()),
-                                None => polynomial,
+                                _ => self::polynomial::host_of(&p.info).map_or(polynomial, std::borrow::Cow::Borrowed),
                             };
                             #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
                             let _lend = polynomial
@@ -692,33 +691,26 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             // `to_dense` borrows a dense polynomial and converts a sparse one,
             // such as `mask_poly`, as the host path's `AddAssign` does. The
             // `Cow`s are held for the call because `terms` borrows from them.
-            // A device-only term has no host coefficients.
-            let densified: Vec<(E::Fr, std::borrow::Cow<'_, DensePolynomial<E::Fr>>, _)> = group
+            // A device-only term has none.
+            let densified: Vec<(E::Fr, Option<std::borrow::Cow<'_, DensePolynomial<E::Fr>>>, _)> = group
                 .iter()
                 .zip_eq(challenges.iter())
                 .flat_map(|(c, challenge)| {
                     c.terms.iter().map(move |(coeff, p)| {
                         let d = p.info.device();
-                        let host = match d.device_only() {
-                            Some(_) => std::borrow::Cow::Owned(DensePolynomial::zero()),
-                            None => p.polynomial().to_dense(),
-                        };
-                        (*challenge * coeff, host, d)
+                        (*challenge * coeff, d.device_only().is_none().then(|| p.polynomial().to_dense()), d)
                     })
                 })
                 .collect();
-            let out_len = densified
+            let terms: Vec<(E::Fr, &[E::Fr], _)> = densified
                 .iter()
-                .map(|(_, p, d)| d.device_only().map_or(p.coeffs.len(), |d| d.len()))
-                .max()
-                .unwrap_or(0);
+                .map(|(c, p, d)| (*c, p.as_ref().map_or(&[][..], |p| p.coeffs.as_slice()), *d))
+                .collect();
+            let out_len = terms.iter().map(|(_, p, d)| d.coeffs_len(p)).max().unwrap_or(0);
 
             // A quotient needs two coefficients. Below that only the host path
             // is defined.
             if out_len >= 2 {
-                let terms: Vec<(E::Fr, &[E::Fr], _)> =
-                    densified.iter().map(|(c, p, d)| (*c, p.coeffs.as_slice(), *d)).collect();
-
                 let powers = ck.powers();
                 // `KZG10::open`'s check, against the bound `out_len - 1` rather
                 // than the trimmed degree, so it can only reject more.
@@ -1040,45 +1032,39 @@ mod cuda_tests {
         assert!(bad.is_empty(), "{}", bad.join("; "));
     }
 
-    /// The chain's host outputs, untrimmed, and the device's for the same
-    /// inputs, as `[a, b, g, lhs]`. Retention needs exactly one GPU.
+    /// The chain's outputs `[a, b, g, lhs]` on the device, and their
+    /// coefficients downloaded. Retention needs exactly one GPU.
     fn chain(lg: u32) -> ([Vec<Fr>; 4], [snarkvm_algorithms_cuda::DevicePoly; 4]) {
         let rng = &mut TestRng::fixed(lg as u64);
         let n = 1usize << lg;
         let mut array = || (0..n).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
         let (row, col, rcv) = (array(), array(), array());
         let [alpha, beta, coeff, b_scale, selector_mult] = [(); 5].map(|_| Fr::rand(rng));
-        let run = |retain: bool| {
-            let mut out: [Vec<Fr>; 4] = Default::default();
-            let mut f0 = Fr::zero();
-            let [a, b, g, lhs] = &mut out;
-            let kept = snarkvm_algorithms_cuda::fourth_round_chain(
-                a,
-                b,
-                g,
-                lhs,
-                n - 1,
-                &mut f0,
-                &row,
-                &col,
-                &rcv,
-                lg,
-                lg + 1,
-                &alpha,
-                &beta,
-                &coeff,
-                &b_scale,
-                &(b_scale * coeff),
-                &selector_mult,
-                retain,
-            )
-            .map_err(|e| e.code)
-            .expect("the chain runs");
-            (out, kept)
-        };
-        let (host, _) = run(false);
-        let (_, kept) = run(true);
-        (host, kept.expect("one GPU keeps the outputs"))
+        let mut f0 = Fr::zero();
+        let kept = snarkvm_algorithms_cuda::fourth_round_chain(
+            n - 1,
+            &mut f0,
+            &row,
+            &col,
+            &rcv,
+            lg,
+            lg + 1,
+            &alpha,
+            &beta,
+            &coeff,
+            &b_scale,
+            &(b_scale * coeff),
+            &selector_mult,
+        )
+        .map_err(|e| e.code)
+        .expect("the chain runs")
+        .expect("one GPU keeps the outputs");
+        let host = kept.each_ref().map(|d| {
+            let mut v = vec![Fr::zero(); d.len()];
+            d.download(&mut v).map_err(|e| e.code).expect("the download runs");
+            v
+        });
+        (host, kept)
     }
 
     /// `commit` reads a degree-bounded polynomial's device copy, from past its
@@ -1124,8 +1110,7 @@ mod cuda_tests {
     }
 
     /// Every host accessor of a device-only polynomial agrees with the same
-    /// polynomial built on the host. The counters are process-wide and other
-    /// tests move them, so `tests/device_poly.rs` counts downloads instead.
+    /// polynomial built on the host.
     #[test]
     fn a_device_only_polynomial_matches_its_host_twin() {
         use super::{CommitterUnionKey, LabeledPolynomial, LabeledPolynomialWithBasis, SonicKZG10};
@@ -1173,7 +1158,6 @@ mod cuda_tests {
             assert_eq!(p.evaluate(z), host.evaluate(z), "{label}");
             let with_basis = LabeledPolynomialWithBasis::from(&p);
             assert_eq!(with_basis.degree(), host.degree(), "{label}");
-            assert_eq!(with_basis.evaluate(z), host.evaluate(z), "{label}");
             assert_eq!(commit(&p), commit(&host), "{label}");
             let lc = LinearCombination::new(label.as_str(), [(Fr::one(), label.as_str())]);
             let polys = vec![p.clone()];

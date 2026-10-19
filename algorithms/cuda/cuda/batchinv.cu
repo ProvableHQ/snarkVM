@@ -176,15 +176,61 @@ __global__ void d_scale(T* out, const T* in, T s, size_t len)
         out[i] = in[i] * s;
 }
 
-// `*len` becomes at least one past the highest non-zero coefficient of `p`, so
-// from zero it is the length `p` trims to.
+// Up to four arrays, one per `blockIdx.y`.
 template<class T>
-__global__ void d_trimmed_len(unsigned long long* len, const T* p, size_t n)
+struct trim_args_t {
+    const T* p[4];
+    size_t n[4];
+};
+
+// `lens[y]` becomes at least one past the highest non-zero coefficient of
+// array `y`, so from zero it is the length the array trims to. One atomic per
+// block.
+template<class T>
+__global__ void d_trimmed_len(unsigned long long* lens, trim_args_t<T> args)
 {
+    const T* p = args.p[blockIdx.y];
+    size_t n = args.n[blockIdx.y];
+    unsigned long long len = 0;
     size_t stride = (size_t)gridDim.x * blockDim.x;
     for (size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x; i < n; i += stride)
         if (!p[i].is_zero())
-            atomicMax(len, (unsigned long long)i + 1);
+            len = i + 1;
+
+    __shared__ unsigned long long warp_max[32];
+    for (int off = WARP_SZ / 2; off > 0; off >>= 1) {
+        unsigned long long other = __shfl_down_sync(0xffffffff, len, off);
+        len = other > len ? other : len;
+    }
+    if (threadIdx.x % WARP_SZ == 0)
+        warp_max[threadIdx.x / WARP_SZ] = len;
+    __syncthreads();
+    if (threadIdx.x < WARP_SZ) {
+        len = threadIdx.x < blockDim.x / WARP_SZ ? warp_max[threadIdx.x] : 0;
+        for (int off = WARP_SZ / 2; off > 0; off >>= 1) {
+            unsigned long long other = __shfl_down_sync(0xffffffff, len, off);
+            len = other > len ? other : len;
+        }
+        if (threadIdx.x == 0 && len != 0)
+            atomicMax(&lens[blockIdx.y], len);
+    }
+}
+
+// out[i] = Σ coeffs[j] · srcs[j][i], a term contributing only below its
+// length. Each output coefficient is written once.
+template<class T>
+__global__ void d_accumulate(T* out, size_t out_len, const T* const* srcs,
+                             const size_t* lens, const T* coeffs, size_t nterms)
+{
+    size_t stride = (size_t)gridDim.x * blockDim.x;
+    for (size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x; i < out_len; i += stride) {
+        T acc;
+        acc.zero();
+        for (size_t j = 0; j < nterms; j++)
+            if (i < lens[j])
+                acc += coeffs[j] * srcs[j][i];
+        out[i] = acc;
+    }
 }
 
 // nvcc compiles this file twice and everything below is host-only, so the
@@ -192,7 +238,8 @@ __global__ void d_trimmed_len(unsigned long long* len, const T* p, size_t n)
 // `cudaFuncGetAttributes` on a cooperative kernel fails with "invalid resource
 // handle".
 template __global__ void d_scale<fr_t>(fr_t*, const fr_t*, fr_t, size_t);
-template __global__ void d_trimmed_len<fr_t>(unsigned long long*, const fr_t*, size_t);
+template __global__ void d_trimmed_len<fr_t>(unsigned long long*, trim_args_t<fr_t>);
+template __global__ void d_accumulate<fr_t>(fr_t*, size_t, const fr_t* const*, const size_t*, const fr_t*, size_t);
 template __global__ void d_axpy<fr_t>(fr_t*, const fr_t*, fr_t, size_t);
 template __global__ void d_sub_ext<fr_t>(fr_t*, const fr_t*, size_t, const fr_t*, size_t);
 template __global__ void d_vanishing_scaled<fr_t>(fr_t*, unsigned*, const fr_t*, size_t, size_t, size_t, fr_t);
@@ -295,15 +342,38 @@ void round4_vanishing_device(const stream_t& stream, int sm_count,
     CUDA_OK(cudaGetLastError());
 }
 
-// Raises `*d_len` to the length `d_p` trims to. Zero `*d_len` first.
+// Raises `d_lens[i]` to the length `ps[i]` trims to, for `count <= 4` arrays
+// in one launch. Zero `d_lens` first.
 void trimmed_len_device(const stream_t& stream, int sm_count,
-                        unsigned long long* d_len, const fr_t* d_p, size_t n)
+                        unsigned long long* d_lens, const fr_t* const* ps,
+                        const size_t* ns, int count)
 {
+    trim_args_t<fr_t> args = {};
+    size_t n = 0;
+    for (int i = 0; i < count; i++) {
+        args.p[i] = ps[i];
+        args.n[i] = ns[i];
+        n = std::max(n, ns[i]);
+    }
     if (n == 0)
         return;
     int block = 256;
     int grid = (int)std::min((n + block - 1) / block, (size_t)sm_count * 8);
-    d_trimmed_len<<<grid, block, 0, stream>>>(d_len, d_p, n);
+    d_trimmed_len<<<dim3(grid, count), block, 0, stream>>>(d_lens, args);
+    CUDA_OK(cudaGetLastError());
+}
+
+// Launcher for d_accumulate. The term arrays are on the device.
+void accumulate_device(const stream_t& stream, int sm_count, fr_t* d_out,
+                       size_t out_len, const fr_t* const* d_srcs,
+                       const size_t* d_lens, const fr_t* d_coeffs, size_t nterms)
+{
+    if (out_len == 0)
+        return;
+    int block = 256;
+    int grid = (int)std::min((out_len + block - 1) / block, (size_t)sm_count * 8);
+    d_accumulate<<<grid, block, 0, stream>>>(d_out, out_len, d_srcs, d_lens,
+                                             d_coeffs, nterms);
     CUDA_OK(cudaGetLastError());
 }
 

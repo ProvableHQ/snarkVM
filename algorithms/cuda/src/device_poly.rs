@@ -58,10 +58,23 @@ static HELD_BYTES: AtomicUsize = AtomicUsize::new(0);
 static FAIL_RETAINS: Mutex<(u64, u64)> = Mutex::new((0, 0));
 
 /// Lets the next `skip` retention requests through and refuses the `n` after
-/// them, as if the device could not hold them. For tests of the host path.
+/// them, as if the device could not hold them, until the guard drops. For
+/// tests of the host path.
 #[doc(hidden)]
-pub fn fail_retains(skip: u64, n: u64) {
+pub fn fail_retains(skip: u64, n: u64) -> FailRetains {
     *FAIL_RETAINS.lock().unwrap_or_else(|e| e.into_inner()) = (skip, n);
+    FailRetains(())
+}
+
+/// Lets every retention request through again when dropped.
+#[doc(hidden)]
+#[must_use]
+pub struct FailRetains(());
+
+impl Drop for FailRetains {
+    fn drop(&mut self) {
+        *FAIL_RETAINS.lock().unwrap_or_else(|e| e.into_inner()) = (0, 0);
+    }
 }
 
 /// Whether a call should ask the device to keep its outputs.
@@ -85,8 +98,8 @@ pub(crate) fn count_download(bytes: usize) {
     DOWNLOADED_BYTES.fetch_add(bytes, Relaxed);
 }
 
-struct Buffer {
-    ptr: usize,
+pub(crate) struct Buffer {
+    pub(crate) ptr: usize,
     bytes: usize,
 }
 
@@ -215,21 +228,34 @@ pub fn combine<T: Copy + 'static>(terms: &[(T, &DevicePoly)]) -> Result<Option<D
     Ok(Some(DevicePoly { buf: Buffer::adopt(keep, out_len * FR_BYTES), offset: 0, len: trimmed }))
 }
 
-/// Takes ownership of what `FourthRoundChain` kept, `domain` elements each, as
-/// `a`, `b`, `g = f[1..]` and `lhs`, at the trimmed lengths `lens`. `None` if
-/// the device kept nothing.
-pub(crate) fn adopt(keep: [*mut c_void; 4], lens: [usize; 4], domain: usize) -> Option<[DevicePoly; 4]> {
-    if keep.iter().any(|p| p.is_null()) {
+/// Four buffers of `domain` elements from the resident pool for
+/// `FourthRoundChain` to keep its outputs in. `None` if the device cannot hold
+/// them.
+pub(crate) fn reserve(domain: usize) -> Option<[Arc<Buffer>; 4]> {
+    if !retain() {
+        return None;
+    }
+    let bytes = domain * FR_BYTES;
+    let mut out = [std::ptr::null_mut(); 4];
+    // SAFETY: `out` holds four pointers.
+    let err = unsafe { super::snarkvm_resident_reserve(out.as_mut_ptr(), 4, bytes) };
+    if err.code != 0 || out[0].is_null() {
         RETAIN_FAILURES.fetch_add(1, Relaxed);
         return None;
     }
+    Some(out.map(|p| Buffer::adopt(p, bytes)))
+}
+
+/// `FourthRoundChain`'s kept `a`, `b`, `g = f[1..]` and `lhs`, at the trimmed
+/// lengths `lens`.
+pub(crate) fn adopt(kept: [Arc<Buffer>; 4], lens: [usize; 4]) -> [DevicePoly; 4] {
     RETAINED.fetch_add(1, Relaxed);
-    let offsets = [0, 0, 1, 0];
-    Some(std::array::from_fn(|i| DevicePoly {
-        buf: Buffer::adopt(keep[i], domain * FR_BYTES),
-        offset: offsets[i],
-        len: lens[i],
-    }))
+    let mut i = 0;
+    kept.map(|buf| {
+        let (offset, len) = ([0, 0, 1, 0][i], lens[i]);
+        i += 1;
+        DevicePoly { buf, offset, len }
+    })
 }
 
 /// The host side of a [`DeviceCopy`].
@@ -296,6 +322,12 @@ impl DeviceCopy {
             HOST_FALLBACKS.fetch_add(1, Relaxed);
             None
         }
+    }
+
+    /// The number of coefficients of a term whose host coefficients are
+    /// `host`: the device copy's for a device-only copy, otherwise `host`'s.
+    pub fn coeffs_len<T>(&self, host: &[T]) -> usize {
+        self.device_only().map_or(host.len(), DevicePoly::len)
     }
 
     /// An opening term's host pointer, length and device pointer. A
@@ -461,45 +493,23 @@ mod tests {
         coeffs.iter().rev().fold(zero(), |acc, c| acc * z + c)
     }
 
-    /// Resets `fail_retains` when dropped, so a failed assertion cannot leave
-    /// it armed.
-    struct Refuse;
-
-    impl Refuse {
-        fn next(skip: u64, n: u64) -> Self {
-            fail_retains(skip, n);
-            Self
-        }
-    }
-
-    impl Drop for Refuse {
-        fn drop(&mut self) {
-            fail_retains(0, 0);
-        }
-    }
-
     struct Chain {
-        host: [Vec<Fr>; 4],
         f0: Fr,
-        kept: Option<[DevicePoly; 4]>,
+        out: Result<[DevicePoly; 4], [Vec<Fr>; 4]>,
     }
 
     /// The chain over random evaluations of `len`, with arguments the divide
-    /// accepts. The same `seed` gives the same inputs.
-    fn chain(seed: u64, lg: u32, len: usize, retain: bool) -> Chain {
+    /// accepts. The same `seed` gives the same inputs. `host` refuses the
+    /// retention.
+    fn chain(seed: u64, lg: u32, len: usize, host: bool) -> Chain {
+        let _refuse = host.then(|| fail_retains(0, 1));
         let rng = &mut TestRng::fixed(seed);
         let mut array = || (0..len).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
         let (row, col, rcv) = (array(), array(), array());
         let [alpha, beta, coeff, b_scale, selector_mult] = [(); 5].map(|_| Fr::rand(rng));
         let n = 1usize << lg;
-        let mut host: [Vec<Fr>; 4] = Default::default();
         let mut f0 = zero();
-        let [a, b, g, lhs] = &mut host;
-        let kept = fourth_round_chain(
-            a,
-            b,
-            g,
-            lhs,
+        let out = fourth_round_chain(
             n - 1,
             &mut f0,
             &row,
@@ -513,22 +523,22 @@ mod tests {
             &b_scale,
             &(b_scale * coeff),
             &selector_mult,
-            retain,
         )
         .map_err(|e| e.code)
         .expect("the chain runs");
-        Chain { host, f0, kept }
+        Chain { f0, out }
     }
 
     /// The host outputs, trimmed, and the device's for the same inputs.
     fn both(seed: u64, lg: u32, len: usize) -> ([Vec<Fr>; 4], [DevicePoly; 4]) {
-        let host = chain(seed, lg, len, false);
-        assert!(host.kept.is_none(), "a chain not asked to retain keeps nothing");
-        let device = chain(seed, lg, len, true);
+        let host = chain(seed, lg, len, true);
+        let device = chain(seed, lg, len, false);
         assert!(device.f0 == host.f0);
-        (host.host.map(trimmed), device.kept.expect("one GPU keeps the outputs"))
+        (
+            host.out.expect_err("a refused chain keeps nothing").map(trimmed),
+            device.out.expect("one GPU keeps the outputs"),
+        )
     }
-
     fn bases(rng: &mut TestRng, n: usize) -> Vec<G1Affine> {
         G1Projective::batch_normalization_into_affine((0..n).map(|_| G1Projective::rand(rng)).collect())
     }
@@ -551,23 +561,22 @@ mod tests {
             return;
         }
         for (lg, len) in [(LG, 1usize << LG), (12, (1 << 12) - 1025)] {
-            let host = chain(1, lg, len, false);
-            let lens = host.host.each_ref().map(|v| v.len());
+            let host = chain(1, lg, len, true);
+            let host = host.out.expect_err("a refused chain keeps nothing");
+            let lens = host.each_ref().map(|v| v.len());
             assert_eq!(
                 lens,
                 [1 << lg, 1 << lg, (1 << lg) - 1, (1 << lg) - 1],
                 "lg {lg}: the host outputs are untrimmed"
             );
             let before = stats();
-            let device = chain(1, lg, len, true);
+            let device = chain(1, lg, len, false);
             let after = stats();
-            assert!(device.f0 == host.f0, "lg {lg}");
             assert_eq!(after.held_bytes, before.held_bytes + 4 * (32 << lg), "lg {lg}");
             assert_eq!(after.retained, before.retained + 1, "lg {lg}");
             assert_eq!(after.downloaded_bytes, before.downloaded_bytes, "lg {lg}: nothing came down");
-            assert!(device.host.iter().all(Vec::is_empty), "lg {lg}: the outputs stay empty");
-            let kept = device.kept.expect("one GPU keeps the outputs");
-            for (i, (want, got)) in host.host.into_iter().map(trimmed).zip(&kept).enumerate() {
+            let kept = device.out.expect("one GPU keeps the outputs");
+            for (i, (want, got)) in host.into_iter().map(trimmed).zip(&kept).enumerate() {
                 assert_eq!(got.len(), want.len(), "lg {lg}: output {i}'s trimmed length");
                 assert!(download(got) == want, "lg {lg}: output {i}");
             }
@@ -585,20 +594,19 @@ mod tests {
         if !one_gpu() {
             return;
         }
-        let want = chain(2, LG, 1 << LG, false).host;
-        let _refuse = Refuse::next(0, 1);
+        let n = 1usize << LG;
         let before = stats();
-        let got = chain(2, LG, 1 << LG, true);
+        let got = chain(2, LG, n, true).out.expect_err("a refused chain keeps nothing");
         let after = stats();
-        assert!(got.kept.is_none());
-        assert!(got.host == want);
+        assert_eq!(got.each_ref().map(Vec::len), [n, n, n - 1, n - 1]);
         assert_eq!(after.retain_failures, before.retain_failures + 1);
-        assert_eq!(after.downloaded_bytes, before.downloaded_bytes + 32 * want.iter().map(Vec::len).sum::<usize>());
+        assert_eq!(after.downloaded_bytes, before.downloaded_bytes + 32 * (4 * n - 2));
         assert_eq!(after.held_bytes, before.held_bytes);
-        assert!(chain(2, LG, 1 << LG, true).kept.is_some(), "the refusal was for one request");
+        assert!(chain(2, LG, n, false).out.is_ok(), "the refusal was for one request");
     }
 
-    /// Lengths around the division's edge cases, and whole buffers.
+    /// Short lengths, one block, up to 32 blocks, more than 32 blocks, and
+    /// whole buffers up to 2^20.
     #[test]
     fn evaluate_matches_the_host() {
         let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -606,16 +614,20 @@ mod tests {
             return;
         }
         let rng = &mut TestRng::default();
-        let (host, kept) = both(3, LG, 1 << LG);
-        for (want, d) in host.iter().zip(&kept) {
-            for len in [0, 1, 2, 3, 5, 7, 33, 257, 1000, d.len()] {
-                let (coeffs, d) = (&want[..len], view(d, len));
-                for _ in 0..4 {
-                    let z = Fr::rand(rng);
-                    let evals = stats().device_evals;
-                    let got = evaluate(&d, &z).map_err(|e| e.code).expect("the evaluation runs");
-                    assert!(got == horner(coeffs, z), "len {len}");
-                    assert_eq!(stats().device_evals, evals + 1);
+        let mut cases = vec![(LG, vec![0, 1, 2, 3, 5, 7, 33, 257, 1000])];
+        cases.push((20, vec![1025, 20_000, 40_000, 100_001, (1 << 20) - 12_345]));
+        for (lg, lens) in cases {
+            let (host, kept) = both(3, lg, 1 << lg);
+            for (want, d) in host.iter().zip(&kept) {
+                for len in lens.iter().copied().chain([d.len()]) {
+                    let (coeffs, d) = (&want[..len], view(d, len));
+                    for _ in 0..2 {
+                        let z = Fr::rand(rng);
+                        let evals = stats().device_evals;
+                        let got = evaluate(&d, &z).map_err(|e| e.code).expect("the evaluation runs");
+                        assert!(got == horner(coeffs, z), "lg {lg} len {len}");
+                        assert_eq!(stats().device_evals, evals + 1);
+                    }
                 }
             }
         }
@@ -644,20 +656,28 @@ mod tests {
             .collect();
         assert!(download(&got) == trimmed(want), "the combination");
 
-        let k = 100;
-        assert!(b[k - 1] != zero(), "the test needs q's top coefficient non-zero");
-        let q = view(&d_b, k);
-        let got = run(&[(c[0], &d_a), (-c[0], &d_a), (c[1], &q)]);
-        assert_eq!(got.len(), k, "p - p + q trims to q's length");
-        assert!(download(&got) == b[..k].iter().map(|x| c[1] * x).collect::<Vec<_>>());
-        assert_eq!(run(&[(c[0], &d_a), (-c[0], &d_a)]).len(), 0, "p - p trims to nothing");
+        // Within a warp, at block edges, and across grid strides.
+        let ([_, b20, ..], [d_a20, d_b20, ..]) = both(5, 20, 1 << 20);
+        for (d_p, q, d_q) in [(&d_a, &b, &d_b), (&d_a20, &b20, &d_b20)] {
+            for k in [1, 31, 100, 255, 256, 257, 1000, 120_001, 700_001] {
+                if k > d_q.len() {
+                    continue;
+                }
+                assert!(q[k - 1] != zero(), "the test needs q's top coefficient non-zero");
+                let short = view(d_q, k);
+                let got = run(&[(c[0], d_p), (-c[0], d_p), (c[1], &short)]);
+                assert_eq!(got.len(), k, "p - p + q trims to q's length");
+                assert!(download(&got) == q[..k].iter().map(|x| c[1] * x).collect::<Vec<_>>(), "k {k}");
+            }
+            assert_eq!(run(&[(c[0], d_p), (-c[0], d_p)]).len(), 0, "p - p trims to nothing");
+        }
 
         let held = stats().held_bytes;
         let got = run(&[(c[0], &d_a)]);
         assert_eq!(stats().held_bytes, held + 32 * d_a.len());
         drop(got);
         assert_eq!(stats().held_bytes, held);
-        let _refuse = Refuse::next(0, 1);
+        let _refuse = fail_retains(0, 1);
         assert!(combine(&[(c[0], &d_a)]).map_err(|e| e.code).expect("a refusal is not an error").is_none());
     }
 

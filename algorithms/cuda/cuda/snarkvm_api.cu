@@ -208,7 +208,7 @@ extern "C" {
                                          const fr_t* coeff, const fr_t* b_scale,
                                          const fr_t* a_scale,
                                          const fr_t* selector_mult,
-                                         void** keep, size_t* kept_lens)
+                                         void* const* keep, size_t* kept_lens)
     {
         return catch_all([&] {
             if (!snarkvm_g.ok()) {
@@ -340,6 +340,15 @@ extern "C" {
                 return snarkvm_g.failure();
             }
             return snarkvm_g->DownloadResident(out, d, bytes);
+        });
+    }
+
+    RustError snarkvm_resident_reserve(void** out, size_t n, size_t bytes) {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return snarkvm_g->ReserveResident(out, n, bytes);
         });
     }
 

@@ -123,12 +123,15 @@ impl<F: Field> CanonicalSerialize for LabeledPolynomial<F> {
     }
 }
 
-/// The coefficients of a device-only polynomial.
+/// A device-only polynomial's coefficients, downloaded on the first call and
+/// shared by every clone of its copy. `None` for any other polynomial.
 #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-pub(super) fn download<F: Field>(device: &snarkvm_algorithms_cuda::DevicePoly) -> DensePolynomial<F> {
-    let mut coeffs = vec![F::zero(); device.len()];
-    crate::cuda_must_succeed!(device.download(&mut coeffs), "download");
-    DensePolynomial::from_coefficients_vec(coeffs)
+pub(super) fn host_of<F: Field>(info: &PolynomialInfo) -> Option<&Polynomial<'static, F>> {
+    info.device.host(|d| {
+        let mut coeffs = vec![F::zero(); d.len()];
+        crate::cuda_must_succeed!(d.download(&mut coeffs), "download");
+        Polynomial::<'static, F>::from(DensePolynomial::from_coefficients_vec(coeffs))
+    })
 }
 
 #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
@@ -170,7 +173,7 @@ impl<F: Field> LabeledPolynomial<F> {
 
     fn host(&self) -> &Polynomial<'static, F> {
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-        if let Some(p) = self.info.device.host(|d| Polynomial::<'static, F>::from(download::<F>(d))) {
+        if let Some(p) = host_of(&self.info) {
             return p;
         }
         &self.polynomial
@@ -182,8 +185,8 @@ impl<F: Field> LabeledPolynomial<F> {
     pub fn polynomial_mut(&mut self) -> &mut Polynomial<'static, F> {
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
         {
-            if let Some(d) = self.info.device.device_only() {
-                self.polynomial = download(d).into();
+            if self.info.device.device_only().is_some() {
+                self.polynomial = self.host().clone();
             }
             self.info.device = Default::default();
         }
@@ -310,10 +313,6 @@ impl<'a, F: PrimeField> LabeledPolynomialWithBasis<'a, F> {
 
     /// Evaluate the polynomial in `self`.
     pub fn evaluate(&self, point: F) -> F {
-        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-        if let Some(d) = self.info.device.device_only() {
-            return evaluate_on_device(d, point);
-        }
         self.polynomial.evaluate(point)
     }
 
@@ -338,8 +337,7 @@ impl<'a, F: PrimeField> LabeledPolynomialWithBasis<'a, F> {
 
 impl<'a, F: PrimeField> From<&'a LabeledPolynomial<F>> for LabeledPolynomialWithBasis<'a, F> {
     fn from(other: &'a LabeledPolynomial<F>) -> Self {
-        // The field, not `polynomial()`: a device-only polynomial's consumers
-        // read its device copy, which `info` carries.
+        // A device-only polynomial's consumers read its copy in `info`.
         let polynomial = PolynomialWithBasis::Monomial {
             polynomial: Cow::Borrowed(&other.polynomial),
             degree_bound: other.degree_bound(),
