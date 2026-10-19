@@ -1008,8 +1008,8 @@ mod cuda_tests {
     }
 
     /// `commit` reads a degree-bounded polynomial's device copy, from past its
-    /// leading zeros: after the host coefficients change, the commitment is
-    /// still the original's. Retention needs exactly one GPU.
+    /// leading zeros, and `polynomial_mut` drops the copy. Retention needs
+    /// exactly one GPU.
     #[test]
     fn commit_reads_the_device_copy() {
         use super::{CommitterUnionKey, LabeledPolynomial, SonicKZG10};
@@ -1069,9 +1069,10 @@ mod cuda_tests {
         assert!(stats().device_reads > reads, "the MSM read the device copy");
         let coeffs = &mut p.polynomial_mut().as_dense_mut().unwrap().coeffs;
         coeffs[5] += Fr::rand(rng);
-        let changed = host(coeffs);
-        assert_ne!(commit(&changed), want, "the change moves the host path");
-        assert_eq!(commit(&p), want, "the MSM read the host scalars");
+        let changed = commit(&host(coeffs));
+        assert_ne!(changed, want, "the change moves the commitment");
+        assert!(p.info().device().is_empty(), "the change left a stale device copy");
+        assert_eq!(commit(&p), changed);
     }
 }
 

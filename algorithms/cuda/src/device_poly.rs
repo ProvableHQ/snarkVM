@@ -147,6 +147,10 @@ impl DeviceCopy {
         Self(Some((device, host.as_ptr() as usize, host.len())))
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.0.is_none()
+    }
+
     /// The device copy if this mirrors `host`, counting the read or, for a copy
     /// of other coefficients, the fallback.
     fn get<T>(&self, host: &[T]) -> Option<&DevicePoly> {

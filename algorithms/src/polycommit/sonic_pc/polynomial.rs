@@ -81,7 +81,7 @@ impl PolynomialInfo {
 #[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize, PartialEq, Eq)]
 pub struct LabeledPolynomial<F: Field> {
     pub info: PolynomialInfo,
-    pub polynomial: Polynomial<'static, F>,
+    polynomial: Polynomial<'static, F>,
 }
 
 impl<F: Field> core::ops::Deref for LabeledPolynomial<F> {
@@ -123,8 +123,13 @@ impl<F: Field> LabeledPolynomial<F> {
         &self.polynomial
     }
 
-    /// Retrieve a mutable reference to the enclosed polynomial.
+    /// Retrieve a mutable reference to the enclosed polynomial. Drops its
+    /// device copy, which the change would make stale.
     pub fn polynomial_mut(&mut self) -> &mut Polynomial<'static, F> {
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        {
+            self.info.device = Default::default();
+        }
         &mut self.polynomial
     }
 
