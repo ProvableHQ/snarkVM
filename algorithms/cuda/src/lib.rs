@@ -68,6 +68,7 @@ unsafe extern "C" {
         row: *const core::ffi::c_void,
         col: *const core::ffi::c_void,
         rcv: *const core::ffi::c_void,
+        d_evals: *const core::ffi::c_void,
         len: usize,
         lg_domain_size: u32,
         lg_mul_domain: u32,
@@ -155,6 +156,13 @@ unsafe extern "C" {
     ) -> cuda::Error;
 
     fn snarkvm_cuda_window_points() -> usize;
+
+    fn snarkvm_resident_upload(
+        d_out: *mut *mut c_void,
+        srcs: *const *const c_void,
+        count: usize,
+        bytes: usize,
+    ) -> cuda::Error;
 
     fn snarkvm_bases_release(d: *mut c_void);
 }
@@ -322,6 +330,7 @@ pub fn fourth_round_chain<T: 'static>(
     }
     // Below the early return: an empty input never reaches the transform.
     assert!(lg_domain_size > 0, "the interpolations fault on a one-element domain");
+    let hit = resident_evals::lookup([row, col, rcv]);
     let err = unsafe {
         snarkvm_fourth_round_chain(
             a_out.as_mut_ptr() as *mut core::ffi::c_void,
@@ -332,6 +341,7 @@ pub fn fourth_round_chain<T: 'static>(
             row.as_ptr() as *const core::ffi::c_void,
             col.as_ptr() as *const core::ffi::c_void,
             rcv.as_ptr() as *const core::ffi::c_void,
+            hit.ptr(),
             len,
             lg_domain_size,
             lg_mul_domain,
@@ -623,6 +633,8 @@ pub fn blst_platform_cap() -> i32 {
 }
 
 pub mod resident;
+
+pub mod resident_evals;
 
 /// Argument guards that a caller can trip.
 ///

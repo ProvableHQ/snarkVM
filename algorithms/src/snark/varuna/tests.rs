@@ -1449,5 +1449,11 @@ mod proof_vector {
                 "the {version:?} proof for a fixed input changed; see this constant's documentation"
             );
         }
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        assert!(
+            snarkvm_algorithms_cuda::device_count() != 1
+                || snarkvm_algorithms_cuda::resident_evals::resident_bytes_of(&pk.circuit) > 0,
+            "proving did not keep the key's round-four evaluations on the device"
+        );
     }
 }

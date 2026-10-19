@@ -337,9 +337,12 @@ public:
     //   `check_degrees_and_bounds` rejects `g` above its degree bound, so the
     //   caller must build `g` through something that trims, such as
     //   `from_coefficients_vec`.
+    // - `d_evals`, when not null, is `row`, `col` and `rcv` already on device
+    //   0, contiguous, and is read in place of the host arrays.
     RustError FourthRoundChain(fr_t* a_out, fr_t* b_out, fr_t* g_out,
                                fr_t* lhs_out, fr_t* f0_out,
                                const fr_t* row, const fr_t* col, const fr_t* rcv,
+                               const fr_t* d_evals,
                                size_t len, uint32_t lg_domain_size,
                                uint32_t lg_mul_domain, size_t q_len,
                                const fr_t* alpha, const fr_t* beta,
@@ -348,6 +351,8 @@ public:
     {
         if (len == 0)
             return RustError{cudaSuccess};
+        if (ngpus() != 1)
+            d_evals = nullptr;
 
         size_t domain_size = (size_t)1 << lg_domain_size;
         size_t mul_domain = (size_t)1 << lg_mul_domain;
@@ -377,17 +382,21 @@ public:
                 // Scoped, so these buffers are freed before the multiply's
                 // `mul_domain` buffers are allocated.
                 {
-                    dev_ptr_t<fr_t> d_in{3 * len, stream};
+                    dev_ptr_t<fr_t> d_copy{d_evals ? 0 : 3 * len, stream};
                     dev_ptr_t<fr_t> d_scan{len, stream}, d_scan_rev{len, stream};
                     dev_ptr_t<fr_t> d_t{1, stream};
 
-                    stream.HtoD(&d_in[0], row, len);
-                    stream.HtoD(&d_in[len], col, len);
-                    stream.HtoD(&d_in[2 * len], rcv, len);
+                    const fr_t* d_in = d_evals;
+                    if (!d_in) {
+                        stream.HtoD(&d_copy[0], row, len);
+                        stream.HtoD(&d_copy[len], col, len);
+                        stream.HtoD(&d_copy[2 * len], rcv, len);
+                        d_in = &d_copy[0];
+                    }
 
                     fourth_round_evals_device(stream, gpu.sm_count(),
                                               &d_a[0], &d_b[0], &d_f[0],
-                                              &d_in[0], &d_in[len], &d_in[2 * len],
+                                              d_in, d_in + len, d_in + 2 * len,
                                               &d_scan[0], &d_scan_rev[0], &d_t[0],
                                               *alpha, *beta, *coeff, *b_scale,
                                               *a_scale, len);
@@ -984,6 +993,32 @@ public:
         }
     }
 
+    // `count` host arrays of `bytes` each, copied end to end into one
+    // allocation from the resident pool.
+    RustError UploadResident(void** d_out, const void* const* srcs, size_t count,
+                             size_t bytes)
+    {
+        void* d = nullptr;
+        try {
+            bases_init();
+            select_gpu(0);
+            stream_t& stream = *bases_stream;
+            CUDA_OK(cudaMallocFromPoolAsync(&d, count * bytes, bases_pool, stream));
+            for (size_t i = 0; i < count; i++)
+                CUDA_OK(cudaMemcpyAsync((char*)d + i * bytes, srcs[i], bytes,
+                                        cudaMemcpyHostToDevice, stream));
+            stream.sync();
+            *d_out = d;
+            return RustError{cudaSuccess};
+        } catch (const cuda_error& e) {
+            if (d) cudaFreeAsync(d, *bases_stream);
+            return RustError{e.code()};
+        } catch (...) {
+            if (d) cudaFreeAsync(d, *bases_stream);
+            return RustError{cudaErrorUnknown};
+        }
+    }
+
     // Widens `npoints` host points into slots `offset..offset + npoints` of a
     // window from `AllocBases`. The caller keeps each chunk small: the points
     // are staged whole on the device before widening (`upload_points`).
@@ -1007,7 +1042,7 @@ public:
         }
     }
 
-    // Frees what `AllocBases` returned. Every call that
+    // Frees what `AllocBases` or `UploadResident` returned. Every call that
     // read it has returned with its device work complete, so the free needs no
     // ordering against another stream.
     //
