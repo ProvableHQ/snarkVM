@@ -181,13 +181,17 @@ extern "C" {
         });
     }
 
+    /// `mont` says the scalars arrive in Montgomery form, and sppark reduces
+    /// them in its digit-extraction kernel.
     RustError snarkvm_msm(point_t* out, const affine_t points[], size_t npoints,
-                          const scalar_t scalars[], size_t ffi_affine_size) {
+                          const scalar_t scalars[], size_t ffi_affine_size,
+                          bool mont) {
         return catch_all([&] {
             if (!snarkvm_g.ok()) {
                 return snarkvm_g.failure();
             }
-            return snarkvm_g->MSM(out, points, npoints, scalars, ffi_affine_size);
+            return snarkvm_g->MSM(out, points, npoints, scalars, ffi_affine_size,
+                                  mont);
         });
     }
 }

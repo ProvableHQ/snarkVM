@@ -74,6 +74,7 @@ unsafe extern "C" {
         npoints: usize,
         scalars: *const c_void,
         ffi_affine_sz: usize,
+        mont: bool,
     ) -> cuda::Error;
 }
 
@@ -242,15 +243,23 @@ pub fn polymul<T: std::clone::Clone + 'static>(
     Ok(out)
 }
 
-/// Compute a multi-scalar multiplication over scalars reduced out of
-/// Montgomery form.
+/// Compute a multi-scalar multiplication.
+///
+/// `Fr` scalars are in Montgomery form, and the GPU kernel that extracts
+/// Pippenger digits reduces them. `BigInteger256` scalars were reduced on the
+/// CPU.
 pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
     points: &[Affine],
     scalars: &[Scalar],
 ) -> Result<Projective, cuda::Error> {
     assert_type::<Affine, G1Affine>();
     assert_type::<Projective, G1Projective>();
-    assert_type::<Scalar, BigInteger256>();
+    let mont = TypeId::of::<Scalar>() == TypeId::of::<Fr>();
+    assert!(
+        mont || TypeId::of::<Scalar>() == TypeId::of::<BigInteger256>(),
+        "the C++ reads these scalars as Fr or BigInteger256, got {}",
+        std::any::type_name::<Scalar>()
+    );
 
     let npoints = scalars.len();
     if npoints > points.len() {
@@ -264,6 +273,7 @@ pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
             npoints,
             scalars as *const _ as *const c_void,
             std::mem::size_of::<Affine>(),
+            mont,
         )
     };
     if err.code != 0 {
@@ -359,10 +369,10 @@ mod argument_guards {
         );
     }
 
-    /// A scalar the width of `fr_t` that is not `BigInteger256` is read as a
-    /// different integer.
+    /// A scalar the width of `fr_t` that is neither `Fr` nor `BigInteger256`
+    /// is read as a different integer.
     #[test]
-    #[should_panic(expected = "the C++ reads this as")]
+    #[should_panic(expected = "the C++ reads these scalars as Fr or BigInteger256")]
     fn msm_refuses_scalars_of_another_type() {
         let _ = super::msm::<super::G1Affine, super::G1Projective, snarkvm_curves::edwards_bls12::Fr>(&[], &[]);
     }

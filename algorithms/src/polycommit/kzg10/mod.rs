@@ -113,12 +113,12 @@ impl<E: PairingEngine> KZG10<E> {
 
         let mut commitment = match polynomial {
             Polynomial::Dense(polynomial) => {
-                let (num_leading_zeros, plain_coeffs) = skip_leading_zeros_and_convert_to_bigints(polynomial);
+                let (num_leading_zeros, plain_coeffs) = skip_leading_zeros(polynomial);
 
                 let bases = &powers.powers_of_beta_g[num_leading_zeros..(num_leading_zeros + plain_coeffs.len())];
 
                 let msm_time = start_timer!(|| "MSM to compute commitment to plaintext poly");
-                let commitment = VariableBase::msm(bases, &plain_coeffs);
+                let commitment = VariableBase::msm_field(bases, plain_coeffs);
                 end_timer!(msm_time);
 
                 commitment
@@ -145,10 +145,10 @@ impl<E: PairingEngine> KZG10<E> {
             )?;
         }
 
-        let random_ints = convert_to_bigints(&randomness.blinding_polynomial.coeffs);
         let msm_time = start_timer!(|| "MSM to compute commitment to random poly");
         let random_commitment =
-            VariableBase::msm(&powers.powers_of_beta_times_gamma_g, random_ints.as_slice()).to_affine();
+            VariableBase::msm_field(&powers.powers_of_beta_times_gamma_g, &randomness.blinding_polynomial.coeffs)
+                .to_affine();
         end_timer!(msm_time);
 
         commitment.add_assign_mixed(&random_commitment);
@@ -195,10 +195,12 @@ impl<E: PairingEngine> KZG10<E> {
             )?;
         }
 
-        let random_ints = convert_to_bigints(&randomness.blinding_polynomial.coeffs);
         let msm_time = start_timer!(|| "MSM to compute commitment to random poly");
-        let random_commitment =
-            VariableBase::msm(&lagrange_basis.powers_of_beta_times_gamma_g, random_ints.as_slice()).to_affine();
+        let random_commitment = VariableBase::msm_field(
+            &lagrange_basis.powers_of_beta_times_gamma_g,
+            &randomness.blinding_polynomial.coeffs,
+        )
+        .to_affine();
         end_timer!(msm_time);
 
         commitment.add_assign_mixed(&random_commitment);
@@ -243,12 +245,12 @@ impl<E: PairingEngine> KZG10<E> {
         hiding_witness_polynomial: Option<&DensePolynomial<E::Fr>>,
     ) -> Result<KZGProof<E>, PCError> {
         Self::check_degree_is_too_large(witness_polynomial.degree(), powers.size())?;
-        let (num_leading_zeros, witness_coeffs) = skip_leading_zeros_and_convert_to_bigints(witness_polynomial);
+        let (num_leading_zeros, witness_coeffs) = skip_leading_zeros(witness_polynomial);
 
         let bases = &powers.powers_of_beta_g[num_leading_zeros..(num_leading_zeros + witness_coeffs.len())];
 
         let witness_comm_time = start_timer!(|| "Computing commitment to witness polynomial");
-        let mut w = VariableBase::msm(bases, &witness_coeffs);
+        let mut w = VariableBase::msm_field(bases, witness_coeffs);
         end_timer!(witness_comm_time);
 
         let random_v = if let Some(hiding_witness_polynomial) = hiding_witness_polynomial {
@@ -257,9 +259,8 @@ impl<E: PairingEngine> KZG10<E> {
             let blinding_evaluation = blinding_p.evaluate(point);
             end_timer!(blinding_eval_time);
 
-            let random_witness_coeffs = convert_to_bigints(&hiding_witness_polynomial.coeffs);
             let witness_comm_time = start_timer!(|| "Computing commitment to random witness polynomial");
-            w += &VariableBase::msm(&powers.powers_of_beta_times_gamma_g, &random_witness_coeffs);
+            w += &VariableBase::msm_field(&powers.powers_of_beta_times_gamma_g, &hiding_witness_polynomial.coeffs);
             end_timer!(witness_comm_time);
             Some(blinding_evaluation)
         } else {
@@ -452,25 +453,17 @@ impl<E: PairingEngine> KZG10<E> {
     }
 }
 
-fn skip_leading_zeros_and_convert_to_bigints<F: PrimeField>(p: &DensePolynomial<F>) -> (usize, Vec<F::BigInteger>) {
+/// Trailing coefficients, and how many leading zeros were dropped to reach
+/// them.
+///
+/// The coefficients stay in Montgomery form; the MSM converts them itself.
+fn skip_leading_zeros<F: PrimeField>(p: &DensePolynomial<F>) -> (usize, &[F]) {
     if p.coeffs.is_empty() {
-        (0, vec![])
+        (0, &[])
     } else {
         let num_leading_zeros = p.coeffs.iter().take_while(|c| c.is_zero()).count();
-        let coeffs = if num_leading_zeros == p.coeffs.len() {
-            vec![]
-        } else {
-            convert_to_bigints(&p.coeffs[num_leading_zeros..])
-        };
-        (num_leading_zeros, coeffs)
+        (num_leading_zeros, &p.coeffs[num_leading_zeros..])
     }
-}
-
-fn convert_to_bigints<F: PrimeField>(p: &[F]) -> Vec<F::BigInteger> {
-    let to_bigint_time = start_timer!(|| "Converting polynomial coeffs to bigints");
-    let coeffs = p.iter().map(|s| s.to_bigint()).collect::<Vec<_>>();
-    end_timer!(to_bigint_time);
-    coeffs
 }
 
 #[cfg(test)]

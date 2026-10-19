@@ -75,6 +75,12 @@ using namespace std;
 
 static_assert(cudaErrorNotSupported == 801, "snarkvm-algorithms' CUDA_ERROR_NOT_SUPPORTED");
 
+// Defined in batchinv.cu. Kept there so its kernel stays out of this
+// translation unit; only this host call crosses.
+void widen_points_device(const stream_t& stream, int sm_count, uint64_t* d_dst,
+                         const uint64_t* d_src, size_t npoints,
+                         size_t src_words, size_t dst_words);
+
 // Returns `cudaErrorNotSupported` with a message naming the domain and the
 // limit it exceeds. Falls back to the bare code if the message cannot be
 // built, since nothing may cross `extern "C"`.
@@ -307,8 +313,55 @@ public:
         return RustError{cudaSuccess};
     }
 
+    // Puts `npoints` host points of `ffi_affine_size` bytes each into `d_dst`,
+    // one device slot per point, on `stream`. The caller syncs `stream` before
+    // anything on another stream reads the slots, and has checked that
+    // `ffi_affine_size` is a whole number of words no larger than a slot.
+    //
+    // The host point is 104 bytes and the device slot is 112. The copy works
+    // because is_inf() reads inf[0]&1, which lands on the Rust `bool` at
+    // offset 96; the copy keeps that byte in place and zeroes the slot's tail.
+    //
+    // The points cross as one contiguous copy and a kernel widens them.
+    // sppark's `HtoD` widens with a per-row `cudaMemcpy2DAsync`, which is far
+    // slower under confidential computing.
+    void upload_points(typename affine_t::mem_t* d_dst, const void* points,
+                       size_t npoints, size_t ffi_affine_size,
+                       const stream_t& stream)
+    {
+        constexpr size_t slot = sizeof(typename affine_t::mem_t);
+        static_assert(slot == 112,
+                      "device affine slot is no longer 112 bytes; the widening "
+                      "copy into it, and is_inf() reading inf[0]&1 at offset 96, "
+                      "both assume it");
+
+        size_t src_words = ffi_affine_size / sizeof(uint64_t);
+        size_t dst_words = slot / sizeof(uint64_t);
+        dev_ptr_t<uint64_t> d_packed{npoints * src_words, stream};
+        stream.HtoD(&d_packed[0], (const uint64_t*)points, npoints * src_words);
+        widen_points_device(stream, stream.sm_count(), (uint64_t*)d_dst,
+                            &d_packed[0], npoints, src_words, dst_words);
+    }
+
+    // The device-pointer form `invoke` takes for points `upload_points` placed.
+    //
+    // Typed as `dev_ptr_t<affine_t::mem_t>`, the view would re-enter the
+    // templated `invoke` for ever. And `affine_t` is the 104-byte host point
+    // while the storage is 112-byte slots, so the view must never be indexed:
+    // sppark reads only element 0, for its address.
+    static dev_ptr_t<affine_t> device_points(typename affine_t::mem_t* d_slots)
+    {   return dev_ptr_t<affine_t>{reinterpret_cast<affine_t*>(d_slots)};   }
+
     RustError MSM(point_t* out, const affine_t points[], size_t npoints,
-                  const scalar_t scalars[], size_t ffi_affine_size) {
+                  const scalar_t scalars[], size_t ffi_affine_size, bool mont) {
+        // The host point's layout cannot be checked from here, so the caller
+        // asserts it and passes its size; this checks it fits the device slot
+        // as `upload_points` copies it (see there for the layout).
+        if (ffi_affine_size > sizeof(typename affine_t::mem_t)
+            || ffi_affine_size % sizeof(uint64_t) != 0) {
+            return RustError{cudaErrorInvalidValue};
+        }
+
         // With no points, `gpu_count` is 0, and `ch.recv()` below would wait
         // forever. Rust reads all three coordinates, and `inf()` sets only Z,
         // so this writes Rust's zero in full.
@@ -339,15 +392,25 @@ public:
                 size_t start = i * bases_per_gpu;
                 size_t sz = std::min(bases_per_gpu, npoints - start);
 
-                // This is ugly, but we only know the size of the affine points in bytes
-                const affine_t* pts = (affine_t*)(&((uint8_t*)points)[start * ffi_affine_size]);
+                const uint8_t* pts = (const uint8_t*)points + start * ffi_affine_size;
 
                 RustError ret;
                 try {
                     select_gpu(dev);
-                    msm_t<bucket_t, point_t, affine_t, scalar_t> msm(dev);
-                    ret = msm.invoke(partial_sums[i], slice_t<affine_t>{pts, sz},
-                                     &scalars[start], false, ffi_affine_size);
+                    // A stream of its own: two MSM calls can run on this device
+                    // at once, and syncing one of the device's shared streams
+                    // would also wait for the other call's queued work.
+                    stream_t stream(dev);
+                    dev_ptr_t<typename affine_t::mem_t> d_slots{sz, stream};
+                    upload_points(&d_slots[0], pts, sz, ffi_affine_size, stream);
+                    stream.sync();
+
+                    // `points` stays nullptr: the bases reach invoke as a
+                    // device pointer.
+                    msm_t<bucket_t, point_t, affine_t, scalar_t> msm(nullptr, sz,
+                                                                     ffi_affine_size, dev);
+                    ret = msm.invoke(partial_sums[i], device_points(&d_slots[0]),
+                                     sz, &scalars[start], mont);
                 } catch (const cuda_error& e) {
 #ifdef TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE
                     ret = RustError{e.code(), e.what()};
