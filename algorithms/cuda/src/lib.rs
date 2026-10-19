@@ -372,8 +372,8 @@ mod argument_guards {
     // with an `int` `lg_domain_size`. At `lg == 0` the shift is undefined, and
     // on x86-64 it launches `1 << 31` threads that run past any allocation.
     //
-    // `NTT` has no such test: sppark's `NTT::Base` returns at
-    // `lg_domain_size == 0`, which is the identity for every direction and type.
+    // `NTT` has no such test: `snarkvm_t::NTT` guards `lg_domain_size == 0` and
+    // performs the identity, which is correct for every direction and type.
     #[test]
     #[should_panic(expected = "over a one-element domain")]
     fn polymul_refuses_a_one_element_domain() {

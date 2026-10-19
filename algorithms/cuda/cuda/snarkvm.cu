@@ -223,13 +223,24 @@ public:
         fr_t* h_mem = h_addr(dev, stream_idx);
         memcpy(h_mem, in, sizeof(fr_t) * domain_size);
 
-        // Perform NTT
-        RustError e = Polynomial::Base(gpu, h_mem, lg_domain_size,
-                                       ntt_order, ntt_direction, ntt_type);
-        if (e.code != cudaSuccess) {
-            return e;
+        // Run on the slot's own stream, against the slot's slice of the
+        // preallocated device block, as `PolyMul` does. Not sppark's
+        // `NTT::Base(const gpu_t&, ...)`: anything reached through `gpu_t`
+        // runs on its `zero` stream, with an allocation pair and three
+        // syncs of a stream every other NTT thread queues on.
+        //
+        // `lg_domain_size == 0` is a one-element NTT, which is the
+        // identity; `NTT::Base` special-cases it, `Base_dev_ptr` does not.
+        if (lg_domain_size != 0) {
+            fr_t* d_mem = d_addr(dev, stream_idx);
+            stream.HtoD(d_mem, h_mem, domain_size);
+            NTT::Base_dev_ptr(stream, d_mem, lg_domain_size,
+                              ntt_order, ntt_direction, ntt_type);
+            stream.DtoH(h_mem, d_mem, domain_size);
+            stream.sync();
         }
-        // Successful. Copy the result back
+        // Out of the pinned buffer into the caller's memory. The device
+        // transfer is the `DtoH` above; this one is host-to-host.
         memcpy(out, h_mem, sizeof(fr_t) * domain_size);
         return RustError{cudaSuccess};
     }
