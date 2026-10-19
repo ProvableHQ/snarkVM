@@ -116,6 +116,18 @@ unsafe extern "C" {
     ) -> cuda::Error;
 
     fn snarkvm_blst_platform_cap() -> core::ffi::c_int;
+    fn snarkvm_accumulate_open(
+        out: *mut core::ffi::c_void,
+        out_len: usize,
+        nterms: usize,
+        polys: *const *const core::ffi::c_void,
+        lens: *const usize,
+        coeffs: *const core::ffi::c_void,
+        z: *const core::ffi::c_void,
+        bases: *const core::ffi::c_void,
+        nbases: usize,
+        ffi_affine_size: usize,
+    ) -> cuda::Error;
 
     fn snarkvm_msm(
         out: *mut c_void,
@@ -474,6 +486,68 @@ pub fn polymul<T: std::clone::Clone + 'static>(
         return Err(err);
     }
     Ok(out)
+}
+
+/// The opening's chain in one call: accumulate `Σ coeffs[j] · polys[j]`, divide
+/// the result by `X - z`, and commit to the quotient, without the polynomial
+/// leaving the device.
+///
+/// Returns the same curve point as
+/// `VariableBase::msm_field(&bases[..out_len - 1], &quotient.coeffs)`
+/// where `quotient` is `combined.divide_by_monic_linear(z).0`;
+/// `accumulate_open_matches_the_host_sequence` checks it.
+///
+/// # Panics
+///
+/// If any term is longer than `out_len`, or `bases` is shorter than
+/// `out_len - 1`.
+pub fn accumulate_open<Affine: 'static, Projective: 'static, F>(
+    out_len: usize,
+    terms: &[(F, &[F])],
+    z: &F,
+    bases: &[Affine],
+) -> Result<Projective, cuda::Error>
+where
+    F: Copy + 'static,
+{
+    assert_type::<Affine, G1Affine>();
+    assert_type::<Projective, G1Projective>();
+    assert_type::<F, Fr>();
+    assert!(out_len >= 2, "a quotient needs at least two coefficients");
+    assert!(bases.len() >= out_len - 1, "{} bases for a quotient of {}", bases.len(), out_len - 1);
+
+    let mut polys: Vec<*const core::ffi::c_void> = Vec::with_capacity(terms.len());
+    let mut lens: Vec<usize> = Vec::with_capacity(terms.len());
+    let mut coeffs: Vec<F> = Vec::with_capacity(terms.len());
+    for (coeff, poly) in terms {
+        assert!(poly.len() <= out_len, "term of {} exceeds the output of {}", poly.len(), out_len);
+        polys.push(poly.as_ptr() as *const core::ffi::c_void);
+        lens.push(poly.len());
+        coeffs.push(*coeff);
+    }
+
+    // Assumed initialised only after the call succeeds, as in `msm`.
+    let mut ret = std::mem::MaybeUninit::<Projective>::uninit();
+    let err = unsafe {
+        snarkvm_accumulate_open(
+            ret.as_mut_ptr() as *mut core::ffi::c_void,
+            out_len,
+            terms.len(),
+            polys.as_ptr(),
+            lens.as_ptr(),
+            coeffs.as_ptr() as *const core::ffi::c_void,
+            z as *const _ as *const core::ffi::c_void,
+            bases as *const _ as *const core::ffi::c_void,
+            bases.len(),
+            std::mem::size_of::<Affine>(),
+        )
+    };
+    if err.code != 0 {
+        return Err(err);
+    }
+    // SAFETY: the C++ writes `*out` on every success path, the same guarantee
+    // `msm` relies on.
+    Ok(unsafe { ret.assume_init() })
 }
 
 /// Compute a multi-scalar multiplication.

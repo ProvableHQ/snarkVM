@@ -121,10 +121,19 @@ void fourth_round_evals_device(const stream_t& stream, int sm_count,
                                fr_t* d_scan, fr_t* d_scan_rev, fr_t* d_t,
                                fr_t alpha, fr_t beta, fr_t coeff,
                                fr_t b_scale, fr_t a_scale, size_t len);
+// Defined in batchinv.cu. Kept there so its kernel stays out of this
+// translation unit; only this host call crosses.
+void accumulate_axpy_device(const stream_t& stream, int sm_count,
+                            fr_t* d_acc, const fr_t* d_src, fr_t coeff, size_t len);
 // Defined in batchinv.cu, for the same reason.
 void widen_points_device(const stream_t& stream, int sm_count, uint64_t* d_dst,
                          const uint64_t* d_src, size_t npoints,
                          size_t src_words, size_t dst_words);
+
+// Defined in div.cu, for the same reason. In place: the remainder lands in slot
+// 0 and the quotient in [1, len).
+void divide_by_x_minus_z_device(const stream_t& stream, fr_t* d_inout,
+                                size_t len, const fr_t& z);
 
 // Defined in batchinv.cu, for the reason the others there are.
 void round4_sub_device(const stream_t& stream, int sm_count, fr_t* d_out,
@@ -738,7 +747,7 @@ public:
         return RustError{cudaSuccess};
     }
 
-    // The MSM window for MSM(). 14 was fitted on an H100
+    // The MSM window for MSM() and AccumulateOpen(). 14 was fitted on an H100
     // at the proof's sizes, 2^18 and 2^19; sppark's heuristic picks 10 at
     // 2^17-2^18, where most MSM time sits. SNARKVM_MSM_WBITS=<10..18> selects
     // a window, and SNARKVM_MSM_WBITS=auto restores sppark's heuristic, which
@@ -796,6 +805,110 @@ public:
     // sppark reads only element 0, for its address.
     static dev_ptr_t<affine_t> device_points(typename affine_t::mem_t* d_slots)
     {   return dev_ptr_t<affine_t>{reinterpret_cast<affine_t*>(d_slots)};   }
+
+    // The opening's chain: accumulate the linear combination, divide by X - z,
+    // and commit to the quotient, with the polynomial never leaving the device.
+    // Only a curve point comes back.
+    //
+    // The scalars reach sppark as a device pointer: `msm_t::invoke` is
+    // templated on the scalar pointer type and adopts a `dev_ptr_t` without
+    // uploading. `dev_ptr_t(T*, n)` is a non-owning view, so sppark does not
+    // free it.
+    //
+    // `mont` is true because the quotient is in Montgomery form.
+    RustError AccumulateOpen(point_t* out, size_t out_len,
+                             size_t nterms, const fr_t* const* polys,
+                             const size_t* lens, const fr_t* coeffs,
+                             const fr_t* z,
+                             const affine_t bases[], size_t nbases,
+                             size_t ffi_affine_size)
+    {
+        // A quotient needs at least two coefficients, and the caller must have
+        // supplied a base per quotient coefficient.
+        if (out_len < 2 || nbases < out_len - 1)
+            return RustError{cudaErrorInvalidValue};
+        if (ffi_affine_size > sizeof(typename affine_t::mem_t)
+            || ffi_affine_size % sizeof(uint64_t) != 0)
+            return RustError{cudaErrorInvalidValue};
+        for (size_t j = 0; j < nterms; j++)
+            if (lens[j] > out_len)
+                return RustError{cudaErrorInvalidValue};
+
+        // The slot is held across the accumulation, the division and the MSM:
+        // `d_acc` is allocated stream-ordered on this slot's stream, so
+        // releasing the slot before the MSM would issue its free onto a stream
+        // another request may have taken.
+        slot_t slot(resources);
+        RustError ret = RustError{cudaSuccess};
+        try {
+            auto& gpu = select_gpu(slot.dev());
+            stream_t& stream = gpu[slot.stream()];
+            dev_ptr_t<fr_t> d_acc{out_len, stream};
+            // The quotient is `[1, out_len)`; slot 0 holds the remainder.
+            size_t n = out_len - 1;
+            dev_ptr_t<typename affine_t::mem_t> d_slots{n, stream};
+            try {
+                CUDA_OK(cudaMemsetAsync(&d_acc[0], 0, out_len * sizeof(fr_t), stream));
+
+                dev_ptr_t<fr_t> d_buf{out_len, stream};
+                for (size_t j = 0; j < nterms; j++) {
+                    if (lens[j] == 0)
+                        continue;
+                    stream.HtoD(&d_buf[0], polys[j], lens[j]);
+                    accumulate_axpy_device(stream, gpu.sm_count(),
+                                           &d_acc[0], &d_buf[0], coeffs[j], lens[j]);
+                }
+
+                divide_by_x_minus_z_device(stream, &d_acc[0], out_len, *z);
+                upload_points(&d_slots[0], bases, n, ffi_affine_size, stream);
+
+                // The MSM runs in its own context and streams, so the
+                // accumulation, the division and the bases have to be complete
+                // before it reads them.
+                stream.sync();
+            } catch (...) {
+                // After a fault the drain fails too, and its error must not
+                // replace the cause.
+                try {
+                    stream.sync();
+                } catch (...) {
+                }
+                throw;
+            }
+
+            dev_ptr_t<scalar_t> d_quotient{&d_acc[1], n};
+
+            int wbits = msm_wbits();
+            size_t hint = wbits ? (size_t)((1ULL << (wbits + 8)) * 2 / 3) + 32 : n;
+            msm_t<bucket_t, point_t, affine_t, scalar_t> msm(nullptr, hint,
+                                                             ffi_affine_size,
+                                                             slot.dev());
+            ret = msm.invoke(*out, device_points(&d_slots[0]), n, d_quotient,
+                             /*mont=*/true);
+        } catch (const cuda_error& e) {
+            out->inf();
+#ifdef TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE
+            ret = RustError{e.code(), e.what()};
+#else
+            ret = RustError{e.code()};
+#endif
+#ifdef TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE
+        } catch (const std::exception& e) {
+            // Ahead of the catch-all, so a `std::bad_alloc` keeps its message.
+            out->inf();
+            ret = RustError{cudaErrorUnknown, e.what()};
+#endif
+        } catch (...) {
+            // Nothing may cross `extern "C"`: the wrappers in `snarkvm_api.cu`
+            // have no handler.
+            //
+            // `out` is written here for the same reason as above: the caller
+            // reads it regardless of the code returned.
+            out->inf();
+            ret = RustError{cudaErrorUnknown};
+        }
+        return ret;
+    }
 
     RustError MSM(point_t* out, const affine_t points[], size_t npoints,
                   const scalar_t scalars[], size_t ffi_affine_size, bool mont) {

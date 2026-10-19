@@ -239,6 +239,23 @@ extern "C" {
         });
     }
 
+    RustError snarkvm_accumulate_open(point_t* out, size_t out_len,
+                                      size_t nterms, const fr_t* const* polys,
+                                      const size_t* lens, const fr_t* coeffs,
+                                      const fr_t* z,
+                                      const affine_t bases[], size_t nbases,
+                                      size_t ffi_affine_size)
+    {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return snarkvm_g->AccumulateOpen(out, out_len, nterms, polys, lens,
+                                             coeffs, z, bases, nbases,
+                                             ffi_affine_size);
+        });
+    }
+
     /// `mont` says the scalars arrive in Montgomery form, and sppark reduces
     /// them in its digit-extraction kernel.
     RustError snarkvm_msm(point_t* out, const affine_t points[], size_t npoints,

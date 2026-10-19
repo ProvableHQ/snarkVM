@@ -250,9 +250,22 @@ impl<E: PairingEngine> KZG10<E> {
         let bases = &powers.powers_of_beta_g[num_leading_zeros..(num_leading_zeros + witness_coeffs.len())];
 
         let witness_comm_time = start_timer!(|| "Computing commitment to witness polynomial");
-        let mut w = VariableBase::msm_field(bases, witness_coeffs);
+        let w = VariableBase::msm_field(bases, witness_coeffs);
         end_timer!(witness_comm_time);
 
+        Ok(Self::finish_open(powers, point, randomness, w, hiding_witness_polynomial))
+    }
+
+    /// Finish an opening from an already-computed commitment `w` to the witness
+    /// polynomial, adding the hiding term when `hiding_witness_polynomial` is
+    /// given.
+    pub(crate) fn finish_open(
+        powers: &Powers<E>,
+        point: E::Fr,
+        randomness: &KZGRandomness<E>,
+        mut w: E::G1Projective,
+        hiding_witness_polynomial: Option<&DensePolynomial<E::Fr>>,
+    ) -> KZGProof<E> {
         let random_v = if let Some(hiding_witness_polynomial) = hiding_witness_polynomial {
             let blinding_p = &randomness.blinding_polynomial;
             let blinding_eval_time = start_timer!(|| "Evaluating random polynomial");
@@ -267,7 +280,7 @@ impl<E: PairingEngine> KZG10<E> {
             None
         };
 
-        Ok(KZGProof { w: w.to_affine(), random_v })
+        KZGProof { w: w.to_affine(), random_v }
     }
 
     /// On input a polynomial `p` in Lagrange basis, and a point `point`,

@@ -83,6 +83,16 @@ __global__ void d_cross(T* cross, T* b_evals, T* scan, T* scan_rev,
     }
 }
 
+// acc[i] += coeff * src[i]: one term of a linear combination of polynomials,
+// with the accumulator kept on the device across terms.
+template<typename T>
+__global__ void d_axpy(T* acc, const T* src, T coeff, size_t len)
+{
+    size_t stride = (size_t)gridDim.x * blockDim.x;
+    for (size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x; i < len; i += stride)
+        acc[i] += coeff * src[i];
+}
+
 // Copies `npoints` packed records of `src_words` words into slots of
 // `dst_words`, zeroing each slot's tail. One thread per destination word, so
 // both sides are read and written in order.
@@ -171,6 +181,7 @@ __global__ void d_scale(T* out, const T* in, T s, size_t len)
 // `cudaFuncGetAttributes` on a cooperative kernel fails with "invalid resource
 // handle".
 template __global__ void d_scale<fr_t>(fr_t*, const fr_t*, fr_t, size_t);
+template __global__ void d_axpy<fr_t>(fr_t*, const fr_t*, fr_t, size_t);
 template __global__ void d_sub_ext<fr_t>(fr_t*, const fr_t*, size_t, const fr_t*, size_t);
 template __global__ void d_vanishing_scaled<fr_t>(fr_t*, unsigned*, const fr_t*, size_t, size_t, size_t, fr_t);
 template __global__ void d_total<fr_t>(fr_t*, const fr_t*, size_t, fr_t);
@@ -226,8 +237,18 @@ void fourth_round_evals_device(const stream_t& stream, int sm_count,
     CUDA_OK(cudaGetLastError());
 }
 
-// Launcher for d_widen, kept in this translation unit for the reason at the
-// top of this file.
+// Launcher for d_axpy, kept in this translation unit for the reason at the top
+// of this file.
+void accumulate_axpy_device(const stream_t& stream, int sm_count,
+                            fr_t* d_acc, const fr_t* d_src, fr_t coeff, size_t len)
+{
+    int block = 256;
+    int grid = (int)std::min((len + block - 1) / block, (size_t)sm_count * 8);
+    d_axpy<<<grid, block, 0, stream>>>(d_acc, d_src, coeff, len);
+    CUDA_OK(cudaGetLastError());
+}
+
+// Launcher for d_widen, kept here for the reason accumulate_axpy_device is.
 void widen_points_device(const stream_t& stream, int sm_count, uint64_t* d_dst,
                          const uint64_t* d_src, size_t npoints,
                          size_t src_words, size_t dst_words)

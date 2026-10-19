@@ -96,7 +96,10 @@ fn main() {
         // Separate translation units: ptxas optimises per module, so a kernel
         // added beside the NTT and MSM kernels perturbs their register
         // allocation.
-        nvcc.file("cuda/snarkvm_api.cu").file("cuda/batchinv.cu").compile("snarkvm_algorithms_cuda");
+        nvcc.file("cuda/snarkvm_api.cu")
+            .file("cuda/batchinv.cu")
+            .file("cuda/div.cu")
+            .compile("snarkvm_algorithms_cuda");
 
         println!("cargo:rustc-cfg=feature=\"cuda\"");
     } else {
