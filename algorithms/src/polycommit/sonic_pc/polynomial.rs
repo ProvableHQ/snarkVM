@@ -31,12 +31,26 @@ pub struct PolynomialInfo {
     label: PolynomialLabel,
     degree_bound: Option<usize>,
     hiding_bound: Option<usize>,
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    device: snarkvm_algorithms_cuda::DeviceCopy,
 }
 
 impl PolynomialInfo {
     /// Construct a new labeled polynomial by consuming `polynomial`.
     pub fn new(label: PolynomialLabel, degree_bound: Option<usize>, hiding_bound: Option<usize>) -> Self {
-        Self { label, degree_bound, hiding_bound }
+        Self {
+            label,
+            degree_bound,
+            hiding_bound,
+            #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+            device: Default::default(),
+        }
+    }
+
+    /// The device copy of the polynomial's coefficients, if any.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    pub fn device(&self) -> &snarkvm_algorithms_cuda::DeviceCopy {
+        &self.device
     }
 
     /// Return the label for `self`.
@@ -132,6 +146,15 @@ impl<F: Field> LabeledPolynomial<F> {
     /// Retrieve the hiding bound for the polynomial in `self`.
     pub fn hiding_bound(&self) -> Option<usize> {
         self.info.hiding_bound
+    }
+
+    /// Attaches `device` as the device copy of this polynomial's coefficients.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    pub fn with_device(mut self, device: snarkvm_algorithms_cuda::DevicePoly) -> Self {
+        if let Some(p) = self.polynomial.as_dense() {
+            self.info.device = snarkvm_algorithms_cuda::DeviceCopy::new(device, &p.coeffs);
+        }
+        self
     }
 }
 

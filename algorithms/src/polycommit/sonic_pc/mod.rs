@@ -284,6 +284,10 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                                 ck.powers()
                             };
 
+                            #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+                            let _lend = polynomial
+                                .as_dense()
+                                .map(|d| snarkvm_algorithms_cuda::lend(p.info.device(), &d.coeffs));
                             kzg10::KZG10::commit(&powers, &polynomial, hiding_bound, rng_ref)?
                         }
                     }
@@ -665,19 +669,22 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             // `to_dense` borrows a dense polynomial and converts a sparse one,
             // such as `mask_poly`, as the host path's `AddAssign` does. The
             // `Cow`s are held for the call because `terms` borrows from them.
-            let densified: Vec<(E::Fr, std::borrow::Cow<'_, DensePolynomial<E::Fr>>)> = group
+            let densified: Vec<(E::Fr, std::borrow::Cow<'_, DensePolynomial<E::Fr>>, _)> = group
                 .iter()
                 .zip_eq(challenges.iter())
                 .flat_map(|(c, challenge)| {
-                    c.terms.iter().map(move |(coeff, p)| (*challenge * coeff, p.polynomial().to_dense()))
+                    c.terms
+                        .iter()
+                        .map(move |(coeff, p)| (*challenge * coeff, p.polynomial().to_dense(), p.info.device()))
                 })
                 .collect();
-            let out_len = densified.iter().map(|(_, p)| p.coeffs.len()).max().unwrap_or(0);
+            let out_len = densified.iter().map(|(_, p, _)| p.coeffs.len()).max().unwrap_or(0);
 
             // A quotient needs two coefficients. Below that only the host path
             // is defined.
             if out_len >= 2 {
-                let terms: Vec<(E::Fr, &[E::Fr])> = densified.iter().map(|(c, p)| (*c, p.coeffs.as_slice())).collect();
+                let terms: Vec<(E::Fr, &[E::Fr], _)> =
+                    densified.iter().map(|(c, p, d)| (*c, p.coeffs.as_slice(), *d)).collect();
 
                 let powers = ck.powers();
                 // `KZG10::open`'s check, against the bound `out_len - 1` rather
@@ -981,7 +988,9 @@ mod cuda_tests {
                 VariableBase::msm(&bases[..ints.len()], &ints)
             };
 
-            let terms: Vec<(Fr, &[Fr])> = coeffs.iter().zip(&polys).map(|(c, p)| (*c, p.coeffs.as_slice())).collect();
+            let none = snarkvm_algorithms_cuda::DeviceCopy::default();
+            let terms: Vec<(Fr, &[Fr], _)> =
+                coeffs.iter().zip(&polys).map(|(c, p)| (*c, p.coeffs.as_slice(), &none)).collect();
             match snarkvm_algorithms_cuda::accumulate_open::<_, G1Projective, _>(out_len, &terms, &z, &bases) {
                 Err(_) => bad.push(format!("out {out_len}: the device call failed")),
                 // The device commits to the untrimmed quotient and the host to
@@ -996,6 +1005,73 @@ mod cuda_tests {
         }
 
         assert!(bad.is_empty(), "{}", bad.join("; "));
+    }
+
+    /// `commit` reads a degree-bounded polynomial's device copy, from past its
+    /// leading zeros: after the host coefficients change, the commitment is
+    /// still the original's. Retention needs exactly one GPU.
+    #[test]
+    fn commit_reads_the_device_copy() {
+        use super::{CommitterUnionKey, LabeledPolynomial, SonicKZG10};
+        use crate::{crypto_hash::PoseidonSponge, srs::UniversalProver};
+        use snarkvm_algorithms_cuda::device_poly::stats;
+        use snarkvm_curves::bls12_377::{Bls12_377, Fq};
+
+        type PC = SonicKZG10<Bls12_377, PoseidonSponge<Fq, 2, 1>>;
+        const LG: u32 = 11;
+
+        if snarkvm_algorithms_cuda::device_count() != 1 {
+            return;
+        }
+        let rng = &mut TestRng::default();
+        let n = 1usize << LG;
+        let mut array = || (0..n).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
+        let (row, col, rcv) = (array(), array(), array());
+        let [alpha, beta, coeff, b_scale, selector_mult] = [(); 5].map(|_| Fr::rand(rng));
+        let (mut a, mut b, mut g, mut lhs, mut f0) =
+            (vec![Fr::zero(); n], vec![Fr::zero(); n], vec![Fr::zero(); n - 1], vec![Fr::zero(); n - 1], Fr::zero());
+        let kept = snarkvm_algorithms_cuda::fourth_round_chain(
+            &mut a,
+            &mut b,
+            &mut g,
+            &mut lhs,
+            &mut f0,
+            &row,
+            &col,
+            &rcv,
+            LG,
+            LG + 1,
+            &alpha,
+            &beta,
+            &coeff,
+            &b_scale,
+            &(b_scale * coeff),
+            &selector_mult,
+        )
+        .map_err(|e| e.code)
+        .expect("the chain runs");
+        let [.., d_g] = kept.expect("one GPU keeps the outputs");
+        g[..2].fill(Fr::zero());
+
+        let pp = PC::load_srs(n).unwrap();
+        let bound = n - 2;
+        let (ck, _) = PC::trim(&pp, n, [], 1, Some(&[bound])).unwrap();
+        let ck = CommitterUnionKey::union(std::iter::once(&ck));
+        let prover = UniversalProver::<Bls12_377> { max_degree: pp.max_degree(), _unused: None };
+        let commit = |p: &LabeledPolynomial<Fr>| *PC::commit(&prover, &ck, [p.into()], None).unwrap().0[0].commitment();
+        let host = |g: &[Fr]| LabeledPolynomial::new("g", DensePolynomial::from_coefficients_slice(g), bound, None);
+
+        let want = commit(&host(&g));
+        let mut p =
+            LabeledPolynomial::new("g", DensePolynomial::from_coefficients_vec(g), bound, None).with_device(d_g);
+        let reads = stats().device_reads;
+        assert_eq!(commit(&p), want);
+        assert!(stats().device_reads > reads, "the MSM read the device copy");
+        let coeffs = &mut p.polynomial_mut().as_dense_mut().unwrap().coeffs;
+        coeffs[5] += Fr::rand(rng);
+        let changed = host(coeffs);
+        assert_ne!(commit(&changed), want, "the change moves the host path");
+        assert_eq!(commit(&p), want, "the MSM read the host scalars");
     }
 }
 

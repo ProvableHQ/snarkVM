@@ -81,6 +81,7 @@ unsafe extern "C" {
         b_scale: *const core::ffi::c_void,
         a_scale: *const core::ffi::c_void,
         selector_mult: *const core::ffi::c_void,
+        keep: *mut *mut c_void,
     ) -> cuda::Error;
 
     fn snarkvm_fourth_round_polys(
@@ -132,6 +133,7 @@ unsafe extern "C" {
         ffi_affine_size: usize,
         d_bases: *const core::ffi::c_void,
         d_offset: usize,
+        d_polys: *const *const c_void,
     ) -> cuda::Error;
 
     fn snarkvm_msm(
@@ -143,6 +145,7 @@ unsafe extern "C" {
         mont: bool,
         d_bases: *const c_void,
         d_offset: usize,
+        d_scalars: *const c_void,
     ) -> cuda::Error;
 
     fn snarkvm_bases_status() -> cuda::Error;
@@ -166,6 +169,8 @@ unsafe extern "C" {
         bytes: usize,
     ) -> cuda::Error;
 
+    fn snarkvm_resident_download(out: *mut c_void, d: *const c_void, bytes: usize) -> cuda::Error;
+
     fn snarkvm_bases_release(d: *mut c_void);
 }
 
@@ -182,6 +187,9 @@ const _: () = assert!(
         && std::mem::offset_of!(G1Affine, infinity) == 96
         && size_of::<G1Projective>() == 144
 );
+
+/// Bytes of `fr_t`, which the C++ reads every field-element buffer as.
+const FR_BYTES: usize = size_of::<Fr>();
 
 /// Panics unless `T` is `Expected`. The FFI takes `c_void` pointers and the C++
 /// is compiled for BLS12-377, so another type of the same width, such as
@@ -298,6 +306,10 @@ pub fn lineval_interpolate_mul<T: 'static>(
 ///   something that trims, or `check_degrees_and_bounds` rejects it against
 ///   `g_m`'s degree bound.
 ///
+/// On one GPU the device also keeps `a`, `b` and `g`, returned as
+/// `[a, b, g]`. `None` means it kept nothing, and the outputs are complete
+/// either way.
+///
 /// # Errors
 ///
 /// `cudaErrorAssert` means the vanishing polynomial did not divide `h` exactly:
@@ -321,7 +333,7 @@ pub fn fourth_round_chain<T: 'static>(
     b_scale: &T,
     a_scale: &T,
     selector_mult: &T,
-) -> Result<(), cuda::Error> {
+) -> Result<Option<[DevicePoly; 3]>, cuda::Error> {
     assert_type::<T, Fr>();
     let len = row.len();
     assert_eq!(col.len(), len, "row and col are evaluations over the same domain");
@@ -336,11 +348,13 @@ pub fn fourth_round_chain<T: 'static>(
     assert!(lhs_out.len() <= domain, "the single-step branch needs q_len <= domain");
     assert!(lhs_out.len() + domain <= mul_domain);
     if len == 0 {
-        return Ok(());
+        return Ok(None);
     }
     // Below the early return: an empty input never reaches the transform.
     assert!(lg_domain_size > 0, "the interpolations fault on a one-element domain");
     let hit = resident_evals::lookup([row, col, rcv]);
+    let retain = device_poly::supported();
+    let mut keep = [std::ptr::null_mut(); 3];
     let err = unsafe {
         snarkvm_fourth_round_chain(
             a_out.as_mut_ptr() as *mut core::ffi::c_void,
@@ -362,9 +376,11 @@ pub fn fourth_round_chain<T: 'static>(
             b_scale as *const _ as *const core::ffi::c_void,
             a_scale as *const _ as *const core::ffi::c_void,
             selector_mult as *const _ as *const core::ffi::c_void,
+            if retain { keep.as_mut_ptr() } else { std::ptr::null_mut() },
         )
     };
-    if err.code != 0 { Err(err) } else { Ok(()) }
+    // The C++ keeps nothing on an error.
+    if err.code != 0 { Err(err) } else { Ok(retain.then(|| device_poly::adopt(keep, domain)).flatten()) }
 }
 
 /// The fourth round's `a`, `b` and `f` polynomials on K for one
@@ -537,13 +553,16 @@ pub fn polymul<T: std::clone::Clone + 'static>(
 /// where `quotient` is `combined.divide_by_monic_linear(z).0`;
 /// `accumulate_open_matches_the_host_sequence` checks it.
 ///
+/// A term whose [`DeviceCopy`] mirrors its coefficients is read from the
+/// device instead of uploaded.
+///
 /// # Panics
 ///
 /// If any term is longer than `out_len`, or `bases` is shorter than
 /// `out_len - 1`.
 pub fn accumulate_open<Affine: 'static, Projective: 'static, F>(
     out_len: usize,
-    terms: &[(F, &[F])],
+    terms: &[(F, &[F], &DeviceCopy)],
     z: &F,
     bases: &[Affine],
 ) -> Result<Projective, cuda::Error>
@@ -560,11 +579,13 @@ where
     let mut polys: Vec<*const core::ffi::c_void> = Vec::with_capacity(terms.len());
     let mut lens: Vec<usize> = Vec::with_capacity(terms.len());
     let mut coeffs: Vec<F> = Vec::with_capacity(terms.len());
-    for (coeff, poly) in terms {
+    let mut d_polys: Vec<*const c_void> = Vec::with_capacity(terms.len());
+    for (coeff, poly, device) in terms {
         assert!(poly.len() <= out_len, "term of {} exceeds the output of {}", poly.len(), out_len);
         polys.push(poly.as_ptr() as *const core::ffi::c_void);
         lens.push(poly.len());
         coeffs.push(*coeff);
+        d_polys.push(device.term(poly));
     }
 
     // Assumed initialised only after the call succeeds, as in `msm`.
@@ -583,6 +604,7 @@ where
             std::mem::size_of::<Affine>(),
             hit.ptr(),
             hit.offset(),
+            d_polys.as_ptr(),
         )
     };
     if err.code != 0 {
@@ -597,7 +619,7 @@ where
 ///
 /// `Fr` scalars are in Montgomery form, and the GPU kernel that extracts
 /// Pippenger digits reduces them. `BigInteger256` scalars were reduced on the
-/// CPU.
+/// CPU. `Fr` scalars inside a [`lend`] are read from its device copy.
 pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
     points: &[Affine],
     scalars: &[Scalar],
@@ -616,6 +638,7 @@ pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
         panic!("length mismatch {} points < {} scalars", points.len(), scalars.len())
     }
     let hit = resident::lookup(&points[..npoints]);
+    let d_scalars = if mont { device_poly::lent(scalars) } else { std::ptr::null() };
     let mut ret = std::mem::MaybeUninit::<Projective>::uninit();
     let err = unsafe {
         snarkvm_msm(
@@ -627,6 +650,7 @@ pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
             mont,
             hit.ptr(),
             hit.offset(),
+            d_scalars,
         )
     };
     if err.code != 0 {
@@ -641,6 +665,9 @@ pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
 pub fn blst_platform_cap() -> i32 {
     unsafe { snarkvm_blst_platform_cap() }
 }
+
+pub mod device_poly;
+pub use device_poly::{DeviceCopy, DevicePoly, lend};
 
 pub mod resident;
 

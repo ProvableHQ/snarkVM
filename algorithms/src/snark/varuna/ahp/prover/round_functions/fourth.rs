@@ -209,7 +209,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 &v_R_i_alpha_v_C_i_beta,
                 &selector_mult,
             );
-            crate::cuda_must_succeed!(result, "fourth_round_chain");
+            let kept = crate::cuda_must_succeed!(result, "fourth_round_chain");
 
             // `from_coefficients_vec` trims, which g needs to pass
             // `check_degrees_and_bounds` against its degree bound.
@@ -229,6 +229,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 None,
                 None,
             );
+            let (g, a_poly, b_poly) = match kept {
+                Some([d_a, d_b, d_g]) => (g.with_device(d_g), a_poly.with_device(d_a), b_poly.with_device(d_b)),
+                None => (g, a_poly, b_poly),
+            };
             assert!(lhs.degree() <= non_zero_domain.size() - 2);
             assert!(g.degree() <= non_zero_domain.size() - 2);
             return Ok((f0, lhs, g, a_poly, b_poly));
