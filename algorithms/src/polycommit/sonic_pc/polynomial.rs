@@ -313,6 +313,10 @@ impl<'a, F: PrimeField> LabeledPolynomialWithBasis<'a, F> {
 
     /// Evaluate the polynomial in `self`.
     pub fn evaluate(&self, point: F) -> F {
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        if let Some(p) = host_of::<F>(&self.info) {
+            return p.evaluate(point);
+        }
         self.polynomial.evaluate(point)
     }
 

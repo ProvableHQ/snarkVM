@@ -1158,6 +1158,7 @@ mod cuda_tests {
             assert_eq!(p.evaluate(z), host.evaluate(z), "{label}");
             let with_basis = LabeledPolynomialWithBasis::from(&p);
             assert_eq!(with_basis.degree(), host.degree(), "{label}");
+            assert_eq!(with_basis.evaluate(z), host.evaluate(z), "{label}");
             assert_eq!(commit(&p), commit(&host), "{label}");
             let lc = LinearCombination::new(label.as_str(), [(Fr::one(), label.as_str())]);
             let polys = vec![p.clone()];
