@@ -154,6 +154,13 @@ extern "C" {
         }
     }
 
+    // Device 0's free and total bytes. False if the runtime cannot say.
+    bool snarkvm_cuda_device_memory(size_t* free_out, size_t* total_out)
+    {
+        return cudaSetDevice(0) == cudaSuccess
+            && cudaMemGetInfo(free_out, total_out) == cudaSuccess;
+    }
+
     // The resident windows' length: the pool's NTT bound, 2^(MAX_LG_DOMAIN+2),
     // from the build alone. Unlike `snarkvm_cuda_pool_elements` it builds
     // nothing, so it is safe to ask before the device is ready.

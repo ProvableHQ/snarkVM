@@ -47,6 +47,8 @@ unsafe extern "C" {
 
     fn snarkvm_cuda_pool_elements() -> usize;
 
+    fn snarkvm_cuda_device_memory(free: *mut usize, total: *mut usize) -> bool;
+
     #[allow(clippy::too_many_arguments)]
     fn snarkvm_lineval_interpolate_mul(
         out: *mut core::ffi::c_void,
@@ -198,6 +200,14 @@ fn assert_type<T: 'static, Expected: 'static>() {
 /// runtime could not be queried at all.
 pub fn device_count() -> usize {
     unsafe { snarkvm_cuda_device_count() }
+}
+
+/// Device 0's free and total memory in bytes, or `None` if the runtime cannot
+/// say.
+pub fn device_memory() -> Option<(usize, usize)> {
+    let (mut free, mut total) = (0, 0);
+    // SAFETY: writes two `usize`s.
+    unsafe { snarkvm_cuda_device_memory(&mut free, &mut total) }.then_some((free, total))
 }
 
 /// The largest constraint domain a proof can multiply here, as an element
