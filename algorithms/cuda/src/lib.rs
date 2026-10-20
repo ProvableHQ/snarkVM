@@ -127,6 +127,8 @@ unsafe extern "C" {
         bases: *const core::ffi::c_void,
         nbases: usize,
         ffi_affine_size: usize,
+        d_bases: *const core::ffi::c_void,
+        d_offset: usize,
     ) -> cuda::Error;
 
     fn snarkvm_msm(
@@ -136,7 +138,25 @@ unsafe extern "C" {
         scalars: *const c_void,
         ffi_affine_sz: usize,
         mont: bool,
+        d_bases: *const c_void,
+        d_offset: usize,
     ) -> cuda::Error;
+
+    fn snarkvm_bases_status() -> cuda::Error;
+
+    fn snarkvm_bases_alloc(d_out: *mut *mut c_void, bytes_out: *mut usize, npoints: usize) -> cuda::Error;
+
+    fn snarkvm_bases_upload_at(
+        d: *mut c_void,
+        offset: usize,
+        points: *const c_void,
+        npoints: usize,
+        ffi_affine_sz: usize,
+    ) -> cuda::Error;
+
+    fn snarkvm_cuda_window_points() -> usize;
+
+    fn snarkvm_bases_release(d: *mut c_void);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -516,6 +536,7 @@ where
     assert!(out_len >= 2, "a quotient needs at least two coefficients");
     assert!(bases.len() >= out_len - 1, "{} bases for a quotient of {}", bases.len(), out_len - 1);
 
+    let hit = resident::lookup(&bases[..out_len - 1]);
     let mut polys: Vec<*const core::ffi::c_void> = Vec::with_capacity(terms.len());
     let mut lens: Vec<usize> = Vec::with_capacity(terms.len());
     let mut coeffs: Vec<F> = Vec::with_capacity(terms.len());
@@ -540,6 +561,8 @@ where
             bases as *const _ as *const core::ffi::c_void,
             bases.len(),
             std::mem::size_of::<Affine>(),
+            hit.ptr(),
+            hit.offset(),
         )
     };
     if err.code != 0 {
@@ -572,6 +595,7 @@ pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
     if npoints > points.len() {
         panic!("length mismatch {} points < {} scalars", points.len(), scalars.len())
     }
+    let hit = resident::lookup(&points[..npoints]);
     let mut ret = std::mem::MaybeUninit::<Projective>::uninit();
     let err = unsafe {
         snarkvm_msm(
@@ -581,6 +605,8 @@ pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
             scalars as *const _ as *const c_void,
             std::mem::size_of::<Affine>(),
             mont,
+            hit.ptr(),
+            hit.offset(),
         )
     };
     if err.code != 0 {
@@ -595,6 +621,8 @@ pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
 pub fn blst_platform_cap() -> i32 {
     unsafe { snarkvm_blst_platform_cap() }
 }
+
+pub mod resident;
 
 /// Argument guards that a caller can trip.
 ///

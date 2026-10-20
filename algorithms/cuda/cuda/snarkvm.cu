@@ -104,6 +104,9 @@ public:
 #include <atomic>
 #include <mutex>
 #include <cstring>
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
 
 typedef std::chrono::high_resolution_clock Clock;
@@ -821,7 +824,8 @@ public:
                              const size_t* lens, const fr_t* coeffs,
                              const fr_t* z,
                              const affine_t bases[], size_t nbases,
-                             size_t ffi_affine_size)
+                             size_t ffi_affine_size,
+                             const void* d_bases, size_t d_offset)
     {
         // A quotient needs at least two coefficients, and the caller must have
         // supplied a base per quotient coefficient.
@@ -846,7 +850,19 @@ public:
             dev_ptr_t<fr_t> d_acc{out_len, stream};
             // The quotient is `[1, out_len)`; slot 0 holds the remainder.
             size_t n = out_len - 1;
-            dev_ptr_t<typename affine_t::mem_t> d_slots{n, stream};
+            // `d_bases`, when set, is a resident window, already widened, and
+            // these bases start `d_offset` points into it. It is on device 0
+            // only, so any other slot ignores it and uploads the bases.
+            if (slot.dev() != 0)
+                d_bases = nullptr;
+            std::optional<dev_ptr_t<typename affine_t::mem_t>> d_owned;
+            typename affine_t::mem_t* d_slots;
+            if (d_bases) {
+                d_slots = (typename affine_t::mem_t*)d_bases + d_offset;
+            } else {
+                d_owned.emplace(n, stream);
+                d_slots = &(*d_owned)[0];
+            }
             try {
                 CUDA_OK(cudaMemsetAsync(&d_acc[0], 0, out_len * sizeof(fr_t), stream));
 
@@ -860,7 +876,8 @@ public:
                 }
 
                 divide_by_x_minus_z_device(stream, &d_acc[0], out_len, *z);
-                upload_points(&d_slots[0], bases, n, ffi_affine_size, stream);
+                if (!d_bases)
+                    upload_points(d_slots, bases, n, ffi_affine_size, stream);
 
                 // The MSM runs in its own context and streams, so the
                 // accumulation, the division and the bases have to be complete
@@ -883,7 +900,7 @@ public:
             msm_t<bucket_t, point_t, affine_t, scalar_t> msm(nullptr, hint,
                                                              ffi_affine_size,
                                                              slot.dev());
-            ret = msm.invoke(*out, device_points(&d_slots[0]), n, d_quotient,
+            ret = msm.invoke(*out, device_points(d_slots), n, d_quotient,
                              /*mont=*/true);
         } catch (const cuda_error& e) {
             out->inf();
@@ -910,8 +927,113 @@ public:
         return ret;
     }
 
+    // Resident bases, on device 0 only.
+    //
+    // From a memory pool and a stream of their own. `cudaFree`, and a large
+    // `cudaMalloc`, can wait for the whole device to go idle, stalling other
+    // proofs' kernels. A stream-ordered allocation from a dedicated pool, freed
+    // on the dedicated stream, waits for nothing else.
+    std::once_flag bases_once;
+    cudaMemPool_t bases_pool = nullptr;
+    std::unique_ptr<stream_t> bases_stream;
+
+    void bases_init()
+    {
+        // A throw leaves the flag unset, so the next upload retries. The stream
+        // is made first so that a failure never leaves a pool behind.
+        std::call_once(bases_once, [this] {
+            select_gpu(0);
+            auto stream = std::make_unique<stream_t>(0);
+            cudaMemPoolProps props = {};
+            props.allocType = cudaMemAllocationTypePinned;
+            props.location.type = cudaMemLocationTypeDevice;
+            props.location.id = 0;
+            cudaMemPool_t pool;
+            CUDA_OK(cudaMemPoolCreate(&pool, &props));
+            bases_pool = pool;
+            bases_stream = std::move(stream);
+        });
+    }
+
+    // Resident copies live on device 0 only, and `MSM` splits across every
+    // GPU, so with more than one they would never be read.
+    bool BasesSupported() const { return ngpus() == 1; }
+
+    // One resident window of `npoints` device slots, left unfilled, and its
+    // size on the device. `UploadBasesAt` fills it a chunk at a time.
+    RustError AllocBases(void** d_out, size_t* bytes_out, size_t npoints)
+    {
+        void* d = nullptr;
+        try {
+            bases_init();
+            select_gpu(0);
+            stream_t& stream = *bases_stream;
+            CUDA_OK(cudaMallocFromPoolAsync(&d,
+                        npoints * sizeof(typename affine_t::mem_t),
+                        bases_pool, stream));
+            stream.sync();
+            *d_out = d;
+            *bytes_out = npoints * sizeof(typename affine_t::mem_t);
+            return RustError{cudaSuccess};
+        } catch (const cuda_error& e) {
+            if (d) cudaFreeAsync(d, *bases_stream);
+            return RustError{e.code()};
+        } catch (...) {
+            if (d) cudaFreeAsync(d, *bases_stream);
+            return RustError{cudaErrorUnknown};
+        }
+    }
+
+    // Widens `npoints` host points into slots `offset..offset + npoints` of a
+    // window from `AllocBases`. The caller keeps each chunk small: the points
+    // are staged whole on the device before widening (`upload_points`).
+    RustError UploadBasesAt(void* d, size_t offset, const void* points,
+                            size_t npoints, size_t ffi_affine_size)
+    {
+        if (ffi_affine_size > sizeof(typename affine_t::mem_t)
+            || ffi_affine_size % sizeof(uint64_t) != 0)
+            return RustError{cudaErrorInvalidValue};
+        try {
+            select_gpu(0);
+            stream_t& stream = *bases_stream;
+            upload_points((typename affine_t::mem_t*)d + offset, points, npoints,
+                          ffi_affine_size, stream);
+            stream.sync();
+            return RustError{cudaSuccess};
+        } catch (const cuda_error& e) {
+            return RustError{e.code()};
+        } catch (...) {
+            return RustError{cudaErrorUnknown};
+        }
+    }
+
+    // Frees what `AllocBases` returned. Every call that
+    // read it has returned with its device work complete, so the free needs no
+    // ordering against another stream.
+    //
+    // The sync hands the memory back: the pool's release threshold is 0, and a
+    // pool trims at a synchronisation of its stream. It waits only for the
+    // free, not for other streams' kernels. Runs from a Rust `Drop`, so it must
+    // not throw.
+    void ReleaseBases(void* d) noexcept
+    {
+        if (!d || !bases_stream)
+            return;
+        try {
+            select_gpu(0);
+            cudaFreeAsync(d, *bases_stream);
+            cudaStreamSynchronize(*bases_stream);
+        } catch (...) {
+        }
+    }
+
     RustError MSM(point_t* out, const affine_t points[], size_t npoints,
-                  const scalar_t scalars[], size_t ffi_affine_size, bool mont) {
+                  const scalar_t scalars[], size_t ffi_affine_size, bool mont,
+                  const void* d_bases, size_t d_offset) {
+        // A resident copy is on device 0 only. Split across several GPUs, each
+        // would need its own, so there it is ignored.
+        if (ngpus() != 1)
+            d_bases = nullptr;
         // The host point's layout cannot be checked from here, so the caller
         // asserts it and passes its size; this checks it fits the device slot
         // as `upload_points` copies it (see there for the layout).
@@ -958,10 +1080,19 @@ public:
                     // A stream of its own: two MSM calls can run on this device
                     // at once, and syncing one of the device's shared streams
                     // would also wait for the other call's queued work.
-                    stream_t stream(dev);
-                    dev_ptr_t<typename affine_t::mem_t> d_slots{sz, stream};
-                    upload_points(&d_slots[0], pts, sz, ffi_affine_size, stream);
-                    stream.sync();
+                    // Only when uploading: a resident copy needs neither.
+                    std::optional<stream_t> stream;
+                    std::optional<dev_ptr_t<typename affine_t::mem_t>> d_owned;
+                    typename affine_t::mem_t* d_slots;
+                    if (d_bases) {
+                        d_slots = (typename affine_t::mem_t*)d_bases + d_offset + start;
+                    } else {
+                        stream.emplace(dev);
+                        d_owned.emplace(sz, *stream);
+                        d_slots = &(*d_owned)[0];
+                        upload_points(d_slots, pts, sz, ffi_affine_size, *stream);
+                        stream->sync();
+                    }
 
                     // invoke() takes the window from the count passed to the
                     // constructor and sizes buckets from it, so a synthetic
@@ -975,7 +1106,7 @@ public:
                         : sz;
                     msm_t<bucket_t, point_t, affine_t, scalar_t> msm(nullptr, hint,
                                                                      ffi_affine_size, dev);
-                    ret = msm.invoke(partial_sums[i], device_points(&d_slots[0]),
+                    ret = msm.invoke(partial_sums[i], device_points(d_slots),
                                      sz, &scalars[start], mont);
                 } catch (const cuda_error& e) {
 #ifdef TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE
