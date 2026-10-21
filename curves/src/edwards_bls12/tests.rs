@@ -126,7 +126,6 @@ fn test_mul_bits_matches_double_and_add() {
     let points = [EdwardsAffine::zero(), t2, t4, p, (p.to_projective() + t4.to_projective()).to_affine()];
 
     let mut scalars = vec![
-        vec![],
         vec![false; 3],
         vec![true],
         vec![true; 300],

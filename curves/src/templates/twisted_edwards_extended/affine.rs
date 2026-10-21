@@ -184,7 +184,10 @@ impl<P: Parameters> AffineCurve for Affine<P> {
         let bits: Vec<bool> = bits.skip_while(|bit| !bit).collect();
         let base = self.to_projective();
         let double = base.double();
-        let table: Vec<_> = std::iter::successors(Some(base), |p| Some(*p + double)).take(1 << (WINDOW - 1)).collect();
+        let mut table = [base; 1 << (WINDOW - 1)];
+        for i in 1..table.len() {
+            table[i] = table[i - 1] + double;
+        }
 
         let mut res = Projective::zero();
         let mut i = 0;
@@ -198,12 +201,13 @@ impl<P: Parameters> AffineCurve for Affine<P> {
             while !bits[end - 1] {
                 end -= 1;
             }
-            let mut digit = 0;
-            for &bit in &bits[i..end] {
-                res.double_in_place();
-                digit = (digit << 1) | bit as usize;
+            let digit = bits[i..end].iter().fold(0, |digit, &bit| (digit << 1) | bit as usize);
+            if i == 0 {
+                res = table[digit >> 1];
+            } else {
+                (i..end).for_each(|_| res.double_in_place());
+                res += &table[digit >> 1];
             }
-            res += &table[digit >> 1];
             i = end;
         }
         res

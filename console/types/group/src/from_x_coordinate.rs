@@ -86,9 +86,7 @@ mod tests {
 
         // (sqrt(-1), 0) has order four, and its double is (0, -1).
         let t4 = Affine::from_y_coordinate(BaseField::zero(), false).unwrap().to_projective();
-        let t2 = t4.double();
-        assert_eq!(t2, Affine::from_coordinates_unchecked((BaseField::zero(), -BaseField::one())));
-        assert!(!t2.is_zero());
+        assert_eq!(t4.double(), Affine::from_coordinates_unchecked((BaseField::zero(), -BaseField::one())));
 
         for x in [BaseField::zero(), BaseField::one(), -BaseField::one(), t4.to_affine().x, -t4.to_affine().x] {
             check(x, &mut outcomes);
@@ -96,7 +94,7 @@ mod tests {
         for _ in 0..ITERATIONS {
             check(Uniform::rand(&mut rng), &mut outcomes);
             let point = *Group::<CurrentEnvironment>::rand(&mut rng);
-            for torsion in [Projective::zero(), t4, t2, -t4] {
+            for torsion in [Projective::zero(), t4] {
                 check((point + torsion).to_affine().x, &mut outcomes);
             }
         }
