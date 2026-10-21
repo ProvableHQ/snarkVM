@@ -44,10 +44,6 @@ fn main() {
     if !cfg!(debug_assertions) {
         cc.opt_level(2);
     }
-    // `__ADX__` renames the symbols in blst's `vect.h`, so this crate and blst
-    // must agree on it. Both build in blst's portable mode, whose routines pick
-    // the ADX code at run time from CPUID.
-    cc.define("__BLST_PORTABLE__", None);
     if let Some(include) = env::var_os("DEP_BLST_C_SRC") {
         cc.include(include);
     }
@@ -86,6 +82,9 @@ fn main() {
         nvcc.flag("-Xcompiler").flag("-Wno-subobject-linkage");
         nvcc.define("TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE", None);
         nvcc.define(curve, None);
+        // `__ADX__` renames the symbols in blst's `vect.h`, so this crate and
+        // blst must agree on it. Both build in blst's portable mode, whose
+        // routines pick the ADX code at run time from CPUID.
         nvcc.define("__BLST_PORTABLE__", None);
         if let Some(include) = env::var_os("DEP_BLST_C_SRC") {
             nvcc.include(include);
