@@ -119,7 +119,7 @@ fn test_mul_bits_matches_double_and_add() {
         acc
     };
 
-    // (sqrt(-1), 0) has order four.
+    // -1 is a square in Fq, so (sqrt(-1), 0) exists. It has order four.
     let t4 = EdwardsAffine::from_y_coordinate(Fq::zero(), false).unwrap();
     let p: EdwardsAffine = rng.random();
     let t2 = t4.to_projective().double().to_affine();

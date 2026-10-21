@@ -178,6 +178,7 @@ impl<P: Parameters> AffineCurve for Affine<P> {
     }
 
     /// Uses a sliding window of up to `WINDOW` bits over the odd multiples `self, 3 * self, 5 * self, ...`.
+    /// Runs in variable time.
     #[inline]
     fn mul_bits(&self, bits: impl Iterator<Item = bool>) -> Projective<P> {
         const WINDOW: usize = 4;

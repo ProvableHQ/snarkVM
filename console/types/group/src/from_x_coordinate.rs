@@ -84,7 +84,7 @@ mod tests {
         let mut rng = TestRng::default();
         let mut outcomes = [0; 4];
 
-        // (sqrt(-1), 0) has order four, and its double is (0, -1).
+        // -1 is a square in the base field, so (sqrt(-1), 0) exists. It has order four, and its double is (0, -1).
         let t4 = Affine::from_y_coordinate(BaseField::zero(), false).unwrap().to_projective();
         assert_eq!(t4.double(), Affine::from_coordinates_unchecked((BaseField::zero(), -BaseField::one())));
 
