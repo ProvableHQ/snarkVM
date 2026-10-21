@@ -16,8 +16,9 @@
 use std::{env, path::PathBuf};
 
 fn main() {
-    // Set once the kernels compile, so tests that call them build only then.
-    println!("cargo::rustc-check-cfg=cfg(feature, values(\"cuda\"))");
+    // Declared here and set below once the kernels compile, so tests that call
+    // them build only then.
+    println!("cargo:rustc-check-cfg=cfg(feature, values(\"cuda\"))");
     // One `rerun-if-changed` replaces cargo's default of watching every file
     // in the package, so every source compiled below must be listed here.
     println!("cargo:rerun-if-changed=src/lib.c");
