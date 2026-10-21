@@ -108,6 +108,7 @@ public:
 #include <mutex>
 #include <optional>
 #include <string>
+#include <exception>
 
 typedef std::chrono::high_resolution_clock Clock;
 
@@ -211,12 +212,14 @@ class snarkvm_t {
         resource_t* r;
     public:
         slot_t(channel_t<resource_t*>& p) : pool(p), r(p.recv()) {}
-        // An exception can leave copies into this slot's staging buffers in
-        // flight, so the stream is synced before the next holder gets them.
-        // Both calls can throw, and a throw during unwinding is
-        // `std::terminate`.
+        // `Polynomial::Mul` syncs the device in its own `cuda_error` handler.
+        // Only an exception it does not catch can leave zero-stream copies into
+        // the staging buffers in flight, so the whole device is synced only then.
         ~slot_t() noexcept {
-            try { select_gpu(r->dev)[r->stream].sync(); } catch (...) {}
+            try {
+                auto& gpu = select_gpu(r->dev);
+                if (std::uncaught_exceptions()) gpu.sync(); else gpu[r->stream].sync();
+            } catch (...) {}
             try { pool.send(r); } catch (...) {}
         }
         slot_t(const slot_t&) = delete;
@@ -1365,9 +1368,10 @@ public:
         RustError error = RustError{cudaSuccess};
         std::mutex error_mtx;
 
-        // Divide the MSM among the GPUs
+        // Divide the MSM among the GPUs. If a spawn throws, the workers
+        // already running still write this frame, so wait for them first.
         for (size_t i = 0; i < gpu_count; i++) {
-            pool.spawn([&, i]() {
+            auto work = [&, i]() {
                 int dev = i;
                 size_t start = i * bases_per_gpu;
                 size_t sz = std::min(bases_per_gpu, npoints - start);
@@ -1433,7 +1437,15 @@ public:
                     }
                 }
                 ch.send(i);
-            });
+            };
+            try {
+                pool.spawn(work);
+            } catch (...) {
+                for (size_t j = 0; j < i; j++)
+                    ch.recv();
+                free(error.message);
+                throw;
+            }
         }
         size_t dev = ch.recv();
         *out = partial_sums[dev];
