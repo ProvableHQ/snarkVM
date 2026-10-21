@@ -177,8 +177,8 @@ class snarkvm_t {
         resource_t* r;
     public:
         slot_t(channel_t<resource_t*>& p) : pool(p), r(p.recv()) {}
-        // Mul and NTT::Base sync the device in their own cuda_error handlers.
-        // Only an exception they do not catch can leave zero-stream copies into
+        // `Polynomial::Mul` syncs the device in its own `cuda_error` handler.
+        // Only an exception it does not catch can leave zero-stream copies into
         // the staging buffers in flight, so the whole device is synced only then.
         ~slot_t() noexcept {
             try {
