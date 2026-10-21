@@ -40,20 +40,15 @@ on:
       - '!**/*.md'
   push:
     branches: [staging]
+    # Same as pull_request.
     paths:
       - 'algorithms/cuda/**'
       - 'algorithms/src/**'
       - 'algorithms/Cargo.toml'
-      # The root manifest sets the build profile, and the lockfile sets the
-      # versions the kernels resolve to, including `blst` and `sppark`.
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/gpu-test.yml'
-      # check-shared-refs runs only when these filters match, and other
-      # workflows hold gh-actions refs too.
       - '.github/workflows/**'
-      # Exclusions are evaluated last, so a change to both a doc and code still
-      # runs.
       - '!**/*.md'
   # Catches changes that reach the kernels from outside the paths above.
   schedule:
@@ -82,6 +77,7 @@ jobs:
   # `actions: read` lets it count the queued jobs. Secrets are named, not
   # inherited, because the tag moves.
   start-runners:
+    needs: check-shared-refs
     uses: aleo-labs-protocol/gh-actions/.github/workflows/start-runner.yml@v2
     permissions: { id-token: write, contents: read, actions: read }
     secrets:

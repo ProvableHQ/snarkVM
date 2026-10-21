@@ -60,11 +60,6 @@ pub const CUDA_ENABLED: bool = cfg!(feature = "cuda");
 /// pool. `cudaErrorNoDevice` (100) and `cudaErrorInitializationError` (3) come
 /// only from startup, and mean the process has no working pool. Any other code
 /// describes the call that failed.
-///
-/// `snarkvm_singleton_t::init()` keeps these sets disjoint by reporting one
-/// code for every construction failure instead of the code it caught. If it
-/// stored the caught code, a `cudaMallocAsync` failure with 801 would read as a
-/// capacity refusal.
 pub const CUDA_ERROR_CODE_PREFIX: &str = "[snarkvm-cuda: code=";
 
 /// `cudaErrorNotSupported` in the CUDA runtime's `cudaError` enum.
@@ -113,16 +108,9 @@ macro_rules! cuda_must_succeed {
     ($result:expr, $op:expr) => {
         match $result {
             Ok(value) => value,
-            // This code comes only from the pool capacity checks, so the
-            // message can name the cause.
             Err(e) if e.code == $crate::CUDA_ERROR_NOT_SUPPORTED => panic!(
-                "CUDA {} failed {}{}{}: {}\nThe input is larger than the device pool preallocated \
-                 at startup.\n\
-                 Rebuild with a larger `MAX_LG_DOMAIN`, defined in \
-                 algorithms/cuda/cuda/snarkvm_api.cu.\n\
-                 This is fatal rather than a fallback to the CPU: the `cuda` feature is a \
-                 build-time choice, and quietly moving a circuit that outgrew the pool onto \
-                 the CPU is the degradation that choice exists to prevent.",
+                "CUDA {} failed {}{}{}: {}\nThe input exceeds the device pool; rebuild with a larger \
+                 `MAX_LG_DOMAIN`.",
                 $op,
                 $crate::CUDA_ERROR_CODE_PREFIX,
                 e.code,
@@ -130,9 +118,8 @@ macro_rules! cuda_must_succeed {
                 String::from(&e)
             ),
             Err(e) => panic!(
-                "CUDA {} failed {}{}{}: {}\nThe `cuda` feature is enabled, so this is fatal rather \
-                 than a fallback to the CPU. Build without the `cuda` feature to use the CPU \
-                 deliberately.",
+                "CUDA {} failed {}{}{}: {}\nA cuda build does not fall back to the CPU; build without \
+                 cuda to use it.",
                 $op,
                 $crate::CUDA_ERROR_CODE_PREFIX,
                 e.code,

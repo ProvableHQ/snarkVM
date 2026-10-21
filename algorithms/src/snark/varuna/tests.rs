@@ -1392,9 +1392,9 @@ mod proof_vector {
 
     #[test]
     fn a_fixed_input_proves_to_a_fixed_proof() {
-        let max_degree =
-            AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(NUM_CONSTRAINTS, NUM_VARIABLES, NUM_NON_ZERO).unwrap();
-        prove_and_check(Inst::universal_setup(max_degree).unwrap(), false);
+        let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(NUM_CONSTRAINTS, NUM_VARIABLES, NUM_NON_ZERO)
+            .expect("the test circuit has a max degree");
+        prove_and_check(Inst::universal_setup(max_degree).expect("the SRS for the test circuit"), false);
     }
 
     /// The same proof with the key's MSMs read from the device-resident
@@ -1420,11 +1420,11 @@ mod proof_vector {
         #[cfg_attr(not(all(feature = "cuda", target_arch = "x86_64")), allow(unused_variables))] resident: bool,
     ) {
         let setup = &mut TestRng::fixed(SETUP_SEED);
-        let prover = &srs.to_universal_prover().unwrap();
-        let verifier = &srs.to_universal_verifier().unwrap();
+        let prover = &srs.to_universal_prover().expect("a prover from the SRS");
+        let verifier = &srs.to_universal_verifier().expect("a verifier from the SRS");
         let fs = FS::sample_parameters();
         let (circuit, inputs) = TestCircuit::gen_rand(MUL_DEPTH, NUM_CONSTRAINTS, NUM_VARIABLES, setup);
-        let (pk, vk) = Inst::circuit_setup(&srs, &circuit).unwrap();
+        let (pk, vk) = Inst::circuit_setup(&srs, &circuit).expect("the keys for the test circuit");
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
         if resident {
             assert!(
@@ -1437,7 +1437,7 @@ mod proof_vector {
         let before = snarkvm_algorithms_cuda::device_poly::stats();
         for (version, expected) in EXPECTED {
             let rng = &mut TestRng::fixed(PROVE_SEED);
-            let proof = Inst::prove(prover, &fs, &pk, version, &circuit, rng).unwrap();
+            let proof = Inst::prove(prover, &fs, &pk, version, &circuit, rng).expect("the test circuit proves");
 
             // Verified before the hash is compared, so a wrong proof fails as
             // wrong rather than as merely different.
@@ -1445,7 +1445,7 @@ mod proof_vector {
                 .unwrap_or_else(|e| panic!("the pinned {version:?} proof must verify, and verification errored: {e}"));
             assert!(verified, "the pinned {version:?} proof must verify");
 
-            let digest = hex::encode(blake2::Blake2s256::digest(proof.to_bytes_le().unwrap()));
+            let digest = hex::encode(blake2::Blake2s256::digest(proof.to_bytes_le().expect("a proof serializes")));
             assert_eq!(
                 digest, expected,
                 "the {version:?} proof for a fixed input changed; see this constant's documentation"

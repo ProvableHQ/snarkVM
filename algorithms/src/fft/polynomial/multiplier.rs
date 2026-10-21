@@ -77,10 +77,7 @@ impl<'a, F: PrimeField> PolyMultiplier<'a, F> {
             if self.evaluations.iter().any(|(_, e)| e.domain() != domain) {
                 return None;
             }
-            // The device cannot multiply two or more operands over a
-            // one-element domain, so those shapes run on the host. This host
-            // fall-back under `cuda` is deliberate: a one-element domain costs
-            // no time, and the alternative is a panic.
+            // Two or more operands over a one-element domain run on the host.
             if snarkvm_algorithms_cuda::polymul_supports(domain.size(), self.polynomials.len() + self.evaluations.len())
             {
                 let poly_slices: Vec<&[F]> = self.polynomials.iter().map(|(_, p)| p.coeffs()).collect();
@@ -323,7 +320,7 @@ mod gpu_polymul_contract {
         // The evaluation must be over the product domain.
         for lg in [10u32, 16] {
             let domain_size = 1usize << lg;
-            let domain = EvaluationDomain::<Fr>::new(domain_size).unwrap();
+            let domain = EvaluationDomain::<Fr>::new(domain_size).expect("a power-of-two domain");
             let a = DensePolynomial::<Fr>::rand(domain_size - 1, rng);
             let e = Evaluations::from_vec_and_domain((0..domain_size).map(|_| Fr::rand(rng)).collect(), domain);
 

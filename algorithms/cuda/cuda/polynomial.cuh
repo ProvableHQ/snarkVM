@@ -177,6 +177,7 @@ public:
                 // Inner multiply
                 polynomial_inner_multiply<<<(domain_size + 1023) / 1024, 1024, 0, stream>>>
                     (domain_size, dmem0, dmem0, mul_src);
+                CUDA_OK(cudaGetLastError());
 
                 // Start the next copy on `alt`, so it overlaps the compute just
                 // queued on `stream`.
