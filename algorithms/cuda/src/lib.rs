@@ -196,8 +196,8 @@ fn assert_type<T: 'static, Expected: 'static>() {
     );
 }
 
-/// How many usable CUDA devices are present. Zero means none, or that the
-/// runtime could not be queried at all.
+/// How many CUDA devices sppark will use. Zero means none, or that the runtime
+/// could not be queried at all.
 pub fn device_count() -> usize {
     unsafe { snarkvm_cuda_device_count() }
 }
