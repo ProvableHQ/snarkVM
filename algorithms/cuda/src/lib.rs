@@ -731,8 +731,7 @@ pub mod resident_evals;
 mod argument_guards {
     use super::Fr;
 
-    /// Zero passes the power-of-two test, and the C++ would then compute
-    /// `(size_t)1 << 64`, which is undefined and 1 on x86.
+    /// Zero passes the power-of-two test, so it has a check of its own.
     #[test]
     #[should_panic(expected = "non-zero power of 2")]
     fn ntt_refuses_a_zero_domain() {
@@ -788,6 +787,14 @@ mod argument_guards {
         let _ = super::polymul(4, &[], &evals, &Fr::default());
     }
 
+    #[test]
+    #[should_panic(expected = "does not fill the domain")]
+    fn polymul_refuses_an_evaluation_shorter_than_the_domain() {
+        let short = vec![Fr::default(); 2];
+        let evals: Vec<&[Fr]> = vec![&short];
+        let _ = super::polymul(4, &[], &evals, &Fr::default());
+    }
+
     /// Another curve's scalar field has `fr_t`'s width, so only the type check
     /// stops the C++ computing with the wrong modulus.
     #[test]
@@ -811,13 +818,14 @@ mod argument_guards {
         let _ = super::msm::<super::G1Affine, super::G1Projective, snarkvm_curves::edwards_bls12::Fr>(&[], &[]);
     }
 
-    // A one-element domain clears every guard above and reaches sppark's
-    // mixed-radix kernels, which compute `(index_t)1 << (lg_domain_size - 1)`
-    // with an `int` `lg_domain_size`. At `lg == 0` the shift is undefined, and
-    // on x86-64 it launches `1 << 31` threads that run past any allocation.
-    //
-    // `NTT` has no such test: `snarkvm_t::NTT` guards `lg_domain_size == 0` and
-    // performs the identity, which is correct for every direction and type.
+    #[test]
+    #[should_panic(expected = "0 points < 1 scalars")]
+    fn msm_refuses_more_scalars_than_points() {
+        let scalars = [super::BigInteger256::default()];
+        let _ = super::msm::<super::G1Affine, super::G1Projective, super::BigInteger256>(&[], &scalars);
+    }
+
+    /// The shape `polymul_supports` refuses.
     #[test]
     #[should_panic(expected = "over a one-element domain")]
     fn polymul_refuses_a_one_element_domain() {
