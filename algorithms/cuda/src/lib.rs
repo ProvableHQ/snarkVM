@@ -196,8 +196,9 @@ fn assert_type<T: 'static, Expected: 'static>() {
     );
 }
 
-/// How many CUDA devices sppark will use. Zero means none, or that the runtime
-/// could not be queried at all.
+/// How many CUDA devices the runtime reports. Zero means none, or that the
+/// runtime could not be queried at all. sppark uses only those of compute
+/// capability 7.0 or later that support cooperative launch.
 pub fn device_count() -> usize {
     unsafe { snarkvm_cuda_device_count() }
 }
