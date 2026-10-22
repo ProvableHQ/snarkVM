@@ -43,7 +43,9 @@
 class snarkvm_singleton_t {
     std::once_flag once;
     snarkvm_t *snarkvm = nullptr;
-    cudaError_t fail_code = cudaErrorNoDevice;
+    // One code for every construction failure, so a caught 801 from an
+    // allocation cannot read as a pool capacity refusal.
+    cudaError_t fail_code = cudaErrorInitializationError;
     std::string fail_detail;
 
     // Never throws: `std::call_once` does not mark a call that throws as
@@ -53,11 +55,9 @@ class snarkvm_singleton_t {
             // With no usable GPU, `snarkvm_t` builds an empty slot pool, and
             // the first call waits forever for a slot.
             if (ngpus() == 0) {
+                fail_code = cudaErrorNoDevice;
                 return;
             }
-            // One code for every construction failure, so a caught 801 from
-            // an allocation cannot read as a pool capacity refusal.
-            fail_code = cudaErrorInitializationError;
             snarkvm = new snarkvm_t(MAX_LG_DOMAIN);
         } catch (const std::exception& e) {
             snarkvm = nullptr;
@@ -120,14 +120,14 @@ extern "C" {
         return __blst_platform_cap;
     }
 
-    /// How many CUDA devices sppark will use. Zero on any error.
+    /// How many CUDA devices the runtime reports. Zero on any error.
     size_t snarkvm_cuda_device_count()
     {
-        try {
-            return ngpus();
-        } catch (...) {
+        int count = 0;
+        if (cudaGetDeviceCount(&count) != cudaSuccess) {
             return 0;
         }
+        return (size_t)count;
     }
 
     /// Elements the device pool reserves per device per stream slot.
