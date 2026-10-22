@@ -185,3 +185,117 @@ impl<N: Network> TryFrom<&str> for Value<N> {
         Self::from_str(value)
     }
 }
+
+impl<N: Network> Value<N> {
+    /// Checks that the bit encoding of this value fits its size prefixes.
+    ///
+    /// Plaintext bit encodings write a `u16` size in front of each struct member and each
+    /// array element, and writing a larger value halts the process before signature or root
+    /// validation. Callers must run this check on untrusted values before bit-encoding
+    /// them, so that oversized values are rejected instead of halting.
+    pub fn check_bit_lengths(&self) -> Result<()> {
+        match self {
+            // A plaintext is bit-encoded with a size prefix in front of each nested value.
+            Self::Plaintext(plaintext) => plaintext.check_bit_lengths(),
+            // A record is bit-encoded entry by entry.
+            Self::Record(record) => record.check_bit_lengths(),
+            // A future is bit-encoded argument by argument.
+            Self::Future(future) => future.check_bit_lengths(),
+            // A dynamic record and a dynamic future have a fixed-size bit encoding.
+            Self::DynamicRecord(..) | Self::DynamicFuture(..) => Ok(()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Identifier, Owner, ProgramID};
+    use snarkvm_console_network::MainnetV0;
+    use snarkvm_utilities::{TestRng, Uniform};
+
+    use core::str::FromStr;
+
+    type CurrentNetwork = MainnetV0;
+
+    /// Returns an outer array whose sole element is an array of the given number of u64s.
+    /// The bit encoding of the inner array exceeds the `u16` size prefix when the number of
+    /// elements is large enough.
+    fn nested_array(num_elements: usize, rng: &mut TestRng) -> Plaintext<CurrentNetwork> {
+        let inner = Plaintext::Array(
+            core::iter::repeat_n(Plaintext::from(Literal::U64(U64::rand(rng))), num_elements).collect(),
+            Default::default(),
+        );
+        Plaintext::Array(vec![inner], Default::default())
+    }
+
+    #[test]
+    fn test_check_bit_lengths_accepts_valid_values() {
+        let rng = &mut TestRng::default();
+
+        // A literal.
+        let literal = Value::<CurrentNetwork>::from(Literal::U64(U64::rand(rng)));
+        assert!(literal.check_bit_lengths().is_ok());
+
+        // An array of 512 u64s stays under the u16 size prefix.
+        let valid = Value::Plaintext(nested_array(512, rng));
+        assert!(valid.check_bit_lengths().is_ok());
+
+        // A record with one entry.
+        let data = indexmap::indexmap! {
+            Identifier::from_str("amount").unwrap() => Entry::Private(Plaintext::from(Literal::U64(U64::rand(rng)))),
+        };
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            Owner::Public(Address::rand(rng)),
+            data,
+            Group::rand(rng),
+            U8::new(0),
+        )
+        .unwrap();
+        assert!(Value::from(record).check_bit_lengths().is_ok());
+    }
+
+    #[test]
+    fn test_check_bit_lengths_rejects_oversized_plaintext() {
+        let rng = &mut TestRng::default();
+
+        // An outer array whose sole element is an array of 1024 u64s has a bit encoding
+        // that exceeds the u16 size prefix the outer array writes before each element.
+        let oversized = Value::Plaintext(nested_array(1024, rng));
+        let error = oversized.check_bit_lengths().unwrap_err();
+        assert!(error.to_string().contains("exceeds u16::MAX bits"));
+    }
+
+    #[test]
+    fn test_check_bit_lengths_rejects_oversized_record_entry() {
+        let rng = &mut TestRng::default();
+
+        // A record with an oversized entry.
+        let data = indexmap::indexmap! {
+            Identifier::from_str("amount").unwrap() => Entry::Private(nested_array(1024, rng)),
+        };
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            Owner::Public(Address::rand(rng)),
+            data,
+            Group::rand(rng),
+            U8::new(0),
+        )
+        .unwrap();
+        let error = Value::from(record).check_bit_lengths().unwrap_err();
+        assert!(error.to_string().contains("exceeds u16::MAX bits"));
+    }
+
+    #[test]
+    fn test_check_bit_lengths_checks_future_arguments() {
+        let rng = &mut TestRng::default();
+
+        // A future with an oversized plaintext argument.
+        let future = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("token.aleo").unwrap(),
+            Identifier::from_str("transfer").unwrap(),
+            vec![Argument::Plaintext(nested_array(1024, rng))],
+        );
+        let error = Value::Future(future).check_bit_lengths().unwrap_err();
+        assert!(error.to_string().contains("exceeds u16::MAX bits"));
+    }
+}

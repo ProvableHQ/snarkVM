@@ -134,3 +134,25 @@ impl<N: Network, Private: Visibility> Record<N, Private> {
         self.nonce
     }
 }
+
+impl<N: Network> Record<N, Plaintext<N>> {
+    /// Checks that the bit encoding of the record entries fits its size prefixes.
+    ///
+    /// Each record entry is bit-encoded like a plaintext, with a `u16` size in front of every
+    /// nested struct member and array element. Writing a larger value halts the process
+    /// before commitment or signature validation. Callers must run this check on untrusted
+    /// records before bit-encoding them, so that oversized entries are rejected instead of
+    /// halting.
+    pub fn check_bit_lengths(&self) -> Result<()> {
+        // Check the bit encoding of each entry.
+        for entry in self.data.values() {
+            // Retrieve the plaintext.
+            let plaintext = match entry {
+                Entry::Constant(plaintext) | Entry::Public(plaintext) | Entry::Private(plaintext) => plaintext,
+            };
+            // Ensure the bit encoding of the plaintext fits its size prefixes.
+            plaintext.check_bit_lengths()?;
+        }
+        Ok(())
+    }
+}

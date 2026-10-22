@@ -63,4 +63,28 @@ impl<N: Network> Future<N> {
     pub fn arguments(&self) -> &[Argument<N>] {
         &self.arguments
     }
+
+    /// Checks that the bit encoding of this future's arguments fits its size prefixes.
+    ///
+    /// A future writes the size of each argument in front of it, falling back to a wider
+    /// size for large arguments, so the argument sizes themselves cannot halt the process.
+    /// However, a plaintext argument is bit-encoded like a plaintext, with a `u16` size in
+    /// front of every nested struct member and array element, and writing a larger value
+    /// halts the process. Callers must run this check on untrusted futures before
+    /// bit-encoding them, so that oversized plaintext arguments are rejected instead of
+    /// halting.
+    pub fn check_bit_lengths(&self) -> Result<()> {
+        // Check the bit encoding of each argument.
+        for argument in &self.arguments {
+            match argument {
+                // A plaintext argument is bit-encoded like a plaintext.
+                Argument::Plaintext(plaintext) => plaintext.check_bit_lengths()?,
+                // A future argument is bit-encoded argument by argument.
+                Argument::Future(future) => future.check_bit_lengths()?,
+                // A dynamic future argument has a fixed-size bit encoding.
+                Argument::DynamicFuture(..) => {}
+            }
+        }
+        Ok(())
+    }
 }

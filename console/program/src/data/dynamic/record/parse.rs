@@ -17,8 +17,29 @@ use super::*;
 
 impl<N: Network> Parser for DynamicRecord<N> {
     /// Parses a string as a dynamic record: `{ owner: address, _root: field, _nonce: group, _version: u8 }`.
+    /// The string may optionally carry the entry data: `{ ..., _data: { identifier_0: entry_0, ..., identifier_n: entry_n } }`.
     #[inline]
     fn parse(string: &str) -> ParserResult<'_, Self> {
+        /// Parses a sanitized pair: `identifier: entry`.
+        #[allow(clippy::type_complexity)]
+        fn parse_entry_pair<N: Network>(string: &str) -> ParserResult<'_, (Identifier<N>, Entry<N, Plaintext<N>>)> {
+            // Parse the whitespace and comments from the string.
+            let (string, _) = Sanitizer::parse(string)?;
+            // Parse the identifier from the string.
+            let (string, identifier) = Identifier::parse(string)?;
+            // Parse the whitespace from the string.
+            let (string, _) = Sanitizer::parse_whitespaces(string)?;
+            // Parse the ":" from the string.
+            let (string, _) = tag(":")(string)?;
+            // Parse the whitespace and comments from the string.
+            let (string, _) = Sanitizer::parse(string)?;
+            // Parse the entry from the string.
+            let (string, entry) = Entry::parse(string)?;
+            // Parse the whitespace from the string.
+            let (string, _) = Sanitizer::parse_whitespaces(string)?;
+            // Return the identifier and entry.
+            Ok((string, (identifier, entry)))
+        }
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "{" from the string.
@@ -94,12 +115,70 @@ impl<N: Network> Parser for DynamicRecord<N> {
             }
         };
 
+        // There may be an optional "_data" tag. Consume the "," separator if it exists.
+        let string = match opt(tag(","))(string)? {
+            // The "," was consumed; continue with the advanced string.
+            (string, Some(_)) => string,
+            // No "," found; keep the string as is.
+            (string, None) => string,
+        };
+
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the optional "_data" tag from the string.
+        let (string, data) = match opt(tag("_data"))(string)? {
+            // If there is no data, then leave the record data unset.
+            (string, None) => (string, None),
+            // If there is data, then parse the entries from the string.
+            (string, Some(_)) => {
+                // Parse the whitespace from the string.
+                let (string, _) = Sanitizer::parse_whitespaces(string)?;
+                // Parse the ":" from the string.
+                let (string, _) = tag(":")(string)?;
+                // Parse the whitespace and comments from the string.
+                let (string, _) = Sanitizer::parse(string)?;
+                // Parse the "{" from the string.
+                let (string, _) = tag("{")(string)?;
+                // Parse the entries, and check that their Merkle root matches the root.
+                let (string, data) = map_res(separated_list0(tag(","), parse_entry_pair), |entries: Vec<_>| {
+                    // Prepare the reserved entry names.
+                    let reserved = [Identifier::from_str("owner").map_err(|e| error(e.to_string()))?];
+                    // Ensure the entries have no duplicate names.
+                    if has_duplicates(entries.iter().map(|(identifier, _)| identifier).chain(reserved.iter())) {
+                        return Err(error("Duplicate entry type found in dynamic record"));
+                    }
+                    // Ensure the number of entries is within the maximum limit.
+                    if entries.len() > N::MAX_DATA_ENTRIES {
+                        return Err(error(format!("Found a dynamic record that exceeds size ({})", entries.len())));
+                    }
+                    // Construct the record data.
+                    let data = IndexMap::from_iter(entries);
+                    // Ensure the bit encoding of the entries fits its size prefixes, so merkleizing cannot halt.
+                    Self::check_data_bit_lengths(&data).map_err(|e| error(e.to_string()))?;
+                    // Check that the Merkle root matches the parsed data.
+                    let tree = Self::merkleize_data(&data).map_err(|e| error(e.to_string()))?;
+                    if tree.root() != &root {
+                        return Err(error(
+                            "The root in the dynamic record does not match the one computed from its data",
+                        ));
+                    }
+                    // Return the record data.
+                    Ok(data)
+                })(string)?;
+                // Parse the whitespace and comments from the string.
+                let (string, _) = Sanitizer::parse(string)?;
+                // Parse the "}" from the string.
+                let (string, _) = tag("}")(string)?;
+                (string, Some(data))
+            }
+        };
+
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the '}' from the string.
         let (string, _) = tag("}")(string)?;
         // Output the dynamic record.
-        Ok((string, DynamicRecord::new_unchecked(owner, root, nonce, version, None)))
+        Ok((string, DynamicRecord::new_unchecked(owner, root, nonce, version, data)))
     }
 }
 
@@ -148,8 +227,44 @@ impl<N: Network> DynamicRecord<N> {
         write!(f, "\n{:indent$}_root: {},", "", self.root, indent = (depth + 1) * INDENT)?;
         // Print the nonce with a comma.
         write!(f, "\n{:indent$}_nonce: {},", "", self.nonce, indent = (depth + 1) * INDENT)?;
-        // Print the version without a comma.
-        write!(f, "\n{:indent$}_version: {}", "", self.version, indent = (depth + 1) * INDENT)?;
+        // Print the version, with a comma when the entry data follows.
+        let separator = match self.data {
+            // The string form omits the entry data.
+            None => "",
+            // The string form carries the entry data.
+            Some(_) => ",",
+        };
+        write!(f, "\n{:indent$}_version: {}{separator}", "", self.version, indent = (depth + 1) * INDENT)?;
+        // Print the optional entry data, when it is present.
+        if let Some(data) = &self.data {
+            // Print the "_data" tag.
+            write!(f, "\n{:indent$}_data: {{", "", indent = (depth + 1) * INDENT)?;
+            // Print the entries.
+            for (i, (identifier, entry)) in data.iter().enumerate() {
+                // Print the identifier.
+                write!(f, "\n{:indent$}{identifier}: ", "", indent = (depth + 2) * INDENT)?;
+                // Print the entry.
+                match entry {
+                    // If the entry is a literal, print the entry without indentation.
+                    Entry::Constant(Plaintext::Literal(..))
+                    | Entry::Public(Plaintext::Literal(..))
+                    | Entry::Private(Plaintext::Literal(..)) => write!(f, "{entry}")?,
+                    // If the entry is a struct or an array, print the entry with indentation.
+                    Entry::Constant(Plaintext::Struct(..))
+                    | Entry::Public(Plaintext::Struct(..))
+                    | Entry::Private(Plaintext::Struct(..))
+                    | Entry::Constant(Plaintext::Array(..))
+                    | Entry::Public(Plaintext::Array(..))
+                    | Entry::Private(Plaintext::Array(..)) => entry.fmt_internal(f, depth + 2)?,
+                }
+                // Print the comma, except after the final entry.
+                if i + 1 < data.len() {
+                    write!(f, ",")?;
+                }
+            }
+            // Print the closing brace of the entry data.
+            write!(f, "\n{:indent$}}}", "", indent = (depth + 1) * INDENT)?;
+        }
         // Print the closing brace.
         write!(f, "\n{:indent$}}}", "", indent = depth * INDENT)
     }
@@ -168,7 +283,7 @@ mod tests {
     type CurrentNetwork = MainnetV0;
 
     #[test]
-    fn test_parse_display_roundtrip() {
+    fn test_parse_display_roundtrip_with_data() {
         let rng = &mut TestRng::default();
 
         // Create a simple record.
@@ -187,17 +302,97 @@ mod tests {
         // Convert to dynamic record.
         let expected = DynamicRecord::from_record(&record).unwrap();
 
-        // Convert to string.
+        // Convert to string. The string form carries the entry data.
         let expected_string = expected.to_string();
+        assert!(expected_string.contains("_data:"));
 
         // Parse the string.
         let candidate = DynamicRecord::<CurrentNetwork>::from_str(&expected_string).unwrap();
 
-        // Verify the fields match.
+        // Verify the fields and data match.
         assert_eq!(expected.owner(), candidate.owner());
         assert_eq!(expected.root(), candidate.root());
         assert_eq!(expected.nonce(), candidate.nonce());
         assert_eq!(expected.version(), candidate.version());
+        assert_eq!(expected.data(), candidate.data());
+    }
+
+    #[test]
+    fn test_parse_display_roundtrip_without_data() {
+        let rng = &mut TestRng::default();
+
+        // Create a simple record, then drop its entry data.
+        let data = indexmap::indexmap! {
+            Identifier::from_str("amount").unwrap() => Entry::Private(Plaintext::from(Literal::U64(U64::rand(rng)))),
+        };
+        let owner = Owner::Public(Address::rand(rng));
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            owner,
+            data,
+            Group::rand(rng),
+            U8::new(0),
+        )
+        .unwrap();
+        let expected = DynamicRecord::from_record(&record).unwrap();
+        let expected = DynamicRecord::new_unchecked(
+            *expected.owner(),
+            *expected.root(),
+            *expected.nonce(),
+            *expected.version(),
+            None,
+        );
+
+        // Convert to string. The string form omits the entry data.
+        let expected_string = expected.to_string();
+        assert!(!expected_string.contains("_data:"));
+
+        // Parse the string.
+        let candidate = DynamicRecord::<CurrentNetwork>::from_str(&expected_string).unwrap();
+
+        // Verify the fields match, and no data was recovered.
+        assert_eq!(expected.owner(), candidate.owner());
+        assert_eq!(expected.root(), candidate.root());
+        assert_eq!(expected.nonce(), candidate.nonce());
+        assert_eq!(expected.version(), candidate.version());
+        assert!(candidate.data().is_none());
+    }
+
+    #[test]
+    fn test_parse_display_roundtrip_with_struct_entry() {
+        let rng = &mut TestRng::default();
+
+        // Create a record with a struct entry.
+        let inner = Plaintext::Struct(
+            indexmap::indexmap! {
+                Identifier::from_str("x").unwrap() => Plaintext::from(Literal::U64(U64::rand(rng))),
+                Identifier::from_str("y").unwrap() => Plaintext::from(Literal::U64(U64::rand(rng))),
+            },
+            Default::default(),
+        );
+        let data = indexmap::indexmap! {
+            Identifier::from_str("point").unwrap() => Entry::Private(inner),
+        };
+        let owner = Owner::Public(Address::rand(rng));
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            owner,
+            data,
+            Group::rand(rng),
+            U8::new(0),
+        )
+        .unwrap();
+
+        // Convert to dynamic record.
+        let expected = DynamicRecord::from_record(&record).unwrap();
+
+        // Convert to string, then parse the string.
+        let candidate = DynamicRecord::<CurrentNetwork>::from_str(&expected.to_string()).unwrap();
+
+        // Verify the fields and data match, including the nested struct.
+        assert_eq!(expected.owner(), candidate.owner());
+        assert_eq!(expected.root(), candidate.root());
+        assert_eq!(expected.nonce(), candidate.nonce());
+        assert_eq!(expected.version(), candidate.version());
+        assert_eq!(expected.data(), candidate.data());
     }
 
     #[test]
@@ -225,6 +420,111 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_with_data() {
+        let rng = &mut TestRng::default();
+
+        // Create a record with two entries.
+        let data = indexmap::indexmap! {
+            Identifier::from_str("amount").unwrap() => Entry::Private(Plaintext::from(Literal::U64(U64::rand(rng)))),
+            Identifier::from_str("memo").unwrap() => Entry::Public(Plaintext::from(Literal::U64(U64::rand(rng)))),
+        };
+        let owner = Owner::Public(Address::rand(rng));
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            owner,
+            data.clone(),
+            Group::rand(rng),
+            U8::new(0),
+        )
+        .unwrap();
+        let expected = DynamicRecord::from_record(&record).unwrap();
+
+        // Construct the string form with the entry data.
+        let entries = data.iter().map(|(name, entry)| format!("{name}: {entry}")).collect::<Vec<_>>().join(", ");
+        let string = format!(
+            "{{ owner: {}, _root: {}, _nonce: {}, _version: {}, _data: {{ {entries} }} }}",
+            expected.owner(),
+            expected.root(),
+            expected.nonce(),
+            expected.version(),
+        );
+
+        let candidate = DynamicRecord::<CurrentNetwork>::from_str(&string).unwrap();
+        assert_eq!(expected.owner(), candidate.owner());
+        assert_eq!(expected.root(), candidate.root());
+        assert_eq!(expected.nonce(), candidate.nonce());
+        assert_eq!(expected.version(), candidate.version());
+        assert_eq!(expected.data(), candidate.data());
+        assert_eq!(candidate.data().as_ref(), Some(&data));
+    }
+
+    #[test]
+    fn test_parse_with_data_rejects_mismatched_root() {
+        let rng = &mut TestRng::default();
+
+        // Create a record with one entry.
+        let data = indexmap::indexmap! {
+            Identifier::from_str("amount").unwrap() => Entry::Private(Plaintext::from(Literal::U64(U64::rand(rng)))),
+        };
+        let owner = Owner::Public(Address::rand(rng));
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            owner,
+            data,
+            Group::rand(rng),
+            U8::new(0),
+        )
+        .unwrap();
+        let expected = DynamicRecord::from_record(&record).unwrap();
+
+        // Construct the string form with a root that does not match the entry data.
+        let string = format!(
+            "{{ owner: {}, _root: 12345field, _nonce: {}, _version: {}, _data: {{ amount: 1u64.private }} }}",
+            expected.owner(),
+            expected.nonce(),
+            expected.version(),
+        );
+
+        assert!(DynamicRecord::<CurrentNetwork>::from_str(&string).is_err());
+    }
+
+    #[test]
+    fn test_parse_with_data_rejects_duplicate_names() {
+        let rng = &mut TestRng::default();
+
+        // Parse a dynamic record with a duplicate entry name in `_data`.
+        let string = format!(
+            "{{ owner: {}, _root: 0field, _nonce: {}, _version: 0u8, _data: {{ amount: 1u64.private, amount: 2u64.private }} }}",
+            Address::<CurrentNetwork>::rand(rng),
+            Group::<CurrentNetwork>::rand(rng),
+        );
+        assert!(DynamicRecord::<CurrentNetwork>::from_str(&string).is_err());
+
+        // Parse a dynamic record with a reserved entry name in `_data`.
+        let string = format!(
+            "{{ owner: {}, _root: 0field, _nonce: {}, _version: 0u8, _data: {{ owner: 1u64.private }} }}",
+            Address::<CurrentNetwork>::rand(rng),
+            Group::<CurrentNetwork>::rand(rng),
+        );
+        assert!(DynamicRecord::<CurrentNetwork>::from_str(&string).is_err());
+    }
+
+    #[test]
+    fn test_parse_with_data_rejects_oversized_nested_value() {
+        let rng = &mut TestRng::default();
+
+        // An outer array whose sole element is an array of 1024 u64s parses within every
+        // limit, but its 108578-bit encoding exceeds the u16 size prefix the outer array
+        // writes before each element. The parser must reject it before the Merkle computation.
+        let elements = core::iter::repeat_n("0u64.private", 1024).collect::<Vec<_>>().join(", ");
+        let string = format!(
+            "{{ owner: {}, _root: 0field, _nonce: {}, _version: 0u8, _data: {{ amount: [ [ {elements} ] ] }} }}",
+            Address::<CurrentNetwork>::rand(rng),
+            Group::<CurrentNetwork>::rand(rng),
+        );
+
+        assert!(DynamicRecord::<CurrentNetwork>::from_str(&string).is_err());
+    }
+
+    #[test]
     fn test_display() {
         let rng = &mut TestRng::default();
 
@@ -247,5 +547,6 @@ mod tests {
         assert!(display.contains("_root:"));
         assert!(display.contains("_nonce:"));
         assert!(display.contains("_version:"));
+        assert!(display.contains("_data:"));
     }
 }

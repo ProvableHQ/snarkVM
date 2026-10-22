@@ -100,6 +100,8 @@ impl<N: Network> Request<N> {
             let input = input.try_into().map_err(|_| {
                 anyhow!("Failed to parse input #{index} ('{input_type}') for '{program_id}/{function_name}'")
             })?;
+            // Ensure the bit encoding of the input fits its size prefixes, so preparing it cannot halt.
+            input.check_bit_lengths()?;
             // If the function expects a dynamic record but a record was provided, convert it.
             let input = match (&input, input_type) {
                 (Value::Record(record), ValueType::DynamicRecord) => {
@@ -226,6 +228,8 @@ impl<N: Network> Request<N> {
             let input = input.try_into().map_err(|_| {
                 anyhow!("Failed to parse input #{index} ('{input_type}') for '{program_id}/{function_name}'")
             })?;
+            // Ensure the bit encoding of the input fits its size prefixes, so preparing it cannot halt.
+            input.check_bit_lengths()?;
             // If the function expects a dynamic record but a record was provided, convert it.
             let input = match (&input, input_type) {
                 (Value::Record(record), ValueType::DynamicRecord) => {

@@ -163,3 +163,132 @@ impl<N: Network> ToBits for Plaintext<N> {
         }
     }
 }
+
+impl<N: Network> Plaintext<N> {
+    /// Returns the number of bits in the little-endian bit encoding of this plaintext,
+    /// or an error when the encoding does not fit a size prefix.
+    ///
+    /// This traversal mirrors `write_bits_le` above, which halts on the same conditions,
+    /// and must stay in sync with it. Decoders must run this check on untrusted values
+    /// before they merkleize them, so that oversized values are rejected instead of
+    /// halting the process.
+    pub(in crate::data) fn size_in_bits_checked(&self) -> Result<usize> {
+        match self {
+            // The encoding is the variant tag, a u16 size, and the literal value.
+            Self::Literal(literal, ..) => {
+                // Account for the plaintext variant bits.
+                let mut total = PlaintextType::<N>::LITERAL_PREFIX_BITS.len();
+                // Account for the literal variant bits, and the size of the literal in bits.
+                total = total.checked_add(8).ok_or(anyhow!("`size_in_bits` overflowed"))?;
+                total = total.checked_add(16).ok_or(anyhow!("`size_in_bits` overflowed"))?;
+                // Account for the literal.
+                total =
+                    total.checked_add(literal.size_in_bits() as usize).ok_or(anyhow!("`size_in_bits` overflowed"))?;
+                Ok(total)
+            }
+            // The encoding is the variant tag, a u8 member count, then per member the
+            // identifier size, the identifier, a u16 size, and the member.
+            Self::Struct(members, ..) => {
+                // Ensure the member count fits the u8 count prefix.
+                ensure!(members.len() <= u8::MAX as usize, "Plaintext struct length exceeds u8::MAX");
+                // Account for the plaintext variant bits and the member count.
+                let mut total = PlaintextType::<N>::STRUCT_PREFIX_BITS.len();
+                total = total.checked_add(8).ok_or(anyhow!("`size_in_bits` overflowed"))?;
+                // Add up the sizes of each member.
+                for (name, member) in members {
+                    // Account for the identifier size and the identifier.
+                    total = total.checked_add(8).ok_or(anyhow!("`size_in_bits` overflowed"))?;
+                    total =
+                        total.checked_add(name.size_in_bits() as usize).ok_or(anyhow!("`size_in_bits` overflowed"))?;
+                    // Account for the member, ensuring its size fits the u16 size prefix.
+                    total = total.checked_add(16).ok_or(anyhow!("`size_in_bits` overflowed"))?;
+                    let member_size = member.size_in_bits_checked()?;
+                    ensure!(member_size <= u16::MAX as usize, "Plaintext member exceeds u16::MAX bits");
+                    total = total.checked_add(member_size).ok_or(anyhow!("`size_in_bits` overflowed"))?;
+                }
+                Ok(total)
+            }
+            // The encoding is the variant tag, a u32 element count, then per element a u16
+            // size and the element.
+            Self::Array(elements, ..) => {
+                // Ensure the element count fits the u32 count prefix.
+                ensure!(elements.len() <= u32::MAX as usize, "Plaintext array length exceeds u32::MAX");
+                // Account for the plaintext variant bits and the element count.
+                let mut total = PlaintextType::<N>::ARRAY_PREFIX_BITS.len();
+                total = total.checked_add(32).ok_or(anyhow!("`size_in_bits` overflowed"))?;
+                // Add up the sizes of each element.
+                for element in elements {
+                    // Account for the element, ensuring its size fits the u16 size prefix.
+                    total = total.checked_add(16).ok_or(anyhow!("`size_in_bits` overflowed"))?;
+                    let element_size = element.size_in_bits_checked()?;
+                    ensure!(element_size <= u16::MAX as usize, "Plaintext element exceeds u16::MAX bits");
+                    total = total.checked_add(element_size).ok_or(anyhow!("`size_in_bits` overflowed"))?;
+                }
+                Ok(total)
+            }
+        }
+    }
+
+    /// Checks that the bit encoding of this plaintext fits its size prefixes.
+    ///
+    /// Plaintext bit encodings write a `u16` size in front of each struct member and each
+    /// array element, and writing a larger value halts the process. Callers must run this
+    /// check on untrusted values before bit-encoding them, so that oversized values are
+    /// rejected instead of halting.
+    pub fn check_bit_lengths(&self) -> Result<()> {
+        self.size_in_bits_checked()?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_console_network::MainnetV0;
+    use snarkvm_console_types::prelude::*;
+
+    use core::str::FromStr;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_size_in_bits_checked_matches_to_bits_le() {
+        let rng = &mut TestRng::default();
+
+        // A literal.
+        let literal = Plaintext::<CurrentNetwork>::from(Literal::U64(U64::rand(rng)));
+        assert_eq!(literal.size_in_bits_checked().unwrap(), literal.to_bits_le().len());
+
+        // A struct with a literal member, a struct member, and an array member.
+        let struct_ = Plaintext::<CurrentNetwork>::Struct(
+            indexmap::indexmap! {
+                Identifier::<CurrentNetwork>::from_str("a").unwrap() => Plaintext::from(Literal::U64(U64::rand(rng))),
+                Identifier::<CurrentNetwork>::from_str("b").unwrap() => Plaintext::Struct(
+                    indexmap::indexmap! {
+                        Identifier::<CurrentNetwork>::from_str("c").unwrap() => Plaintext::from(Literal::U8(U8::rand(rng))),
+                    },
+                    Default::default(),
+                ),
+                Identifier::<CurrentNetwork>::from_str("d").unwrap() => Plaintext::Array(
+                    vec![Plaintext::from(Literal::Boolean(Boolean::rand(rng)))],
+                    Default::default(),
+                ),
+            },
+            Default::default(),
+        );
+        assert_eq!(struct_.size_in_bits_checked().unwrap(), struct_.to_bits_le().len());
+
+        // An array of arrays of literals.
+        let array = Plaintext::<CurrentNetwork>::Array(
+            vec![
+                Plaintext::Array(
+                    vec![Plaintext::from(Literal::U64(U64::rand(rng))), Plaintext::from(Literal::U64(U64::rand(rng)))],
+                    Default::default(),
+                ),
+                Plaintext::Array(vec![Plaintext::from(Literal::Field(Field::rand(rng)))], Default::default()),
+            ],
+            Default::default(),
+        );
+        assert_eq!(array.size_in_bits_checked().unwrap(), array.to_bits_le().len());
+    }
+}
