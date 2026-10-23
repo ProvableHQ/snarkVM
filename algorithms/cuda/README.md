@@ -19,7 +19,7 @@ the ADX instructions at run time, from CPUID, so one binary runs on any x86_64 C
 - `CUDA_ARCH` sets the target architecture, such as `sm_89` or `sm_90`. The default is `sm_86`. A binary built for a
   newer architecture than the GPU fails every kernel launch.
 - `NVCC` sets the path to nvcc. The default is `nvcc` on `PATH`. Without nvcc, the kernels are not built, and a build
-  with `cuda` fails to link.
+  with `cuda` fails to compile `snarkvm-algorithms`, with a message that says so.
 - `MAX_LG_DOMAIN`, as a define in `CXXFLAGS`, sets the device pool's size. The default, 23, holds a circuit whose
   constraint, variable and per-matrix non-zero counts are each at most 2^22, and costs 3 GiB of device memory and 3 GiB
   of pinned host memory per GPU.
