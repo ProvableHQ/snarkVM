@@ -18,18 +18,23 @@
 //! `sqrt` must return the same element as `sarkar_reference`, not merely one of the two roots.
 //! `sarkar_reference` is a direct, table-free implementation of Sarkar's Algorithm 1.
 
-use crate::bls12_377::{Fq, FqParameters, Fr, FrParameters};
+use crate::{
+    bls12_377::{Fq, FqParameters, Fr, FrParameters},
+    edwards_bls12::Fr as EdwardsFr,
+};
 use snarkvm_fields::{
     FftField,
     FftParameters,
+    Field,
     Fp256Parameters,
     Fp384Parameters,
     LegendreSymbol,
     PrimeField,
     SqrtTables,
     SquareRootField,
+    Zero,
 };
-use snarkvm_utilities::TestRng;
+use snarkvm_utilities::{BigInteger, TestRng, Uniform};
 
 use rand::RngExt;
 
@@ -228,4 +233,31 @@ fn test_sqrt_matches_reference_bls12_377_fq() {
 #[test]
 fn test_sqrt_matches_reference_bls12_377_fr() {
     check_field::<Fr>(FrParameters::sqrt_tables().unwrap(), &mut TestRng::default());
+}
+
+/// Edwards-BLS12 Fr has 2-adicity 1, so a square `a` has the root `a^((p+1)/4)`.
+/// `sqrt` does not compile for this field, so the tables are tested directly.
+#[test]
+fn test_sqrt_tables_edwards_bls12_fr() {
+    let rng = &mut TestRng::default();
+    assert_eq!(two_adicity::<EdwardsFr>(), 1);
+    let tables = SqrtTables::<EdwardsFr>::new();
+    let mut p_plus_one_div_four = EdwardsFr::modulus_minus_one_div_two();
+    p_plus_one_div_four.add_nocarry(&1u64.into());
+    p_plus_one_div_four.div2();
+
+    assert_eq!(tables.sqrt(&EdwardsFr::zero()), Some(EdwardsFr::zero()));
+    let (mut residues, mut non_residues) = (0, 0);
+    while residues < RANDOM_INPUTS || non_residues < RANDOM_INPUTS {
+        let a = EdwardsFr::rand(rng);
+        if a.legendre().is_qr() {
+            let root = a.pow(p_plus_one_div_four);
+            assert_eq!(root.square(), a);
+            assert_eq!(tables.sqrt(&a), Some(root));
+            residues += 1;
+        } else {
+            assert_eq!(tables.sqrt(&a), None);
+            non_residues += 1;
+        }
+    }
 }
