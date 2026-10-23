@@ -1,0 +1,220 @@
+// Copyright (c) 2019-2026 Provable Inc.
+// This file is part of the snarkVM library.
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at:
+
+// http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Differential tests for `sqrt`.
+//!
+//! `sqrt` must return the same element as `sarkar_reference`, not merely one of the two roots.
+//! `sarkar_reference` is a direct, table-free implementation of Sarkar's Algorithm 1.
+
+use crate::bls12_377::{Fq, Fr};
+use snarkvm_fields::{FftField, FftParameters, LegendreSymbol, PrimeField, SquareRootField};
+use snarkvm_utilities::TestRng;
+
+use rand::RngExt;
+
+/// The number of random residues, and separately of random non-residues, checked per field.
+const RANDOM_INPUTS: usize = 10_000;
+
+fn two_adicity<F: FftField>() -> u32 {
+    <F as FftField>::FftParameters::TWO_ADICITY
+}
+
+/// Sarkar, "Computing square roots faster than the Tonelli-Shanks/Bernstein algorithm",
+/// https://eprint.iacr.org/2020/1407.pdf, Algorithm 1 with the modification of Section 2.1.
+fn sarkar_reference<F: PrimeField + SquareRootField>(a: &F) -> Option<F> {
+    match a.legendre() {
+        LegendreSymbol::Zero => Some(*a),
+        LegendreSymbol::QuadraticNonResidue => None,
+        LegendreSymbol::QuadraticResidue => {
+            let n = two_adicity::<F>() as u64;
+            // `powers[i]` is `g^(2^i)` for the 2-adic root of unity `g`.
+            let powers: Vec<F> = std::iter::successors(Some(F::two_adic_root_of_unity()), |g| Some(g.square()))
+                .take(n as usize)
+                .collect();
+            let v = a.pow(F::trace_minus_one_div_two());
+            let x = *a * v.square();
+
+            let k = (n - 1).isqrt();
+            let k_2 = if n.is_multiple_of(2) { k / 2 } else { (n - 1) % k };
+            let k_1 = k - k_2;
+            let l_minus_one_times_k = n - 1 - k_2;
+            let l_minus_one = l_minus_one_times_k / k;
+            let l = l_minus_one + 1;
+
+            let l_s = || std::iter::repeat_n(l_minus_one, k_1 as usize).chain(std::iter::repeat_n(l, k_2 as usize));
+
+            let mut l_sum = 0;
+            let x_s = l_s().take((k as usize) - 1).map(|l| {
+                l_sum += l;
+                x.pow([2u64.pow((n - 1 - l_sum) as u32)])
+            });
+            let x_s = x_s.chain(Some(x));
+
+            let find = |delta: F| -> u64 {
+                let mut mu = delta;
+                let mut i = 0;
+                while mu != -F::one() {
+                    mu.square_in_place();
+                    i += 1;
+                }
+                i
+            };
+
+            let eval = |mut delta: F| -> u64 {
+                let mut s = 0u64;
+                while delta != F::one() {
+                    let i = find(delta);
+                    let n_minus_one_minus_i = n - 1 - i;
+                    s += 2u64.pow(n_minus_one_minus_i as u32);
+                    if i > 0 {
+                        delta *= powers[n_minus_one_minus_i as usize];
+                    } else {
+                        delta = -delta;
+                    }
+                }
+                s
+            };
+
+            let calculate_gamma = |i: usize, q_s: &[u64], last: bool| -> F {
+                let mut gamma = F::one();
+                if i != 0 {
+                    q_s.iter().zip(l_s()).enumerate().for_each(|(j, (q, l))| {
+                        let mut kappa = l_s().take(j).sum::<u64>() + 1 + l_s().skip(i + 1).sum::<u64>();
+                        if last {
+                            kappa -= 1;
+                        }
+                        let mut value = *q;
+                        (0..l as usize).for_each(|k| {
+                            if value & 1 == 1 {
+                                gamma *= powers[(kappa as usize) + k];
+                            }
+                            value = value.wrapping_shr(1u32);
+                        });
+                    });
+                }
+                gamma
+            };
+
+            let mut q_s = Vec::<u64>::with_capacity(k as usize);
+            let two_to_n_minus_l = 2u64.pow((n - l) as u32);
+            let two_to_n_minus_l_minus_one = 2u64.pow((n - l_minus_one) as u32);
+            x_s.enumerate().for_each(|(i, x)| {
+                let gamma = calculate_gamma(i, &q_s, false);
+                let alpha = x * gamma;
+                q_s.push(eval(alpha) / if i < k_1 as usize { two_to_n_minus_l_minus_one } else { two_to_n_minus_l });
+            });
+
+            let gamma = calculate_gamma(k as usize, &q_s, true);
+            Some(*a * v * gamma)
+        }
+    }
+}
+
+/// Checks `sqrt` against the reference and against its definition.
+fn check<F: PrimeField + SquareRootField>(a: &F) {
+    let root = a.sqrt();
+    assert_eq!(root, sarkar_reference(a), "sqrt({a}) differs from the reference");
+    match root {
+        Some(root) => assert_eq!(root.square(), *a, "sqrt({a})^2 != {a}"),
+        None => assert!(a.legendre().is_qnr(), "sqrt({a}) is None for a square"),
+    }
+}
+
+/// Returns `t^-1 mod 2^64` for odd `t`.
+fn inverse_mod_2_64(t: u64) -> u64 {
+    assert_eq!(t & 1, 1);
+    // Each Newton step doubles the number of correct low bits, starting from 3.
+    (0..6).fold(t, |inv, _| inv.wrapping_mul(2u64.wrapping_sub(t.wrapping_mul(inv))))
+}
+
+/// Returns an element `a` whose 2-adic part `a^t` equals `g^e`, where `g` is the 2-adic root of unity
+/// and `t` is the odd part of `p - 1`. The odd-order part of `a` is `r^(2^n)`.
+fn with_two_adic_log<F: PrimeField + SquareRootField>(e: u64, r: F) -> F {
+    let n = two_adicity::<F>();
+    let mask = if n == 64 { u64::MAX } else { (1u64 << n) - 1 };
+    let t_inv = inverse_mod_2_64(F::trace().as_ref()[0]);
+    let exponent = e.wrapping_mul(t_inv) & mask;
+    let odd_part = (0..n).fold(r, |r, _| r.square());
+    odd_part * F::two_adic_root_of_unity().pow([exponent])
+}
+
+/// The 2-adic logarithms that exercise every window boundary: zero, every single bit,
+/// every contiguous run of ones, and the extremes.
+fn structured_logs(n: u32) -> Vec<u64> {
+    let ones = |bits: u32| if bits == 64 { u64::MAX } else { (1u64 << bits) - 1 };
+    let mut logs = vec![0, 1, 2, ones(n), ones(n) - 1];
+    for low in 0..n {
+        logs.push(1 << low);
+        for high in low + 1..=n {
+            logs.push(ones(high) & !ones(low));
+        }
+    }
+    logs
+}
+
+fn check_field<F: PrimeField + SquareRootField>(rng: &mut TestRng) {
+    let n = two_adicity::<F>();
+    let g = F::two_adic_root_of_unity();
+
+    check(&F::zero());
+    check(&F::one());
+    check(&-F::one());
+    check(&F::multiplicative_generator());
+    check(&g);
+    // Every `g^(2^i)` and its negation.
+    for power in std::iter::successors(Some(g), |g| Some(g.square())).take(n as usize + 1) {
+        check(&power);
+        check(&-power);
+    }
+
+    // Controlled 2-adic logarithms, each with two different odd-order parts.
+    for e in structured_logs(n) {
+        for r in [F::one(), F::rand(rng)] {
+            let a = with_two_adic_log(e, r);
+            assert_eq!(a.legendre().is_qr(), e.is_multiple_of(2));
+            check(&a);
+        }
+    }
+    let mask = if n == 64 { u64::MAX } else { (1u64 << n) - 1 };
+    for _ in 0..200 {
+        check(&with_two_adic_log(rng.random::<u64>() & mask, F::rand(rng)));
+    }
+
+    // Random residues and non-residues.
+    let (mut residues, mut non_residues) = (0, 0);
+    while residues < RANDOM_INPUTS || non_residues < RANDOM_INPUTS {
+        let a = F::rand(rng);
+        if a.legendre().is_qr() {
+            if residues < RANDOM_INPUTS {
+                check(&a);
+                check(&a.square());
+                residues += 1;
+            }
+        } else if non_residues < RANDOM_INPUTS {
+            check(&a);
+            non_residues += 1;
+        }
+    }
+}
+
+#[test]
+fn test_sqrt_matches_reference_bls12_377_fq() {
+    check_field::<Fq>(&mut TestRng::default());
+}
+
+#[test]
+fn test_sqrt_matches_reference_bls12_377_fr() {
+    check_field::<Fr>(&mut TestRng::default());
+}
