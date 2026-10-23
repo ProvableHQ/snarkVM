@@ -20,7 +20,10 @@ use snarkvm_fields::{
     Fp256Parameters,
     PoseidonDefaultParameters,
     PoseidonDefaultParametersEntry,
+    SqrtTables,
 };
+use std::sync::OnceLock;
+
 use snarkvm_utilities::biginteger::BigInteger256 as BigInteger;
 
 /// BLS12-377 scalar field.
@@ -51,7 +54,12 @@ pub type Fr = Fp256<FrParameters>;
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct FrParameters;
 
-impl Fp256Parameters for FrParameters {}
+impl Fp256Parameters for FrParameters {
+    fn sqrt_tables() -> Option<&'static SqrtTables<Fr>> {
+        static TABLES: OnceLock<SqrtTables<Fr>> = OnceLock::new();
+        Some(TABLES.get_or_init(SqrtTables::<Fr>::new))
+    }
+}
 
 impl FftParameters for FrParameters {
     type BigInteger = BigInteger;
