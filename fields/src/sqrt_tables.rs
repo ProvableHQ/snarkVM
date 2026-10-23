@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{FftField, FftParameters, Fp256, Fp256Parameters, Fp384, Fp384Parameters, PrimeField};
+use crate::{FftField, FftParameters, Field, Fp256, Fp256Parameters, Fp384, Fp384Parameters, PrimeField};
 
 /// The largest number of bits of the 2-adic logarithm that one table look-up recovers.
 const WINDOW: u32 = 8;
@@ -49,6 +49,8 @@ pub struct SqrtTables<F> {
     roots: Vec<F>,
     /// An open-addressing hash table from `key(roots[c])` to `c`; `u16::MAX` marks an empty slot.
     slots: Vec<(u64, u16)>,
+    /// The sliding-window exponentiation by `(m-1)/2`.
+    exponent: ExponentSchedule,
 }
 
 impl<P: Fp256Parameters> SqrtTables<Fp256<P>> {
@@ -152,7 +154,9 @@ impl<F: PrimeField> SqrtTables<F> {
             slots[slot] = (key(root), c as u16);
         }
 
-        Self { key, windows, log_shift, powers, corrections, half_windows, roots, slots }
+        let exponent = ExponentSchedule::new(F::trace_minus_one_div_two().as_ref());
+
+        Self { key, windows, log_shift, powers, corrections, half_windows, roots, slots, exponent }
     }
 
     /// Returns `c` such that `element = h^(-c)`, if there is one.
@@ -179,7 +183,7 @@ impl<F: PrimeField> SqrtTables<F> {
         if u.is_zero() {
             return Some(*u);
         }
-        let v = u.pow(F::trace_minus_one_div_two());
+        let v = self.exponent.pow(u);
         let uv = *u * v;
         let x = uv * v;
         if self.windows.is_empty() {
@@ -217,5 +221,76 @@ impl<F: PrimeField> SqrtTables<F> {
             root *= self.powers[table][((half_t >> start) & ((1 << bits) - 1)) as usize];
         }
         Some(root)
+    }
+}
+
+/// The largest window of the exponentiation by `(m-1)/2`.
+const MAX_EXPONENT_WINDOW: u32 = 6;
+
+/// A sliding-window exponentiation by a fixed exponent. Odd power `i` is `u^(2i+1)`.
+struct ExponentSchedule {
+    /// The number of odd powers to precompute.
+    odd_powers: usize,
+    /// The odd power that starts the exponentiation.
+    first: usize,
+    /// The `(squarings, odd power)` steps after the first.
+    steps: Vec<(u32, usize)>,
+    /// The squarings after the last step.
+    trailing_squarings: u32,
+}
+
+impl ExponentSchedule {
+    /// Returns the schedule with the fewest multiplications for the non-zero exponent `limbs`,
+    /// in little-endian order.
+    fn new(limbs: &[u64]) -> Self {
+        let bits: Vec<bool> = snarkvm_utilities::BitIteratorBE::new_without_leading_zeros(limbs).collect();
+        assert!(!bits.is_empty(), "the exponent must be non-zero");
+        (1..=MAX_EXPONENT_WINDOW)
+            .map(|width| {
+                let mut windows = Vec::new();
+                let mut squarings = 0;
+                let mut i = 0;
+                while i < bits.len() {
+                    if !bits[i] {
+                        squarings += 1;
+                        i += 1;
+                        continue;
+                    }
+                    let mut end = (i + width as usize).min(bits.len());
+                    while !bits[end - 1] {
+                        end -= 1;
+                    }
+                    let value = bits[i..end].iter().fold(0usize, |value, &bit| (value << 1) | bit as usize);
+                    windows.push((squarings + (end - i) as u32, value / 2));
+                    squarings = 0;
+                    i = end;
+                }
+                let odd_powers = windows.iter().map(|&(_, odd_power)| odd_power).max().unwrap() + 1;
+                let first = windows.remove(0).1;
+                Self { odd_powers, first, steps: windows, trailing_squarings: squarings }
+            })
+            .min_by_key(|schedule| schedule.odd_powers + schedule.steps.len())
+            .unwrap()
+    }
+
+    /// Returns `u` raised to the exponent.
+    #[inline]
+    fn pow<F: Field>(&self, u: &F) -> F {
+        let mut odd_powers = [*u; 1 << (MAX_EXPONENT_WINDOW - 1)];
+        let u_squared = u.square();
+        for i in 1..self.odd_powers {
+            odd_powers[i] = odd_powers[i - 1] * u_squared;
+        }
+        let mut result = odd_powers[self.first];
+        for &(squarings, odd_power) in &self.steps {
+            for _ in 0..squarings {
+                result.square_in_place();
+            }
+            result *= odd_powers[odd_power];
+        }
+        for _ in 0..self.trailing_squarings {
+            result.square_in_place();
+        }
+        result
     }
 }
