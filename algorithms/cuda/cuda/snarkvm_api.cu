@@ -36,6 +36,20 @@
 #define MAX_LG_DOMAIN 23
 #endif
 
+// Why sppark lists no GPU: the runtime could not enumerate the devices, there
+// are none, or none is Volta or newer with cooperative launch.
+static std::string no_device_detail()
+{
+    int n = 0;
+    cudaError_t rc = cudaGetDeviceCount(&n);
+    if (rc != cudaSuccess)
+        return std::string("cudaGetDeviceCount failed: ") + cudaGetErrorString(rc);
+    if (n == 0)
+        return "cudaGetDeviceCount reported 0 devices";
+    return std::to_string(n) + " device(s), none with compute capability 7.0 or "
+           "higher and cooperative launch";
+}
+
 // Lazy instantiation of snarkvm_t
 class snarkvm_singleton_t {
     std::once_flag once;
@@ -53,6 +67,7 @@ class snarkvm_singleton_t {
             // the first call waits forever for a slot.
             if (ngpus() == 0) {
                 fail_code = cudaErrorNoDevice;
+                fail_detail = no_device_detail();
                 return;
             }
             snarkvm = new snarkvm_t(MAX_LG_DOMAIN);
