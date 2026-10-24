@@ -257,7 +257,7 @@ fn test_fq_sub_assign() {
 }
 
 #[test]
-fn test_fq_add_sub_assign_against_biguint() {
+fn test_fq_add_sub_double_against_biguint() {
     let mut rng = TestRng::default();
 
     let fq = |repr: BigInteger384| Fp384::<FqParameters>(repr, PhantomData);
@@ -268,7 +268,7 @@ fn test_fq_add_sub_assign_against_biguint() {
         repr
     };
 
-    // Checks both operations on the raw representations against `BigUint` arithmetic modulo the modulus.
+    // Checks each operation on the raw representations against `BigUint` arithmetic modulo the modulus.
     let check = |a: BigInteger384, b: BigInteger384| {
         let p = modulus.to_biguint();
         let (a_big, b_big) = (a.to_biguint(), b.to_biguint());
@@ -280,6 +280,10 @@ fn test_fq_add_sub_assign_against_biguint() {
         let mut difference = fq(a);
         difference.sub_assign(&fq(b));
         assert_eq!(difference.0.to_biguint(), (&a_big + &p - &b_big) % &p, "{a} - {b}");
+
+        let mut double = fq(a);
+        double.double_in_place();
+        assert_eq!(double.0.to_biguint(), (&a_big + &a_big) % &p, "2 * {a}");
     };
 
     let edge_cases =
