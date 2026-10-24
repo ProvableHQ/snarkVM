@@ -97,13 +97,16 @@ __attribute__((used)) static size_t (*const keep_blst_cpuid)(void) = blst_p1_siz
 extern "C" int __blst_platform_cap;
 
 // sppark reports device failures by throwing, and an exception that crosses
-// `extern "C"` into Rust is undefined behaviour.
+// `extern "C"` into Rust is undefined behaviour. Any other exception, such as
+// a `std::bad_alloc` from a host vector, keeps its message.
 template<class F> static RustError catch_all(F f) noexcept
 {
     try {
         return f();
     } catch (const cuda_error& e) {
         return RustError{e.code(), e.what()};
+    } catch (const std::exception& e) {
+        return RustError{cudaErrorUnknown, e.what()};
     } catch (...) {
         return RustError{cudaErrorUnknown};
     }
