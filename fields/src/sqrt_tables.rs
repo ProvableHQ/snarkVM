@@ -84,9 +84,9 @@ impl<F: PrimeField> SqrtTables<F> {
         let g = F::two_adic_root_of_unity();
 
         // Bits 1..n of `t`: a short lowest window, then full windows.
-        let mut windows = Vec::new();
-        if n > 1 {
-            let count = (n - 1).div_ceil(WINDOW);
+        let count = (n - 1).div_ceil(WINDOW);
+        let mut windows = Vec::with_capacity(count as usize);
+        if count > 0 {
             let lowest = n - 1 - (count - 1) * WINDOW;
             windows.push((1, lowest));
             windows.extend((0..count - 1).map(|i| (1 + lowest + i * WINDOW, WINDOW)));
@@ -137,6 +137,7 @@ impl<F: PrimeField> SqrtTables<F> {
             .collect();
 
         // The look-up table for the `2^max_window`-th roots of unity.
+        // `g` has order `2^n`, so every power of it is non-zero and has an inverse.
         let h_inverse = (0..n - max_window).fold(g, |power, _| power.square()).inverse().unwrap();
         let roots: Vec<F> =
             std::iter::successors(Some(F::one()), |power| Some(*power * h_inverse)).take(1 << max_window).collect();
@@ -264,11 +265,13 @@ impl ExponentSchedule {
                     squarings = 0;
                     i = end;
                 }
+                // `bits` starts with a one, so `windows` is non-empty.
                 let odd_powers = windows.iter().map(|&(_, odd_power)| odd_power).max().unwrap() + 1;
                 let first = windows.remove(0).1;
                 Self { odd_powers, first, steps: windows, trailing_squarings: squarings }
             })
             .min_by_key(|schedule| schedule.odd_powers + schedule.steps.len())
+            // The range of window widths is non-empty.
             .unwrap()
     }
 

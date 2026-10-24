@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::OnceLock;
+
 use snarkvm_fields::{
     FftParameters,
     FieldParameters,
@@ -22,8 +24,6 @@ use snarkvm_fields::{
     PoseidonDefaultParametersEntry,
     SqrtTables,
 };
-use std::sync::OnceLock;
-
 use snarkvm_utilities::biginteger::BigInteger384 as BigInteger;
 
 pub type Fq = Fp384<FqParameters>;
