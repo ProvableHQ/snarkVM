@@ -37,8 +37,6 @@ pub struct SqrtTables<F> {
     /// The windows of `t`, as `(first bit, number of bits)`, from the lowest bits up.
     /// Bit 0 of `t` is zero for a square and has no window.
     windows: Vec<(u32, u32)>,
-    /// `log_shift[j]` is `max_window - windows[j].1`.
-    log_shift: Vec<u32>,
     /// `powers[i][c] = g^(c * 2^e)` for one exponent `e` per table.
     powers: Vec<Vec<F>>,
     /// `corrections[j][i]` is the table in `powers` that removes the bits of window `i` from window `j`.
@@ -94,7 +92,6 @@ impl<F: PrimeField> SqrtTables<F> {
             windows.extend((0..count - 1).map(|i| (1 + lowest + i * WINDOW, WINDOW)));
         }
         let max_window = windows.iter().map(|&(_, bits)| bits).max().unwrap_or(0);
-        let log_shift = windows.iter().map(|&(_, bits)| max_window - bits).collect();
 
         // One table per exponent, as long as the largest digit it multiplies by.
         let mut exponents: Vec<(u32, u32)> = Vec::new();
@@ -156,7 +153,7 @@ impl<F: PrimeField> SqrtTables<F> {
 
         let exponent = ExponentSchedule::new(F::trace_minus_one_div_two().as_ref());
 
-        Self { key, windows, log_shift, powers, corrections, half_windows, roots, slots, exponent }
+        Self { key, windows, powers, corrections, half_windows, roots, slots, exponent }
     }
 
     /// Returns `c` such that `element = h^(-c)`, if there is one.
@@ -192,6 +189,7 @@ impl<F: PrimeField> SqrtTables<F> {
 
         // `bases[j] = x^(2^(n - end_j))`, where window `j` ends at bit `end_j` of `t`.
         let k = self.windows.len();
+        let max_window = self.roots.len().trailing_zeros();
         let mut bases = [x; MAX_WINDOWS];
         for j in (0..k - 1).rev() {
             bases[j] = bases[j + 1];
@@ -200,7 +198,7 @@ impl<F: PrimeField> SqrtTables<F> {
             }
         }
 
-        // Multiplying `bases[j]` by the corrections for windows `0..j` leaves `h^(-(t_j << log_shift[j]))`,
+        // Multiplying `bases[j]` by the corrections for windows `0..j` leaves `h^(-(t_j << (max_window - bits_j)))`,
         // where `t_j` holds the bits of window `j`. A non-square has odd `t`; then the last window
         // multiplies `x` by even powers of `g`, which leaves an element of order `2^n` that is not in
         // the look-up table.
@@ -211,8 +209,9 @@ impl<F: PrimeField> SqrtTables<F> {
             for (i, &table) in self.corrections[j].iter().enumerate() {
                 alpha *= self.powers[table][digits[i] as usize];
             }
-            digits[j] = self.log(&alpha)? >> self.log_shift[j];
-            t |= digits[j] << self.windows[j].0;
+            let (start, bits) = self.windows[j];
+            digits[j] = self.log(&alpha)? >> (max_window - bits);
+            t |= digits[j] << start;
         }
 
         let half_t = t >> 1;
@@ -273,7 +272,6 @@ impl ExponentSchedule {
             .unwrap()
     }
 
-    /// Returns `u` raised to the exponent.
     #[inline]
     fn pow<F: Field>(&self, u: &F) -> F {
         let mut odd_powers = [*u; 1 << (MAX_EXPONENT_WINDOW - 1)];
