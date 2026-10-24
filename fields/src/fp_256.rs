@@ -23,6 +23,7 @@ use crate::{
     PoseidonDefaultField,
     PoseidonDefaultParameters,
     PrimeField,
+    SqrtTables,
     SquareRootField,
     Zero,
 };
@@ -44,7 +45,12 @@ use std::{
 };
 use zeroize::Zeroize;
 
-pub trait Fp256Parameters: FieldParameters<BigInteger = BigInteger> {}
+pub trait Fp256Parameters: FieldParameters<BigInteger = BigInteger> {
+    /// Returns the tables that `sqrt` uses, or `None` for `sqrt` to run Algorithm 1 of Sarkar without tables.
+    fn sqrt_tables() -> Option<&'static SqrtTables<Fp256<Self>>> {
+        None
+    }
+}
 
 // The CUDA FFI reads this by bytes.
 #[derive(Copy, Clone, Default, PartialEq, Eq, Hash, Zeroize)]
